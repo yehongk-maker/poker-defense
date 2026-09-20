@@ -50,18 +50,23 @@ describe('waves.json 데이터 무결성 — GDD 3.5', () => {
     }
   });
 
-  it('hp = 20×1.18^wave 공식 준수', () => {
+  it('hp = hpBase×hpGrowth^wave 공식 준수 (formula 필드 기준)', () => {
+    const f = wavesJson.formula as { hpBase: number; hpGrowth: number };
     for (const w of waves) {
-      const expected = 20 * Math.pow(1.18, w.wave);
+      const expected = f.hpBase * Math.pow(f.hpGrowth, w.wave);
       expect(Math.abs(w.hp - expected) < 1).toBe(true);
     }
   });
 
-  it('일반 웨이브 마릿수 15~30', () => {
+  it('일반 웨이브 마릿수 = countBase + countPerWave×wave (최대 countMax), 웨이브 1은 6마리 이하', () => {
+    const f = wavesJson.formula as { countBase: number; countPerWave: number; countMax: number };
     for (const w of waves.filter((w) => !w.boss)) {
       const n = w.groups.reduce((s, g) => s + g.count, 0);
-      expect(n >= 15 && n <= 30).toBe(true);
+      expect(n).toBe(Math.min(f.countMax, Math.round(f.countBase + f.countPerWave * w.wave)));
     }
+    // 하이카드(T1 1기)로 웨이브 1을 넘길 수 있어야 한다 (시뮬 근거: 6마리 초과 시 라이프 손실 급증)
+    const w1 = waves[0].groups.reduce((s, g) => s + g.count, 0);
+    expect(w1 <= 6).toBe(true);
   });
 
   it('적 타입 5종 모두 등장', () => {

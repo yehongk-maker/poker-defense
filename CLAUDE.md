@@ -34,12 +34,14 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 ## 데이터 스키마 요약
 - `units.json`: 수트(S/H/D/C)×티어(1~5) 20종. `baseDps×dpsFactor×attackInterval` = 1회 데미지. `effect.type`으로 특수 효과.
 - `hands.json`: 족보 → `summonTiers[]`, `jokerShards`, `heroSummon`.
-- `waves.json`: 40웨이브. `scripts/generate-waves.mjs`로 생성(공식: hp = 20×1.18^wave). 직접 편집도 가능.
+- `waves.json`: 40웨이브. `npm run waves`(scripts/generate-waves.mjs)로 생성. 공식은 파일의 `formula` 필드(hp = 20×1.15^wave, 마릿수 4+0.5w). 직접 편집도 가능.
+- 밸런스 검증: `npm run sim` (scripts/simulate.ts, 봇 3종 헤드리스). `tests/Balance.test.ts`가 GDD 3.5 목표를 회귀 테스트로 고정.
 - `synergies.json`: 수트(2/4/6) + 클래스(2/4) 2축. 상위 구간이 하위를 대체.
 - `heroes.json`: 영웅 8종. `active`는 데이터만 정의됨(미구현).
 - `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM.
 
 ## 진행 상태 (2026-09-20)
 - 완료: Phase 0 셋업, Phase 1~2 로직 전부(systems/ + 테스트 121개).
-- 미구현: GameScene 실제 UI(카드/트랙/HUD), 스와이프 업그레이드 화면, 영웅 액티브 스킬, 메타 업그레이드·localStorage, 시뮬레이터 CLI.
-- 알려진 밸런스 이슈: 봇 시뮬 기준 하이카드(T1 1기)로 웨이브 1 클리어 불가 → 초반 JSON 조정 필요.
+- 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 봇 기준 하이카드 중앙값 20, 무전략 22, 최선 29.
+- 미구현: GameScene 실제 UI(카드/트랙/HUD), 스와이프 업그레이드 화면, 영웅 액티브 스킬, 메타 업그레이드·localStorage.
+- 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

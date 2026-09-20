@@ -1,0 +1,156 @@
+/**
+ * 헤드리스 밸런스 시뮬레이터 코어 — GDD Phase 2 "자동 시뮬레이터".
+ * CLI는 simulate.ts, 회귀 테스트는 tests/Balance.test.ts가 이 모듈을 사용한다.
+ *
+ * 봇 전략:
+ *  - highcard : 매 라운드 하이카드처럼 T1 1기만 소환(최악 케이스). 교환·영웅 없음, 골드는 다수 수트 업그레이드.
+ *               → GDD 7 "하이카드/원페어로도 15웨이브는 버틴다" 검증용.
+ *  - naive    : 즉시 확정, 합성, 골드 300 이상이면 ♠ 업그레이드 (GameLoop.test와 동일).
+ *  - smart    : 족보 구성 카드 유지 + 나머지 교환, 합성, 영웅 즉시 소환, 골드 전부 다수 수트 업그레이드.
+ *               → GDD 9.5 "봇 기준 웨이브 21 저지선" 검증용.
+ *
+ * 출력: 전략별 승률·평균 도달 웨이브·웨이브 도달률(10/15/21/30/40)·패배 웨이브 히스토그램.
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
+import { HandRank, evaluateHand, type Suit } from '../src/systems/PokerEvaluator.ts';
+
+const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
+const load = (f: string) => JSON.parse(readFileSync(join(dataDir, f), 'utf8'));
+const unitsJson = load('units.json');
+const wavesJson = load('waves.json');
+const handsJson = load('hands.json');
+
+export function baseData(highcardOnly = false): GameData {
+  const hands = structuredClone(handsJson);
+  if (highcardOnly) {
+    // 모든 족보를 하이카드 결과로 강제 (T1 1기, 조각 0)
+    for (const k of Object.keys(hands)) {
+      if (k === 'comment') continue;
+      // TwoPair는 SummonMapper가 2슬롯을 요구하므로 [1,1] (4.75% 라운드만 2기 — 근사 허용)
+      hands[k] = { summonTiers: k === 'TwoPair' ? [1, 1] : [1], jokerShards: 0, heroSummon: false };
+    }
+  }
+  return {
+    units: unitsJson.units,
+    hands,
+    synergies: load('synergies.json'),
+    heroes: load('heroes.json').heroes,
+    waves: wavesJson.waves,
+    enemyTypes: wavesJson.enemyTypes,
+    battleConfig: wavesJson.config,
+    config: load('config.json'),
+  };
+}
+
+export function seededRng(seed: number): () => number {
+  let s = seed || 1;
+  return () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
+export type Bot = 'highcard' | 'naive' | 'smart';
+const SUITS: Suit[] = ['S', 'H', 'D', 'C'];
+
+function dominantSuit(g: GameLoop): Suit {
+  const c: Record<Suit, number> = { S: 0, H: 0, D: 0, C: 0 };
+  for (const u of g.units) c[u.def.suit]++;
+  return SUITS.reduce((a, b) => (c[b] > c[a] ? b : a));
+}
+
+function spendAllOnUpgrades(g: GameLoop, suit: Suit): void {
+  let cost = g.upgradeCost(suit);
+  while (cost !== null && g.gold >= cost) {
+    g.buyUpgrade(suit);
+    cost = g.upgradeCost(suit);
+  }
+}
+
+function smartCardPhase(g: GameLoop): void {
+  const p = g.cardPhase;
+  if (p.exchangesRemaining > 0) {
+    const hand = p.hand;
+    // 예비 판정: 족보 구성 카드(core)를 남기고 나머지 교환. 하이카드는 3장 이상 같은 수트면 플러시 드로우.
+    const r = evaluateHand([...hand], () => 0);
+    let keep = new Set(r.coreCards);
+    if (r.rank === HandRank.HighCard) {
+      const bySuit = new Map<Suit, number>();
+      for (const c of hand) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
+      const [suit, n] = [...bySuit.entries()].sort((a, b) => b[1] - a[1])[0];
+      keep = n >= 3 ? new Set(hand.filter((c) => c.suit === suit)) : new Set([r.coreCards[0]]);
+    }
+    if (r.rank < HandRank.Straight) {
+      hand.forEach((c, i) => { if (!keep.has(c)) p.toggleSelect(i); });
+      if (p.selectedIndices.length > 0) p.exchange();
+    }
+  }
+  g.confirmHand();
+}
+
+export function playGame(bot: Bot, seed: number): GameLoop {
+  const g = new GameLoop(baseData(bot === 'highcard'), seededRng(seed));
+  let guard = 0;
+  while (g.phase === 'card' || g.phase === 'manage') {
+    if (++guard > 200) throw new Error('loop guard');
+    if (g.phase === 'card') {
+      if (bot === 'smart') smartCardPhase(g);
+      else g.confirmHand();
+    }
+    // 합성: T2 DPS(17.6) < T1×3(24)이므로 합성은 슬롯 압박 해소용. smart는 슬롯이 찰 때만 합성.
+    const shouldMerge = bot !== 'smart' || g.units.length >= 23;
+    if (shouldMerge) for (const id of g.mergeable) { try { g.mergeUnits(id); } catch { /* 경합 무시 */ } }
+    if (bot === 'naive') {
+      if (g.canSummonHero) g.summonHero(g.unlockedHeroes[0].id);
+      while (g.gold > 300 && g.upgradeCost('S') !== null && g.upgradeCost('S')! < g.gold - 300) g.buyUpgrade('S');
+    } else {
+      if (bot === 'smart' && g.canSummonHero) {
+        const s = dominantSuit(g);
+        const h = g.unlockedHeroes.find((h) => h.suit === s) ?? g.unlockedHeroes[0];
+        g.summonHero(h.id);
+      }
+      spendAllOnUpgrades(g, dominantSuit(g));
+    }
+    g.startCombat();
+    const inCombat = () => (g.phase as GamePhase) === 'combat'; // getter 좁힘 회피
+    for (let t = 0; t < 600 && inCombat(); t += 0.1) g.tickCombat(0.1);
+    if (inCombat()) break; // 600초 교착 → 중단
+  }
+  return g;
+}
+
+export interface Stat { games: number; wins: number; waves: number[]; stalls: number }
+
+export function run(bot: Bot, games: number, seed0: number): Stat {
+  const st: Stat = { games, wins: 0, waves: [], stalls: 0 };
+  for (let i = 0; i < games; i++) {
+    const g = playGame(bot, seed0 + i);
+    if (g.phase === 'victory') st.wins++;
+    if (g.phase === 'combat') st.stalls++;
+    st.waves.push(g.phase === 'victory' ? 41 : g.wave);
+  }
+  return st;
+}
+
+export function report(bot: Bot, st: Stat, csv: boolean): void {
+  const n = st.games;
+  const reach = (w: number) => (st.waves.filter((x) => x >= w).length / n * 100).toFixed(0) + '%';
+  const avg = (st.waves.reduce((a, b) => a + Math.min(b, 40), 0) / n).toFixed(1);
+  const sorted = [...st.waves].sort((a, b) => a - b);
+  const median = sorted[Math.floor(n / 2)];
+  if (csv) {
+    console.log([bot, n, st.wins, avg, median, ...[10, 15, 21, 30, 40].map(reach)].join(','));
+    return;
+  }
+  console.log(`\n[${bot}]  games=${n}  win=${(st.wins / n * 100).toFixed(1)}%  avgWave=${avg}  median=${median === 41 ? 'WIN' : median}  stalls=${st.stalls}`);
+  console.log(`  reach ≥10: ${reach(10)}   ≥15: ${reach(15)}   ≥21: ${reach(21)}   ≥30: ${reach(30)}   clear: ${reach(41)}`);
+  const hist = new Map<number, number>();
+  for (const w of st.waves) hist.set(w, (hist.get(w) ?? 0) + 1);
+  const line = [...hist.entries()].sort((a, b) => a[0] - b[0])
+    .map(([w, c]) => `${w === 41 ? 'WIN' : 'w' + w}:${c}`).join(' ');
+  console.log(`  ended at: ${line}`);
+}
+
