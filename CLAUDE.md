@@ -16,7 +16,7 @@ src/
   systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
-  ui/            CardHand, HUD, SwipePanel (Phaser)
+  ui/            HUD, CardHand, TrackView, ManagePanel, Button, theme (Phaser). SwipePanel 예정
   data/          units, hands, waves, synergies, heroes, config .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
@@ -43,5 +43,6 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 ## 진행 상태 (2026-09-20)
 - 완료: Phase 0 셋업, Phase 1~2 로직 전부(systems/ + 테스트 121개).
 - 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 봇 기준 하이카드 중앙값 20, 무전략 22, 최선 29.
-- 미구현: GameScene 실제 UI(카드/트랙/HUD), 스와이프 업그레이드 화면, 영웅 액티브 스킬, 메타 업그레이드·localStorage.
+- 완료: GameScene 플레이 가능 (src/ui: HUD·CardHand·TrackView·ManagePanel·Button). 카드 선택/교환/진행 → 정비(업그레이드·합성·영웅·판매) → 전투(적 순환·타격선·배속) → 승리/패배 화면.
+- 미구현: 스와이프 업그레이드 화면(영웅 선택 UI 포함 — 지금은 다수 수트 기본 영웅 자동 선택), 영웅 액티브 스킬, 메타 업그레이드·localStorage, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

@@ -40,7 +40,7 @@ export class LobbyScene extends Phaser.Scene {
     });
 
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 80, 'v0.1.0 · Phase 0', { fontSize: '30px', color: '#4a5364' })
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 80, 'v0.1.0 · Phase 1', { fontSize: '30px', color: '#4a5364' })
       .setOrigin(0.5);
   }
 }

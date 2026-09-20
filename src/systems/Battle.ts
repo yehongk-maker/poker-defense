@@ -80,7 +80,17 @@ export interface Enemy {
   isBoss: boolean;
 }
 
+/** 연출용 타격 기록 (씬이 발사체/피격 이펙트를 그리는 데 사용) */
+export interface HitEvent {
+  unit: DeployedUnit;
+  enemyId: number;
+  dmg: number;
+  killed: boolean;
+}
+
 export interface BattleTickEvents {
+  /** 이번 tick의 타격 목록 (연출용) */
+  hits: HitEvent[];
   /** 이번 tick에 처치한 적 수 */
   kills: number;
   /** 이번 tick에 획득한 골드 (처치 + 효과) */
@@ -146,6 +156,11 @@ export class Battle {
     for (const u of units) u._cooldown = 0;
   }
 
+  /** 전투 경과 시간(초) */
+  get time(): number {
+    return this.elapsed;
+  }
+
   get aliveEnemies(): readonly Enemy[] {
     return this.enemies.filter((e) => e.alive);
   }
@@ -170,7 +185,7 @@ export class Battle {
 
   tick(dt: number): BattleTickEvents {
     this.elapsed += dt;
-    const ev: BattleTickEvents = { kills: 0, goldEarned: 0, lifeLost: 0, cleared: false };
+    const ev: BattleTickEvents = { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, cleared: false };
 
     // 1) 스폰
     while (this.spawnQueue.length > 0 && this.spawnQueue[0].at <= this.elapsed) {
@@ -312,7 +327,9 @@ export class Battle {
   private hit(u: DeployedUnit, e: Enemy, dmg: number, ev: BattleTickEvents): void {
     if (!e.alive) return;
     e.hp -= dmg;
-    if (e.hp <= 0) {
+    const killed = e.hp <= 0;
+    ev.hits.push({ unit: u, enemyId: e.id, dmg, killed });
+    if (killed) {
       e.alive = false;
       ev.kills++;
       let gold = e.isBoss ? this.config.bossKillGold : this.config.baseKillGold;

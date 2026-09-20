@@ -1,0 +1,152 @@
+import Phaser from 'phaser';
+import type { DeployedUnit, Enemy, HitEvent } from '../systems/Battle.ts';
+import type { GameLoop } from '../systems/GameLoop.ts';
+import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL } from './theme.ts';
+
+/**
+ * 순환 트랙 + 유닛 슬롯(5×5) + 적 + 타격 연출.
+ * 트랙 좌표(pos 0~trackLength)를 사각 링 둘레로 매핑한다.
+ */
+const OUTER = { x: 50, y: 200, w: 980, h: 980 };
+const TRACK_W = 80;
+const RING = { x: OUTER.x + TRACK_W / 2, y: OUTER.y + TRACK_W / 2, w: OUTER.w - TRACK_W, h: OUTER.h - TRACK_W }; // 중심선
+const GRID_N = 5;
+const CELL = 150;
+const GRID_X = OUTER.x + (OUTER.w - GRID_N * CELL) / 2;
+const GRID_Y = OUTER.y + (OUTER.h - GRID_N * CELL) / 2;
+const HERO_POS = { x: OUTER.x + OUTER.w / 2, y: OUTER.y + TRACK_W / 2 }; // 타격선 시작점(상단 트랙 중앙)
+
+interface HitFx { x1: number; y1: number; x2: number; y2: number; color: number; ttl: number }
+
+export class TrackView {
+  private cells: Phaser.GameObjects.Rectangle[] = [];
+  private unitSprites: Phaser.GameObjects.Container[] = [];
+  private enemySprites = new Map<number, Phaser.GameObjects.Container>();
+  private fx: HitFx[] = [];
+  private fxGfx: Phaser.GameObjects.Graphics;
+  private onUnitTap: ((index: number) => void) | null = null;
+  private selectedIndex = -1;
+
+  constructor(private scene: Phaser.Scene) {
+    // 트랙 링
+    const g = scene.add.graphics();
+    g.fillStyle(COLORS.track).fillRect(OUTER.x, OUTER.y, OUTER.w, OUTER.h);
+    g.fillStyle(COLORS.bg).fillRect(OUTER.x + TRACK_W, OUTER.y + TRACK_W, OUTER.w - 2 * TRACK_W, OUTER.h - 2 * TRACK_W);
+    g.lineStyle(3, COLORS.trackLine).strokeRect(OUTER.x, OUTER.y, OUTER.w, OUTER.h);
+    g.strokeRect(OUTER.x + TRACK_W, OUTER.y + TRACK_W, OUTER.w - 2 * TRACK_W, OUTER.h - 2 * TRACK_W);
+    // 스폰 지점 표시 (트랙 좌상단)
+    scene.add.text(OUTER.x + 12, OUTER.y + 6, '▶ 스폰', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT });
+
+    // 유닛 슬롯 25칸
+    for (let i = 0; i < GRID_N * GRID_N; i++) {
+      const { x, y } = this.cellCenter(i);
+      const r = scene.add.rectangle(x, y, CELL - 8, CELL - 8, COLORS.cell).setStrokeStyle(2, COLORS.cellLine);
+      r.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.onUnitTap?.(i));
+      this.cells.push(r);
+    }
+    this.fxGfx = scene.add.graphics();
+  }
+
+  setUnitTapHandler(fn: ((index: number) => void) | null): void {
+    this.onUnitTap = fn;
+  }
+
+  /** 필드 유닛 다시 그리기 (정비/소환 후 호출) */
+  setUnits(units: readonly DeployedUnit[], selectedIndex = -1): void {
+    this.selectedIndex = selectedIndex;
+    for (const s of this.unitSprites) s.destroy();
+    this.unitSprites = [];
+    this.cells.forEach((c, i) => c.setStrokeStyle(i === selectedIndex ? 5 : 2, i === selectedIndex ? COLORS.goldLight : COLORS.cellLine));
+    units.forEach((u, i) => {
+      const { x, y } = this.cellCenter(i);
+      const c = this.scene.add.container(x, y);
+      const size = 44 + u.def.tier * 12;
+      const color = SUIT_COLOR[u.def.suit];
+      const shape = this.unitShape(u.def.attackType, size, color);
+      const tier = this.scene.add.text(0, 2, `${u.def.tier}`, { fontSize: '34px', color: '#0b0e14', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5);
+      const name = this.scene.add.text(0, CELL / 2 - 22, `${SUIT_SYMBOL[u.def.suit]}${u.def.name}`, { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
+      c.add([shape, tier, name]);
+      this.unitSprites.push(c);
+    });
+  }
+
+  /** 적 스프라이트 동기화 */
+  updateEnemies(enemies: readonly Enemy[], trackLength: number): void {
+    const alive = new Set<number>();
+    for (const e of enemies) {
+      alive.add(e.id);
+      let s = this.enemySprites.get(e.id);
+      if (!s) {
+        const r = e.isBoss ? 40 : 18;
+        const body = this.scene.add.circle(0, 0, r, ENEMY_COLOR[e.type] ?? 0xffffff).setStrokeStyle(2, 0x0b0e14);
+        const bar = this.scene.add.rectangle(0, -r - 10, r * 2, 5, 0x5fcf7a).setOrigin(0.5);
+        s = this.scene.add.container(0, 0, [body, bar]);
+        this.enemySprites.set(e.id, s);
+      }
+      const { x, y } = this.trackPoint(e.pos / trackLength);
+      s.setPosition(x, y);
+      const bar = s.list[1] as Phaser.GameObjects.Rectangle;
+      const r = e.isBoss ? 40 : 18;
+      bar.width = Math.max(0, (e.hp / e.maxHp) * r * 2);
+      bar.setFillStyle(e.hp / e.maxHp > 0.5 ? 0x5fcf7a : e.hp / e.maxHp > 0.25 ? 0xe8c34a : 0xe0473f);
+    }
+    for (const [id, s] of this.enemySprites) {
+      if (!alive.has(id)) { s.destroy(); this.enemySprites.delete(id); }
+    }
+  }
+
+  clearEnemies(): void {
+    for (const s of this.enemySprites.values()) s.destroy();
+    this.enemySprites.clear();
+    this.fx = [];
+    this.fxGfx.clear();
+  }
+
+  /** 타격 이벤트 → 유닛 칸에서 적으로 선 연출 */
+  addHits(hits: readonly HitEvent[], loop: GameLoop, enemies: readonly Enemy[], trackLength: number): void {
+    if (hits.length === 0) return;
+    const byId = new Map(enemies.map((e) => [e.id, e]));
+    for (const h of hits) {
+      const e = byId.get(h.enemyId);
+      const idx = loop.units.indexOf(h.unit);
+      const from = idx >= 0 ? this.cellCenter(idx) : HERO_POS;
+      const to = e ? this.trackPoint(e.pos / trackLength) : this.enemySprites.get(h.enemyId) ?? null;
+      if (!to) continue;
+      this.fx.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, color: SUIT_COLOR[h.unit.def.suit], ttl: h.killed ? 0.25 : 0.12 });
+    }
+  }
+
+  /** 매 프레임: 타격선 페이드 */
+  update(dt: number): void {
+    this.fxGfx.clear();
+    this.fx = this.fx.filter((f) => (f.ttl -= dt) > 0);
+    for (const f of this.fx) {
+      this.fxGfx.lineStyle(3, f.color, Math.min(1, f.ttl * 8));
+      this.fxGfx.lineBetween(f.x1, f.y1, f.x2, f.y2);
+    }
+  }
+
+  cellCenter(i: number): { x: number; y: number } {
+    return { x: GRID_X + (i % GRID_N) * CELL + CELL / 2, y: GRID_Y + Math.floor(i / GRID_N) * CELL + CELL / 2 };
+  }
+
+  /** t∈[0,1) → 링 둘레 좌표 (좌상단에서 시계 방향) */
+  private trackPoint(t: number): { x: number; y: number } {
+    const P = 2 * (RING.w + RING.h);
+    let d = ((t % 1) + 1) % 1 * P;
+    if (d < RING.w) return { x: RING.x + d, y: RING.y };
+    d -= RING.w;
+    if (d < RING.h) return { x: RING.x + RING.w, y: RING.y + d };
+    d -= RING.h;
+    if (d < RING.w) return { x: RING.x + RING.w - d, y: RING.y + RING.h };
+    d -= RING.w;
+    return { x: RING.x, y: RING.y + RING.h - d };
+  }
+
+  /** 역할 실루엣: 근접=사각, 원거리=삼각, 마법=원 (GDD 3.2.1 "실루엣으로 역할이 읽히게") */
+  private unitShape(type: 'melee' | 'ranged' | 'magic', size: number, color: number): Phaser.GameObjects.Shape {
+    if (type === 'melee') return this.scene.add.rectangle(0, 0, size, size, color).setStrokeStyle(3, 0x0b0e14);
+    if (type === 'ranged') return this.scene.add.triangle(0, 4, 0, size, size / 2, 0, size, size, color).setStrokeStyle(3, 0x0b0e14).setOrigin(0.5);
+    return this.scene.add.circle(0, 0, size / 2, color).setStrokeStyle(3, 0x0b0e14);
+  }
+}

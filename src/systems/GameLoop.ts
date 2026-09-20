@@ -95,7 +95,7 @@ export class GameLoop {
   private _hero: { def: HeroDef; grade: HeroGrade; unit: DeployedUnit } | null = null;
   private freeHero = false;
   private upgradeLevels: Record<Suit, number> = { S: 0, H: 0, D: 0, C: 0 };
-  private battle: Battle | null = null;
+  private battle_: Battle | null = null;
   private lastSynergy: SynergyResult | null = null;
   private lifeNegationsLeft = 0; // 빛의 치유사: 웨이브당 1회 무효
 
@@ -118,6 +118,8 @@ export class GameLoop {
   get units(): readonly DeployedUnit[] { return this._units; }
   get hero() { return this._hero; }
   get activeSynergies() { return this.lastSynergy?.active ?? []; }
+  /** 진행 중인 전투 (combat 페이즈에서만 non-null) — 씬이 적 위치를 그리는 데 사용 */
+  get battle(): Battle | null { return this.battle_; }
   get upgrades(): Readonly<Record<Suit, number>> { return this.upgradeLevels; }
   get canSummonHero(): boolean {
     return this._hero === null &&
@@ -261,7 +263,7 @@ export class GameLoop {
     const combatUnits = this._hero ? [...this._units, this._hero.unit] : [...this._units];
     this.lifeNegationsLeft = this._units.filter((u) => u.def.effect?.type === 'negate_life_loss').length;
 
-    this.battle = new Battle(waveDef, this.data.enemyTypes, combatUnits, this.data.battleConfig, {
+    this.battle_ = new Battle(waveDef, this.data.enemyTypes, combatUnits, this.data.battleConfig, {
       getGold: () => this._gold,
       rng: this.rng,
       globalMods: mods,
@@ -272,7 +274,7 @@ export class GameLoop {
   /** 전투 프레임 진행. 씬 update()에서 호출 */
   tickCombat(dt: number): BattleTickEvents {
     this.assertPhase('combat');
-    const ev = this.battle!.tick(dt);
+    const ev = this.battle_!.tick(dt);
     this._gold += ev.goldEarned;
 
     // 라이프 차감 (빛의 치유사 무효 → 태산 수호자 확률 무효 순서)
@@ -294,9 +296,9 @@ export class GameLoop {
 
     if (ev.cleared) {
       const g = this.lastSynergy!.global;
-      this._gold += this.battle!.clearGold(g.waveGoldPct);
+      this._gold += this.battle_!.clearGold(g.waveGoldPct);
       this._life = Math.min(this.data.config.startLife, this._life + g.lifePerWave);
-      this.battle = null;
+      this.battle_ = null;
       if (this._wave >= this.data.config.totalWaves) {
         this._phase = 'victory';
       } else {
