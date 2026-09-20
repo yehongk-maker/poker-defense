@@ -1,0 +1,645 @@
+{
+  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.18^wave (보스는 ×hpMult). 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 수정 후 재실행하거나 이 파일 직접 편집.",
+  "config": {
+    "trackLength": 40,
+    "baseEnemySpeed": 4,
+    "baseKillGold": 1,
+    "bossKillGold": 20,
+    "clearGoldBase": 30,
+    "clearGoldPerWave": 5
+  },
+  "enemyTypes": {
+    "normal": {
+      "speedMult": 1,
+      "physicalResist": 0,
+      "regenPctPerSec": 0,
+      "hpMult": 1
+    },
+    "fast": {
+      "speedMult": 1.6,
+      "physicalResist": 0,
+      "regenPctPerSec": 0,
+      "hpMult": 0.75
+    },
+    "armored": {
+      "speedMult": 0.85,
+      "physicalResist": 0.5,
+      "regenPctPerSec": 0,
+      "hpMult": 1.2
+    },
+    "regen": {
+      "speedMult": 1,
+      "physicalResist": 0,
+      "regenPctPerSec": 0.02,
+      "hpMult": 1.1
+    },
+    "boss": {
+      "speedMult": 0.7,
+      "physicalResist": 0.3,
+      "regenPctPerSec": 0,
+      "hpMult": 25
+    }
+  },
+  "waves": [
+    {
+      "wave": 1,
+      "boss": false,
+      "hp": 24,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 15
+        }
+      ]
+    },
+    {
+      "wave": 2,
+      "boss": false,
+      "hp": 28,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 15
+        }
+      ]
+    },
+    {
+      "wave": 3,
+      "boss": false,
+      "hp": 33,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "wave": 4,
+      "boss": false,
+      "hp": 39,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "wave": 5,
+      "boss": false,
+      "hp": 46,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 12
+        },
+        {
+          "type": "normal",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "wave": 6,
+      "boss": false,
+      "hp": 54,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 17
+        }
+      ]
+    },
+    {
+      "wave": 7,
+      "boss": false,
+      "hp": 64,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "normal",
+          "count": 17
+        }
+      ]
+    },
+    {
+      "wave": 8,
+      "boss": false,
+      "hp": 75,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 13
+        },
+        {
+          "type": "normal",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "wave": 9,
+      "boss": false,
+      "hp": 89,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 13
+        },
+        {
+          "type": "normal",
+          "count": 5
+        }
+      ]
+    },
+    {
+      "wave": 10,
+      "boss": true,
+      "hp": 105,
+      "spawnInterval": 0,
+      "groups": [
+        {
+          "type": "boss",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "wave": 11,
+      "boss": false,
+      "hp": 124,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 13
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 12,
+      "boss": false,
+      "hp": 146,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 13
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 13,
+      "boss": false,
+      "hp": 172,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 14
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 14,
+      "boss": false,
+      "hp": 203,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 14
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 15,
+      "boss": false,
+      "hp": 239,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 15
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 16,
+      "boss": false,
+      "hp": 283,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 15
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 17,
+      "boss": false,
+      "hp": 333,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 15
+        },
+        {
+          "type": "normal",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "wave": 18,
+      "boss": false,
+      "hp": 393,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 15
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 19,
+      "boss": false,
+      "hp": 464,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 15
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 20,
+      "boss": true,
+      "hp": 548,
+      "spawnInterval": 0,
+      "groups": [
+        {
+          "type": "boss",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "wave": 21,
+      "boss": false,
+      "hp": 646,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 16
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 22,
+      "boss": false,
+      "hp": 763,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 16
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 23,
+      "boss": false,
+      "hp": 900,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 17
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 24,
+      "boss": false,
+      "hp": 1062,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 17
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 25,
+      "boss": false,
+      "hp": 1253,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 18
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 26,
+      "boss": false,
+      "hp": 1479,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 18
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 27,
+      "boss": false,
+      "hp": 1745,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 18
+        },
+        {
+          "type": "normal",
+          "count": 7
+        }
+      ]
+    },
+    {
+      "wave": 28,
+      "boss": false,
+      "hp": 2059,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 18
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 29,
+      "boss": false,
+      "hp": 2430,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 18
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 30,
+      "boss": true,
+      "hp": 2867,
+      "spawnInterval": 0,
+      "groups": [
+        {
+          "type": "boss",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "wave": 31,
+      "boss": false,
+      "hp": 3384,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 19
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 32,
+      "boss": false,
+      "hp": 3993,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 19
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 33,
+      "boss": false,
+      "hp": 4711,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 20
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 34,
+      "boss": false,
+      "hp": 5559,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 20
+        },
+        {
+          "type": "normal",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "wave": 35,
+      "boss": false,
+      "hp": 6560,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 20
+        },
+        {
+          "type": "normal",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "wave": 36,
+      "boss": false,
+      "hp": 7741,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 20
+        },
+        {
+          "type": "normal",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "wave": 37,
+      "boss": false,
+      "hp": 9134,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "regen",
+          "count": 20
+        },
+        {
+          "type": "normal",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "wave": 38,
+      "boss": false,
+      "hp": 10778,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "fast",
+          "count": 21
+        },
+        {
+          "type": "normal",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "wave": 39,
+      "boss": false,
+      "hp": 12718,
+      "spawnInterval": 0.8,
+      "groups": [
+        {
+          "type": "armored",
+          "count": 21
+        },
+        {
+          "type": "normal",
+          "count": 9
+        }
+      ]
+    },
+    {
+      "wave": 40,
+      "boss": true,
+      "hp": 15008,
+      "spawnInterval": 0,
+      "groups": [
+        {
+          "type": "boss",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

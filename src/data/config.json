@@ -1,0 +1,51 @@
+{
+  "comment": "게임 전역 설정 — GDD 3.3/3.4. 밸런싱은 이 파일에서.",
+  "startLife": 10,
+  "startGold": 100,
+  "maxSlots": 25,
+  "sellRatio": 0.7,
+  "totalWaves": 40,
+  "upgrade": {
+    "baseCost": 50,
+    "costGrowth": 1.4,
+    "maxLevel": 10,
+    "attackPctPerLevel": 6
+  },
+  "hero": {
+    "shardsRequired": 3,
+    "grades": {
+      "S": { "minRemainingWaves": 20, "mult": 1.5 },
+      "A": { "minRemainingWaves": 10, "mult": 1.0 },
+      "B": { "minRemainingWaves": 0, "mult": 0.7 }
+    }
+  },
+  "monetization": {
+    "comment": "GDD §9. 가챠 금지 — 모든 IAP는 확정 지급. removeAdsAutoGrant=true면 광고제거 구매자에게 보상형 보상 자동 지급.",
+    "rewardedAds": {
+      "extraExchange": { "enabled": true, "grantExchanges": 1 },
+      "revive": { "enabled": true, "restoreLife": 3, "maxPerRun": 1 },
+      "doubleClearGold": { "enabled": true, "multiplier": 2 }
+    },
+    "interstitial": { "onlyAfterGameOver": true, "capPerRuns": 3 },
+    "removeAdsAutoGrant": true,
+    "gems": {
+      "rewards": {
+        "firstClearPerWaveMilestone": { "waves": [10, 20, 30, 40], "gems": [20, 30, 50, 100] },
+        "dailyMission": 10
+      },
+      "costs": {
+        "heroUnlock": 300,
+        "metaExchangePlus1": 500,
+        "metaTimerPlus10s": 300,
+        "metaStartGoldPlus100": 200
+      }
+    },
+    "iapProducts": [
+      { "id": "remove_ads", "krw": 5900, "type": "nonconsumable" },
+      { "id": "starter_pack", "krw": 3300, "type": "nonconsumable", "oncePerAccount": true, "contents": { "gems": 500, "heroChoice": 1, "startGoldBoost": 100 } },
+      { "id": "gems_small", "krw": 1100, "type": "consumable", "gems": 120 },
+      { "id": "gems_medium", "krw": 5500, "type": "consumable", "gems": 650 },
+      { "id": "gems_large", "krw": 11000, "type": "consumable", "gems": 1400 }
+    ]
+  }
+}

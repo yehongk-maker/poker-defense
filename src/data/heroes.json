@@ -1,0 +1,53 @@
+{
+  "comment": "GDD 3.3 영웅 8종 (수트별 2종, basic=기본 해금 / meta=젬 해금). 등급 배율(S/A/B)은 config.json. active는 씬/전투 연출 단계에서 구현 예정 — cooldownSec 포함 데이터만 정의.",
+  "heroes": [
+    {
+      "id": "black_archduke", "name": "검은 대공", "suit": "S", "unlock": "basic",
+      "combat": { "baseDps": 120, "attackInterval": 1.0, "attackType": "melee" },
+      "passive": { "type": "suit_attack_pct", "suit": "S", "pct": 20 },
+      "active": { "id": "earth_slam", "name": "대지 강타", "cooldownSec": 45, "desc": "트랙 전체 광역 + 기절 1초", "params": { "dmgMult": 3, "stunSec": 1 } }
+    },
+    {
+      "id": "steel_annihilator", "name": "강철 파멸기", "suit": "S", "unlock": "meta",
+      "combat": { "baseDps": 140, "attackInterval": 1.6, "attackType": "melee" },
+      "passive": { "type": "class_count", "class": "destroyer", "plus": 1 },
+      "active": { "id": "execute_strike", "name": "처형 검격", "cooldownSec": 45, "desc": "최고 HP 적 3체에 초대미지", "params": { "targets": 3, "dmgMult": 8 } }
+    },
+    {
+      "id": "guardian_sage", "name": "수호 현자", "suit": "H", "unlock": "basic",
+      "combat": { "baseDps": 80, "attackInterval": 1.2, "attackType": "magic" },
+      "passive": { "type": "global_attack_speed_pct", "pct": 10 },
+      "active": { "id": "sanctuary", "name": "성역", "cooldownSec": 45, "desc": "8초간 라이프 피해 완전 무효", "params": { "durationSec": 8 } }
+    },
+    {
+      "id": "mountain_warden", "name": "태산 수호자", "suit": "H", "unlock": "meta",
+      "combat": { "baseDps": 70, "attackInterval": 1.5, "attackType": "melee" },
+      "passive": { "type": "life_save_chance_pct", "pct": 25 },
+      "active": { "id": "rock_wall", "name": "암석 방벽", "cooldownSec": 45, "desc": "트랙에 장벽 소환, 적 8초 정지", "params": { "durationSec": 8 } }
+    },
+    {
+      "id": "golden_sniper", "name": "황금 저격수", "suit": "D", "unlock": "basic",
+      "combat": { "baseDps": 110, "attackInterval": 1.4, "attackType": "ranged" },
+      "passive": { "type": "kill_gold_pct", "pct": 25 },
+      "active": { "id": "golden_bullet", "name": "황금 탄환", "cooldownSec": 45, "desc": "최대 HP 적 즉사 (보스는 20% 피해)", "params": { "bossDmgPct": 20 } }
+    },
+    {
+      "id": "tomb_king", "name": "도굴왕", "suit": "D", "unlock": "meta",
+      "combat": { "baseDps": 90, "attackInterval": 0.8, "attackType": "melee" },
+      "passive": { "type": "class_count", "class": "raider", "plus": 1 },
+      "active": { "id": "grand_heist", "name": "대약탈", "cooldownSec": 45, "desc": "화면 전체 적 골드 강탈 + 이속 -30% 5초", "params": { "goldPerEnemy": 2, "slowPct": 30, "durationSec": 5 } }
+    },
+    {
+      "id": "abyss_overlord", "name": "심연 군주", "suit": "C", "unlock": "basic",
+      "combat": { "baseDps": 100, "attackInterval": 1.3, "attackType": "magic" },
+      "passive": { "type": "suit_aoe_radius_pct", "suit": "C", "pct": 20 },
+      "active": { "id": "abyss_summon", "name": "심연 소환", "cooldownSec": 45, "desc": "10초간 유령 포탑 3기 소환", "params": { "turrets": 3, "durationSec": 10, "turretDps": 40 } }
+    },
+    {
+      "id": "storm_tyrant", "name": "뇌운 폭군", "suit": "C", "unlock": "meta",
+      "combat": { "baseDps": 115, "attackInterval": 1.2, "attackType": "magic" },
+      "passive": { "type": "chain_targets_plus", "plus": 1 },
+      "active": { "id": "thunder_storm", "name": "천둥 폭풍", "cooldownSec": 45, "desc": "5초간 무작위 낙뢰 연타", "params": { "durationSec": 5, "boltDmg": 200, "boltsPerSec": 4 } }
+    }
+  ]
+}
