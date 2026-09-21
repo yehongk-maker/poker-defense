@@ -38,7 +38,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 전투 룰(GDD 3.5~3.6): 적은 제한 시간 동안 트랙을 돌고, 시간 종료 시 남은 적당 라이프 차감. 유닛은 슬롯에서 사거리(셀) 안의 적만 공격 → 배치가 핵심. `DeployedUnit.slot` 필수, 자동 배치는 `GameLoop.autoSlot`(커버리지 최대 빈 칸), 이동은 `moveUnit`.
 - 밸런스 검증: `npm run sim` (scripts/simulate.ts, 봇 3종 헤드리스). `tests/Balance.test.ts`가 GDD 3.5 목표를 회귀 테스트로 고정.
 - `synergies.json`: 4축 — suits(수트 기수 2/4/6) · classes(종류 2/4) · races(종족 기수+영웅 3/5/7 등) · formation(사거리/조건 자동 판정) + caps(합산 상한). 상위 구간이 하위를 대체. 설계 근거 docs/synergy-design.md.
-- `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅은 종족 카운트에만 포함.
+- `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅(`ApplyOptions.hero`)은 수트·클래스 축만 제외, 나머지(종족·진형·빙고·global·오라·상한·업그레이드)에 포함. caps 공격 120/공속 70.
 - `heroes.json`: 영웅 8종. `active.id`별 구현은 GameLoop.useHeroSkill의 switch, 수치는 `active.params`.
 - `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM.
 

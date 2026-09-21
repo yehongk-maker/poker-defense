@@ -5,7 +5,8 @@
  * 4축 (GDD 3.2/3.2.2 + docs/synergy-design.md):
  *  - 수트(진영): 기수(중복 포함) 2/4/6 — 순수 빌드 보상
  *  - 클래스(역할): 서로 다른 유닛 종류 2/4 — 혼합 빌드·합성 유도
- *  - 종족: 기수 + 영웅 1 (heroRace) — 물량 빌드 보상. 위치(같은 행/열), 사거리+1 같은 룰 변화 포함
+ *  - 종족: 기수(영웅 포함) — 물량 빌드 보상. 위치(같은 행/열), 사거리+1 같은 룰 변화 포함
+ *  - 영웅(options.hero)은 수트·클래스 카운트/효과에서만 빠지고(GDD 3.3), 종족·진형·빙고·전체(global)·오라·상한·업그레이드에는 정식 구성원
  *  - 진형: 사거리(range)·조건으로 자동 판정 — 배치가 곧 시너지
  *  - 상위 구간이 하위 구간을 대체 (누적 아님)
  *  - 영웅 패시브 "시너지 +1 카운트"(강철 파멸기/도굴왕)는 extraClassCounts로 주입
@@ -19,7 +20,7 @@
  */
 
 import { type Suit } from './PokerEvaluator.ts';
-import { type UnitClass, type UnitRace } from './SummonMapper.ts';
+import { type UnitClass } from './SummonMapper.ts';
 import { type DeployedUnit } from './Battle.ts';
 import { isEdgeSlot, type TrackGeometry } from './Geometry.ts';
 
@@ -126,8 +127,8 @@ export interface SynergyResult {
 export interface ApplyOptions {
   /** 영웅 패시브 등으로 인한 클래스 카운트 보정 (예: { destroyer: 1 }) */
   extraClassCounts?: Partial<Record<UnitClass, number>>;
-  /** 영웅 종족 (종족 카운트 +1) */
-  heroRace?: UnitRace;
+  /** 영웅 유닛. 수트·클래스 축을 제외한 모든 계산에 포함된다 (종족 카운트·효과, 진형·빙고 위치, 전체 효과, 오라) */
+  hero?: DeployedUnit;
   /** 라운드 내 업그레이드: 수트별 공격력 +% (예: { S: 12 }) */
   suitAttackUpgradePct?: Partial<Record<Suit, number>>;
   /** 슬롯 격자 (행/열·가장자리 판정). 기본 5×5 */
@@ -172,9 +173,11 @@ export class SynergySystem {
    */
   apply(units: DeployedUnit[], options: ApplyOptions = {}): SynergyResult {
     const geo = options.geometry ?? DEFAULT_GEOMETRY;
+    /** 영웅 포함 전체 (수트·클래스 축 제외 모든 계산의 대상) */
+    const all = options.hero ? [...units, options.hero] : units;
 
     // 0) 초기화
-    for (const u of units) {
+    for (const u of all) {
       u.attackPctBonus = 0;
       u.attackSpeedPctBonus = 0;
       u.singleTargetPctBonus = 0;
@@ -193,16 +196,15 @@ export class SynergySystem {
     /** 유닛별 속한 빙고 줄 수 (per_line_attack_pct가 사용) */
     const lineCounts = new Map<DeployedUnit, number>();
 
-    // 1) 카운트
+    // 1) 카운트 (수트·클래스는 일반 유닛만, 종족은 영웅 포함)
     const suitCounts = new Map<string, number>();
     const classCounts = new Map<string, Set<string>>();
     const raceCounts = new Map<string, number>();
     for (const u of units) {
       suitCounts.set(u.def.suit, (suitCounts.get(u.def.suit) ?? 0) + 1);
       (classCounts.get(u.def.class) ?? classCounts.set(u.def.class, new Set()).get(u.def.class)!).add(u.def.id);
-      raceCounts.set(u.def.race, (raceCounts.get(u.def.race) ?? 0) + 1);
     }
-    if (options.heroRace) raceCounts.set(options.heroRace, (raceCounts.get(options.heroRace) ?? 0) + 1);
+    for (const u of all) raceCounts.set(u.def.race, (raceCounts.get(u.def.race) ?? 0) + 1);
 
     // 2) 발동 구간 판정 → 효과 수집
     const collect = (kind: SynergyKind, key: string, def: SynergyGroupDef, count: number, members: DeployedUnit[]): void => {
@@ -213,7 +215,7 @@ export class SynergySystem {
       if (reachedIdx < 0) return;
       active.push({ kind, key, name: def.name, count, reached: def.thresholds[reachedIdx] });
       for (const eff of def.effects[reachedIdx]) {
-        this.applyEffect(eff, kind, key, units, members, global, geo, lineCounts);
+        this.applyEffect(eff, kind, key, all, members, global, geo, lineCounts);
       }
     };
 
@@ -225,14 +227,14 @@ export class SynergySystem {
       collect('class', key, def, (classCounts.get(key)?.size ?? 0) + extra, units.filter((u) => u.def.class === key));
     }
     for (const [key, def] of Object.entries(this.table.races ?? {})) {
-      collect('race', key, def, raceCounts.get(key) ?? 0, units.filter((u) => u.def.race === key));
+      collect('race', key, def, raceCounts.get(key) ?? 0, all.filter((u) => u.def.race === key));
     }
     // 진형: range 그룹 먼저(조건 그룹이 이 카운트를 참조)
     const formation = this.table.formation ?? {};
     const formationCounts = new Map<string, number>();
     for (const [key, def] of Object.entries(formation)) {
       if (def.countBy === 'range') {
-        const members = units.filter((u) => u.def.range === def.range);
+        const members = all.filter((u) => u.def.range === def.range);
         formationCounts.set(key, members.length);
         collect('formation', key, def, members.length, members);
       }
@@ -244,15 +246,15 @@ export class SynergySystem {
       } else if (def.countBy === 'slots') {
         // 지정 슬롯이 전부 (사거리 조건을 만족하는) 유닛으로 차 있어야 발동
         const members = (def.slots ?? [])
-          .map((sl) => units.find((u) => u.slot === sl))
+          .map((sl) => all.find((u) => u.slot === sl))
           .filter((u): u is DeployedUnit => !!u && (def.requireRange === undefined || u.def.range === def.requireRange));
         const full = members.length === (def.slots ?? []).length && members.length > 0;
         collect('formation', key, def, full ? 1 : 0, full ? members : []);
       } else if (def.countBy === 'block2x2SameSuit') {
-        const { blocks, members } = this.sameSuitBlocks(units, geo);
+        const { blocks, members } = this.sameSuitBlocks(all, geo);
         collect('formation', key, def, blocks, members);
       } else if (def.countBy === 'lines') {
-        const found = this.bingoLines(units, geo, def.matchBy ?? 'suit');
+        const found = this.bingoLines(all, geo, def.matchBy ?? 'suit');
         bingoLines.push(...found.lines);
         for (const [u, n] of found.counts) lineCounts.set(u, (lineCounts.get(u) ?? 0) + n);
         collect('formation', key, def, found.lines.length, [...found.counts.keys()]);
@@ -268,13 +270,13 @@ export class SynergySystem {
         ].find((e) => e.type === 'buff_effect_pct')?.pct ?? 0) / 100
       : 1;
 
-    // 4) 오라 유닛 효과 — effect.area(adjacent/adjacent4/global) 범위의 아군에게, 성령체 배율 반영
+    // 4) 오라 유닛 효과 — effect.area(adjacent/adjacent4/global) 범위의 아군에게(영웅 포함), 성령체 배율 반영
     for (const src of units) {
       const eff = src.def.effect;
       if (!eff) continue;
       if (eff.type !== 'aura_attack_speed' && eff.type !== 'aura_attack_pct') continue;
       const pct = (eff.pct as number) * buffMult;
-      for (const u of auraTargets(src, String(eff.area ?? 'global'), units, geo)) {
+      for (const u of auraTargets(src, String(eff.area ?? 'global'), all, geo)) {
         if (eff.type === 'aura_attack_speed') u.attackSpeedPctBonus! += pct;
         else u.attackPctBonus! += pct;
       }
@@ -283,14 +285,14 @@ export class SynergySystem {
     // 5) 시너지·오라 합산 상한 (docs/synergy-design.md 4장: 4축 곱연산 폭주 방지)
     const capA = this.table.caps?.attackPct;
     const capS = this.table.caps?.attackSpeedPct;
-    for (const u of units) {
+    for (const u of all) {
       if (capA !== undefined) u.attackPctBonus = Math.min(u.attackPctBonus!, capA);
       if (capS !== undefined) u.attackSpeedPctBonus = Math.min(u.attackSpeedPctBonus!, capS);
     }
 
-    // 6) 라운드 내 수트 업그레이드 (상한 밖)
+    // 6) 라운드 내 수트 업그레이드 (상한 밖, 영웅도 자기 수트 업그레이드를 받는다)
     if (options.suitAttackUpgradePct) {
-      for (const u of units) {
+      for (const u of all) {
         u.attackPctBonus! += options.suitAttackUpgradePct[u.def.suit] ?? 0;
       }
     }

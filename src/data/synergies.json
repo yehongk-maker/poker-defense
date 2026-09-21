@@ -274,8 +274,8 @@
     }
   },
   "caps": {
-    "attackPct": 80,
-    "attackSpeedPct": 50
+    "attackPct": 120,
+    "attackSpeedPct": 70
   },
   "races": {
     "human": {

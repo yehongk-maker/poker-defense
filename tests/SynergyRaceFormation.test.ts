@@ -41,7 +41,7 @@ describe('데이터 무결성', () => {
   it('synergies.json에 races 4종·formation 4종·caps 존재', () => {
     expect(Object.keys(table.races!)).toEqual(['human', 'goblin', 'monster', 'spirit']);
     expect(Object.keys(table.formation!)).toEqual(['melee', 'ranged', 'mid', 'mixed', 'corners', 'block', 'bingo']);
-    expect(table.caps!.attackPct).toBe(80);
+    expect(table.caps!.attackPct).toBe(120);
   });
 });
 
@@ -68,10 +68,16 @@ describe('종족 — 휴먼 「대열」', () => {
     expect(active(r, 'race', 'human')?.reached).toBe(7);
     for (const u of us) expect(u.rangeBonus).toBe(u.slot === 12 ? 0 : 1);
   });
-  it('영웅 종족은 카운트 +1', () => {
+  it('영웅은 종족 카운트에 포함되고 종족 효과도 받는다 (수트·클래스 카운트는 제외)', () => {
     const us = place(['spear_striker', 0], ['spear_striker', 1]);
     expect(active(sys().apply(us), 'race', 'human')).toBeUndefined();
-    expect(active(sys().apply(us, { heroRace: 'human' }), 'race', 'human')?.count).toBe(3);
+    const hero: DeployedUnit = { def: { ...unit('spear_striker'), id: 'hero_x', name: '영웅', tier: 6 }, slot: 2 };
+    const r = sys().apply(us, { hero });
+    expect(active(r, 'race', 'human')?.count).toBe(3);
+    // 대열: 영웅(슬롯 2)은 같은 행 휴먼 2기 → +8
+    expect(hero.attackPctBonus).toBeGreaterThanOrEqual(8);
+    // 수트 카운트는 영웅 제외: ♠2 (영웅 포함이면 3)
+    expect(active(r, 'suit', 'S')?.count).toBe(2);
   });
 });
 
@@ -100,7 +106,8 @@ describe('종족 — 고블린 / 몬스터 / 정령', () => {
   it('정령 2: 제한 시간 +4 / 3(영웅 포함): +8, 라이프 회복 1', () => {
     const us = place(['light_healer', 0], ['seraphim', 1]);
     expect(sys().apply(us).global.timeLimitPlus).toBe(4);
-    const r3 = sys().apply(us, { heroRace: 'spirit' });
+    const spiritHero: DeployedUnit = { def: { ...unit('seraphim'), id: 'hero_s', tier: 6 }, slot: 12 };
+    const r3 = sys().apply(us, { hero: spiritHero });
     expect(r3.global.timeLimitPlus).toBe(8);
     expect(r3.global.lifePerWave).toBeGreaterThanOrEqual(1);
   });
@@ -135,12 +142,12 @@ describe('진형 — 사거리 자동 판정', () => {
     const r2 = sys().apply(us);
     expect(active(r2, 'formation', 'mixed')?.reached).toBe(1);
   });
-  it('시너지+오라 합산은 caps(공격 80/공속 50)를 넘지 않는다', () => {
+  it('시너지+오라 합산은 caps(공격 120/공속 70)를 넘지 않는다', () => {
     const us = place(...['spear_striker', 'twin_axe_warrior', 'crusher_rider', 'blacksteel_knight', 'spear_striker', 'spear_striker', 'spear_striker'].map((id, i) => [id, i] as [string, number]));
     sys().apply(us);
     for (const u of us) {
-      expect(u.attackPctBonus!).toBeLessThanOrEqual(80);
-      expect(u.attackSpeedPctBonus!).toBeLessThanOrEqual(50);
+      expect(u.attackPctBonus!).toBeLessThanOrEqual(120);
+      expect(u.attackSpeedPctBonus!).toBeLessThanOrEqual(70);
     }
   });
 });
@@ -245,6 +252,14 @@ describe('빙고 (4단계) — 같은 수트로 한 줄 완성', () => {
     expect(us[5].attackPctBonus).toBe(20); // 열만
     expect(us[4].attackPctBonus).toBe(20); // 행만
     expect(us[8].attackSpeedPctBonus).toBe(10); // 2줄 구간 공속
+  });
+
+  it('영웅도 줄을 완성할 수 있다 (수트 기준)', () => {
+    const four = place(...S.slice(0, 4).map((id, i) => [id, i] as [string, number]));
+    const hero: DeployedUnit = { def: { ...unit('blacksteel_knight'), id: 'hero_k', name: '검은 대공', tier: 6 }, slot: 4 };
+    const r = sys().apply(four, { hero });
+    expect(r.bingoLines.length).toBe(1);
+    expect(hero.attackPctBonus).toBeGreaterThanOrEqual(20);
   });
 
   it('종족 기준 줄(matchBy race)도 지원한다', () => {

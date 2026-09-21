@@ -504,14 +504,11 @@ export class GameLoop {
       S: this.upgradeLevels.S * up, H: this.upgradeLevels.H * up,
       D: this.upgradeLevels.D * up, C: this.upgradeLevels.C * up,
     };
-    this.lastSynergy = this.synergy.apply(this._units, { extraClassCounts, suitAttackUpgradePct, heroRace: this._hero?.def.race, geometry: this.geometry });
+    this.lastSynergy = this.synergy.apply(this._units, { extraClassCounts, suitAttackUpgradePct, hero: this._hero?.unit, geometry: this.geometry });
 
-    // 영웅 패시브 (시너지 재계산 후 덧셈 — 영웅 유닛 자체는 시너지 카운트 제외)
+    // 영웅 패시브 (시너지 재계산 후 덧셈 — apply()가 영웅 보너스도 초기화·계산해 두었으므로 여기서는 더하기만)
     if (this._hero) {
-      this._hero.unit.attackPctBonus = 0;
-      this._hero.unit.attackSpeedPctBonus = 0;
       this._hero.unit.chainTargetsBonus = 0;
-      this._hero.unit.rangeBonus = 0;
       const hp = this._hero.def.passive;
       switch (hp.type) {
         case 'suit_attack_pct':
