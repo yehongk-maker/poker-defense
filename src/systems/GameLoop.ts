@@ -90,7 +90,7 @@ export interface DeployResult {
   /** 슬롯 초과로 자동 판매된 유닛과 환급 골드 */
   overflowSold: { unit: UnitDef; gold: number }[];
   shardsGained: number;
-  /** 로열 스트레이트 플러시: 조각 없이 영웅 선택 가능 상태 */
+  /** 로열 스트레이트 플러시: 토큰 없이 영웅 선택 가능 상태 */
   freeHeroSummon: boolean;
 }
 
@@ -394,7 +394,7 @@ export class GameLoop {
     if (this.heroSkillCd > 0) this.heroSkillCd = Math.max(0, this.heroSkillCd - dt);
     if (ev.leaked > 0) this._gold += ev.leaked * this.lastSynergy!.global.leakGold; // 고블린 5: 이탈 적당 골드 회수
 
-    // 라이프 차감 (빛의 치유사 무효 → 태산 수호자 확률 무효 순서)
+    // 하트 차감 (빛의 치유사 무효 → 태산 수호자 확률 무효 순서)
     let loss = ev.lifeLost;
     while (loss > 0 && this.lifeNegationsLeft > 0) { loss--; this.lifeNegationsLeft--; }
     if (loss > 0 && this._hero?.def.passive.type === 'life_save_chance_pct') {
@@ -457,9 +457,9 @@ export class GameLoop {
         text = `최고 HP ${out.affected}기 처형 검격 (${out.kills}기 처치)`;
         break;
       }
-      case 'sanctuary': { // 라이프 피해 무효
+      case 'sanctuary': { // 하트 피해 무효
         out = b.setSanctuary(sec(p.durationSec));
-        text = `${sec(p.durationSec)}초간 라이프 피해 무효`;
+        text = `${sec(p.durationSec)}초간 하트 피해 무효`;
         break;
       }
       case 'rock_wall': { // 적 정지

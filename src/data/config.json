@@ -113,7 +113,7 @@
     ]
   },
   "meta": {
-    "comment": "GDD 3.4 영구 메타 업그레이드 (젬). 편의까지만 — 유닛 데미지 직접 판매 금지 (§9.1). 저장은 localStorage (MetaProgress).",
+    "comment": "GDD 3.4 영구 메타 업그레이드 (다이아). 편의까지만 — 유닛 데미지 직접 판매 금지 (§9.1). 저장은 localStorage (MetaProgress).",
     "saveKey": "poker-defense.meta.v1",
     "upgrades": [
       {

@@ -87,7 +87,7 @@ export interface ActiveSynergy {
 export interface GlobalSynergyMods {
   /** 웨이브 클리어 골드 +% (♦) */
   waveGoldPct: number;
-  /** 웨이브 종료 시 라이프 회복 (♥6, 정령3) */
+  /** 웨이브 종료 시 하트 회복 (♥6, 정령3) */
   lifePerWave: number;
   /** 처치 골드 +N (약탈자 4, 고블린) */
   killGoldBonus: number;

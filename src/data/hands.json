@@ -1,5 +1,5 @@
 {
-  "comment": "GDD 3.1 족보 → 소환 결과 테이블. tier: 소환 유닛 티어, jokerShards: 조커 조각, heroSummon: 영웅 즉시 소환",
+  "comment": "GDD 3.1 족보 → 소환 결과 테이블. tier: 소환 유닛 티어, jokerShards: 영웅 토큰, heroSummon: 영웅 즉시 소환",
   "HighCard": { "summonTiers": [1], "jokerShards": 0, "heroSummon": false },
   "OnePair": { "summonTiers": [1, 1], "jokerShards": 0, "heroSummon": false },
   "TwoPair": { "summonTiers": [2, 1], "jokerShards": 0, "heroSummon": false },

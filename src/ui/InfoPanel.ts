@@ -52,8 +52,8 @@ export class InfoPanel extends Phaser.GameObjects.Container {
       const box = scene.add.rectangle(GAME_WIDTH / 2, y + rowH / 2 - 6, GAME_WIDTH - 60, rowH - 12, COLORS.panel).setStrokeStyle(2, COLORS.panelLine);
       const name = scene.add.text(50, y + 30, HAND_NAME[rank], { fontSize: '30px', color: st.color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
       const prob = scene.add.text(GAME_WIDTH - 50, y + 30, `확률 ${HAND_PROB[rank]}`, { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
-      const summon = def.heroSummon ? '영웅 즉시 소환 (조각 없이 선택)'
-        : def.summonTiers.map((t) => TIER_NAME[t]).join(' + ') + ' 유닛' + (def.jokerShards ? ` + 조커 조각 ${'●'.repeat(def.jokerShards)}` : '');
+      const summon = def.heroSummon ? '영웅 즉시 소환 (토큰 없이 선택)'
+        : def.summonTiers.map((t) => TIER_NAME[t]).join(' + ') + ' 유닛' + (def.jokerShards ? ` + 영웅 토큰 ${'●'.repeat(def.jokerShards)}` : '');
       const res = scene.add.text(50, y + 74, `소환: ${summon}`, { fontSize: '24px', color: COLORS.text, fontFamily: FONT }).setOrigin(0, 0.5);
       this.handsView.add([box, name, prob, res]);
     });

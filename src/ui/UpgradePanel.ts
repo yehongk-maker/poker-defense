@@ -22,7 +22,7 @@ interface HeroCard {
 
 /**
  * 상점 & 영웅 화면 (GDD 4, 오른쪽으로 스와이프 → 왼쪽에서 들어옴):
- *  종족 업그레이드 4종 / 조커 조각 ●●○ / 영웅 선택(8종, 기본 4 + 메타 4 잠금)
+ *  종족 업그레이드 4종 / 영웅 토큰 ●●○ / 영웅 선택(8종, 기본 4 + 메타 4 잠금)
  * 업그레이드·소환은 정비 페이즈에서만 가능 (GameLoop 제약) — 다른 페이즈엔 버튼 비활성 + 안내.
  */
 export class UpgradePanel extends Phaser.GameObjects.Container {
@@ -57,8 +57,8 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       this.add(b);
     });
 
-    // 2) 조커 조각
-    this.add(this.section(scene, 500, '조커 조각', '플러시 이상 달성 시 획득 · 3개 = 영웅 소환 1회'));
+    // 2) 영웅 토큰
+    this.add(this.section(scene, 500, '영웅 토큰', '플러시 이상 달성 시 획득 · 3개 = 영웅 소환 1회'));
     this.shardText = scene.add.text(40, 570, '', { fontSize: '44px', color: '#f1d17a', fontFamily: FONT }).setOrigin(0, 0.5);
     this.gradeText = scene.add.text(GAME_WIDTH - 40, 570, '', { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT, align: 'right' }).setOrigin(1, 0.5);
     this.add([this.shardText, this.gradeText]);
@@ -106,14 +106,14 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
         c.status.setText(`소환됨 · ${loop.hero!.grade}급`).setColor('#f1d17a');
         c.btn.setLabel('소환됨').setEnabled(false);
       } else if (!unlocked) {
-        c.status.setText('🔒 메타 해금 (젬)').setColor(COLORS.textMuted);
+        c.status.setText('🔒 메타 해금 (다이아)').setColor(COLORS.textMuted);
         c.btn.setLabel('잠김').setEnabled(false);
       } else if (loop.hero) {
         c.status.setText('판당 1기 제한').setColor(COLORS.textMuted);
         c.btn.setLabel('소환').setEnabled(false);
       } else {
         const can = manage && loop.canSummonHero;
-        c.status.setText(can ? `소환 가능 · ${grade}급` : loop.canSummonHero ? '정비 페이즈에서 소환' : `조각 ${loop.shards}/${need}`).setColor(can ? '#5fcf7a' : COLORS.textDim);
+        c.status.setText(can ? `소환 가능 · ${grade}급` : loop.canSummonHero ? '정비 페이즈에서 소환' : `영웅 토큰 ${loop.shards}/${need}`).setColor(can ? '#5fcf7a' : COLORS.textDim);
         c.btn.setLabel(`${grade}급 소환`).setEnabled(can);
       }
     }
@@ -150,7 +150,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       case 'suit_attack_pct': return `${SUIT_SYMBOL[p.suit as Suit]} 유닛 공격력 +${pct}%`;
       case 'class_count': return `${CLASS_NAME[p.class as string] ?? p.class} 시너지 +${p.plus} 카운트`;
       case 'global_attack_speed_pct': return `전체 공속 +${pct}%`;
-      case 'life_save_chance_pct': return `라이프 피해 ${pct}% 확률 무효`;
+      case 'life_save_chance_pct': return `하트 피해 ${pct}% 확률 무효`;
       case 'kill_gold_pct': return `처치 골드 +${pct}%`;
       case 'suit_aoe_radius_pct': return `${SUIT_SYMBOL[p.suit as Suit]} 유닛 광역 범위 +${pct}%`;
       case 'chain_targets_plus': return `뇌전 연쇄 대상 +${p.plus}`;

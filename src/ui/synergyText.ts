@@ -75,7 +75,7 @@ export function describeEffect(eff: SynergyEffect, kind: SynergyKind, key: strin
     case 'extra_slow_pct': return `${who} 감속 추가 -${eff.pct}%`;
     case 'buff_effect_pct': return `오라 버프 효과 ${sign(eff.pct!)}%`;
     case 'wave_gold_pct': return `웨이브 클리어 골드 ${sign(eff.pct!)}%`;
-    case 'life_per_wave': return `웨이브 종료 시 라이프 +${eff.amount}`;
+    case 'life_per_wave': return `웨이브 종료 시 하트 +${eff.amount}`;
     case 'kill_gold_bonus': return `처치 골드 +${eff.amount}`;
     case 'kill_bonus_gold_chance': return `처치 시 ${eff.pct}% 확률로 골드 +${eff.amount}`;
     case 'wave_start_gold': return `웨이브 시작 시 골드 +${eff.amount}`;

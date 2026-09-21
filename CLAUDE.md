@@ -36,6 +36,13 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 6. **IP 주의.** 스타크래프트·CoC의 유닛명/종족명/외형 사용 금지. 이름·디자인은 전부 오리지널.
 7. **가챠 금지.** 유료 상품은 확정 지급만 (GDD §9).
 
+## 토큰 용어 (GDD 3.8) — UI 문자열은 이 이름만 쓴다
+- 골드 💰 (`gold`): 라운드 내 유닛 업그레이드. 판마다 리셋.
+- 영웅 토큰 ● (`shards`, 구 조커 조각): 플러시 이상에서 획득, 3개로 영웅 소환.
+- 다이아 💎 (`gems`, 구 젬): 캐시+마일스톤 무료 획득, 메타 업그레이드·메타 영웅 해금. localStorage.
+- 하트 ♥ (`life`, 구 라이프): 시간 초과 이탈 적당 -1, 0이면 탈락.
+- 코드 식별자(shards/gems/life)는 그대로 두고 표시 문자열만 통일한다.
+
 ## 데이터 스키마 요약
 - `units.json`: 수트(S/H/D/C)×티어(1~5) 20종. `baseDps×dpsFactor×attackInterval` = 1회 데미지. `effect.type`으로 특수 효과.
 - `hands.json`: 족보 → `summonTiers[]`, `jokerShards`, `heroSummon`.

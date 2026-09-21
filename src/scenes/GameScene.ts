@@ -207,7 +207,7 @@ export class GameScene extends Phaser.Scene {
         const b = this.loop.battle;
         if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
         if (ev.timeUp && ev.leaked > 0) {
-          leakMsg = `⏱ 시간 초과! 이탈 ${ev.leaked}기 → 라이프 -${ev.lifeLost}`;
+          leakMsg = `⏱ 시간 초과! 이탈 ${ev.leaked}기 → 하트 -${ev.lifeLost}`;
           this.cameras.main.flash(220, 224, 71, 63);
         }
       }
@@ -268,7 +268,7 @@ export class GameScene extends Phaser.Scene {
     const lines = [`${HAND_NAME[hr.rank]}!`];
     if (res.deployed.length) lines.push('소환: ' + res.deployed.map((d) => `${SUIT_SYMBOL[d.def.suit]}${d.def.name} T${d.def.tier}`).join(', '));
     if (res.overflowSold.length) lines.push(`슬롯 초과 자동 판매 +💰${res.overflowSold.reduce((s, o) => s + o.gold, 0)}`);
-    if (res.shardsGained) lines.push(`조커 조각 +${res.shardsGained}`);
+    if (res.shardsGained) lines.push(`영웅 토큰 +${res.shardsGained}`);
     if (res.freeHeroSummon) lines.push('로열 스트레이트 플러시! 영웅 즉시 소환 가능');
     this.manage.setSummary(lines.join('\n'));
     this.selectedSlot = -1;
@@ -347,7 +347,7 @@ export class GameScene extends Phaser.Scene {
     const win = duel.winner === 'player';
     const title = duel.winner === 'draw' ? '무승부' : win ? '승리!' : '패배';
     const color = duel.winner === 'draw' ? '#8fe3ff' : win ? '#f1d17a' : '#e0473f';
-    const reason: Record<string, string> = { first_clear: '마지막 라운드 먼저 클리어', opponent_out: '상대 탈락 후 라운드 앞섬', wave: '도달 라운드', life: '남은 라이프', gold: '골드', draw: '완전 동률' };
+    const reason: Record<string, string> = { first_clear: '마지막 라운드 먼저 클리어', opponent_out: '상대 탈락 후 라운드 앞섬', wave: '도달 라운드', life: '남은 하트', gold: '골드', draw: '완전 동률' };
     const o = this.opponent.loop;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
     this.add.text(GAME_WIDTH / 2, 700, title, { fontSize: '120px', color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);

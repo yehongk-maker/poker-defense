@@ -42,7 +42,7 @@ export class HUD {
     // 시너지 상세는 왼쪽 칩(SynergyChips)이 보여주므로 여기서는 개수만
     const n = loop.activeSynergies.length;
     const hero = loop.hero ? `   영웅: ${loop.hero.def.name} (${loop.hero.grade})` : '';
-    const shards = loop.shards > 0 ? `   조각 ${'●'.repeat(loop.shards)}` : '';
+    const shards = loop.shards > 0 ? `   영웅 토큰 ${'●'.repeat(loop.shards)}` : '';
     this.sub.setText(`유닛 ${loop.units.length}/25   시너지 ${n}개${hero}${shards}`);
   }
 }

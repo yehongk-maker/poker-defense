@@ -3,7 +3,7 @@
  *
  *  - 젬: 웨이브 마일스톤 최초 도달(10/20/30/40), 판당 소량, 승리 보너스로 획득
  *  - 메타 업그레이드: 교환 +1회 / 타이머 +10초 / 시작 골드 +100×N — "편의"까지만 (유닛 데미지 판매 금지)
- *  - 메타 영웅 해금: 젬으로 4종
+ *  - 메타 영웅 해금: 다이아로 4종
  *  - 저장: SaveStore(localStorage 등)에 JSON. 버전 필드로 마이그레이션 대비
  *
  * 순수 로직: 저장소는 주입(DI). 브라우저에서는 storage.ts의 localStorage 어댑터를 쓴다.
@@ -35,7 +35,7 @@ export interface MetaState {
   gems: number;
   /** 업그레이드 id → 구매 단계 */
   upgrades: Record<string, number>;
-  /** 젬으로 해금한 메타 영웅 id */
+  /** 다이아로 해금한 메타 영웅 id */
   unlockedHeroes: string[];
   /** 젬을 받은 마일스톤 웨이브 */
   claimedMilestones: number[];

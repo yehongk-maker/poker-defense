@@ -2,7 +2,7 @@
  * Battle — 한 웨이브의 전투 시뮬레이션 (적 순환 트랙 이동 + 유닛 자동 공격)
  *
  * GDD 3.5 (개정) 근거:
- *  - 적은 외곽 순환 트랙을 제한 시간(timeLimit) 동안 계속 돈다. 시간 안에 못 잡은 적 1기당 라이프 차감
+ *  - 적은 외곽 순환 트랙을 제한 시간(timeLimit) 동안 계속 돈다. 시간 안에 못 잡은 적 1기당 하트 차감
  *    (lifePerLeak, 보스는 bossLifePerLeak). 바퀴 수는 라이프에 영향 없음.
  *  - 적 타입: normal / fast(이속↑) / armored(물리저항, 마법은 관통) / regen(초당 회복) / boss
  *  - 유닛은 자기 슬롯에서 사거리(range, 셀 단위) 안의 적만 공격 (최전방 우선) → 배치가 중요
@@ -33,7 +33,7 @@ export interface WaveDef {
   boss: boolean;
   hp: number;
   spawnInterval: number;
-  /** 제한 시간(초). 초과 시 남은 적은 이탈 → 라이프 차감 */
+  /** 제한 시간(초). 초과 시 남은 적은 이탈 → 하트 차감 */
   timeLimit: number;
   groups: WaveGroup[];
 }
@@ -47,7 +47,7 @@ export interface BattleConfig {
   bossKillGold: number;
   clearGoldBase: number;
   clearGoldPerWave: number;
-  /** 시간 초과 이탈 적 1기당 라이프 차감 */
+  /** 시간 초과 이탈 적 1기당 하트 차감 */
   lifePerLeak: number;
   bossLifePerLeak: number;
   /** 사거리(셀) → 공격 배율. 근접일수록 크다 (예: {"2":1.35,"3":1.0,"4":0.75}) */
@@ -179,7 +179,7 @@ export class Battle {
   private pending: BattleTickEvents = Battle.emptyEvents();
   /** 암석 방벽: 이 시각까지 모든 적 정지 (스폰되는 적 포함) */
   private freezeUntil = 0;
-  /** 성역: 이 시각까지 시간 초과 이탈 라이프 피해 무효 */
+  /** 성역: 이 시각까지 시간 초과 이탈 하트 피해 무효 */
   private sanctuaryUntil = 0;
   /** 천둥 폭풍: 무작위 낙뢰 */
   private storm: { until: number; boltDmg: number; rate: number; acc: number; source: DeployedUnit } | null = null;
@@ -349,11 +349,11 @@ export class Battle {
       if (u._cooldown! < 0) u._cooldown = 0; // 사거리 안에 적이 없으면 즉시 발사 대기
     }
 
-    // 4) 제한 시간 종료: 남은 적 이탈 → 라이프 차감
+    // 4) 제한 시간 종료: 남은 적 이탈 → 하트 차감
     if (this.elapsed >= this.timeLimit) {
       this.timeUp = true;
       ev.timeUp = true;
-      const sanctuary = this.elapsed < this.sanctuaryUntil; // 성역: 라이프 피해 무효
+      const sanctuary = this.elapsed < this.sanctuaryUntil; // 성역: 하트 피해 무효
       for (const e of this.enemies) {
         if (!e.alive) continue;
         e.alive = false;
@@ -519,7 +519,7 @@ export class Battle {
     return { affected: this.aliveEnemies.length, kills: 0, goldEarned: 0 };
   }
 
-  /** 성역: sec 동안 시간 초과 이탈 라이프 피해 무효 */
+  /** 성역: sec 동안 시간 초과 이탈 하트 피해 무효 */
   setSanctuary(sec: number): SkillOutcome {
     this.sanctuaryUntil = Math.max(this.sanctuaryUntil, this.elapsed + sec);
     return { affected: 0, kills: 0, goldEarned: 0 };

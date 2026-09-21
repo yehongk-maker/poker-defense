@@ -8,7 +8,7 @@ import type { Suit } from '../systems/PokerEvaluator.ts';
 
 /**
  * 메타 업그레이드 화면 (로비 → ) — GDD 3.4 / 9.4
- *  젬으로 영구 업그레이드 3종 구매, 메타 영웅 4종 해금. 전부 localStorage에 저장.
+ *  다이아로 영구 업그레이드 3종 구매, 메타 영웅 4종 해금. 전부 localStorage에 저장.
  */
 export class MetaScene extends Phaser.Scene {
   private gemText!: Phaser.GameObjects.Text;
@@ -44,7 +44,7 @@ export class MetaScene extends Phaser.Scene {
 
     // 2) 메타 영웅 해금
     const heroY = 340 + meta.upgradeDefs.length * 130 + 40;
-    this.section(heroY, '메타 영웅 해금', `영웅당 💎${meta.heroUnlockCost} · 해금하면 판 안에서 조각 3개로 선택 소환 가능`);
+    this.section(heroY, '메타 영웅 해금', `영웅당 다이아 💎${meta.heroUnlockCost} · 해금하면 판 안에서 영웅 토큰 3개로 선택 소환 가능`);
     const metaHeroes = (heroesJson.heroes as { id: string; name: string; suit: string; unlock: string; passive: Record<string, unknown> }[]).filter((h) => h.unlock === 'meta');
     const cw = 500, ch = 150, gapX = 40, gapY = 20;
     const cx0 = (GAME_WIDTH - (2 * cw + gapX)) / 2 + cw / 2;
@@ -61,8 +61,8 @@ export class MetaScene extends Phaser.Scene {
 
     // 3) 기록 / 초기화
     const st = meta.stats;
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 150, `기록: ${st.runs}판 · 승리 ${st.wins} · 최고 웨이브 ${st.bestWave} · 누적 젬 ${st.totalGemsEarned}`, { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
-    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 110, '젬 획득: 웨이브 10/20/30/40 최초 도달 시 20/30/50/100 · 판당 5 · 승리 50', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 150, `기록: ${st.runs}판 · 승리 ${st.wins} · 최고 웨이브 ${st.bestWave} · 누적 다이아 ${st.totalGemsEarned}`, { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 110, '다이아 획득: 웨이브 10/20/30/40 최초 도달 시 20/30/50/100 · 판당 5 · 승리 50', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
     new Button(this, GAME_WIDTH / 2, GAME_HEIGHT - 50, '저장 초기화', () => this.safe(() => { meta.reset(); this.showToast('저장을 초기화했습니다'); }), { width: 260, height: 60, fontSize: 22, fill: 0x6b3b3b, textColor: COLORS.text });
 
     this.toast = this.add.text(GAME_WIDTH / 2, 200, '', { fontSize: '30px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(5);

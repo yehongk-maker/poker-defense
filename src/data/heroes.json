@@ -1,5 +1,5 @@
 {
-  "comment": "GDD 3.3 영웅 8종. race = 종족 시너지 카운트에 +1 (수트/클래스는 제외). combat.range=사거리(셀): 근접 2 / 마법 3 / 원거리 4 — 사거리별 공격 배율은 waves.json config.rangeDamageMult. 영웅 8종 (수트별 2종, basic=기본 해금 / meta=젬 해금). 등급 배율(S/A/B)은 config.json. active는 씬/전투 연출 단계에서 구현 예정 — cooldownSec 포함 데이터만 정의.",
+  "comment": "GDD 3.3 영웅 8종. race = 종족 시너지 카운트에 +1 (수트/클래스는 제외). combat.range=사거리(셀): 근접 2 / 마법 3 / 원거리 4 — 사거리별 공격 배율은 waves.json config.rangeDamageMult. 영웅 8종 (수트별 2종, basic=기본 해금 / meta=다이아 해금). 등급 배율(S/A/B)은 config.json. active는 씬/전투 연출 단계에서 구현 예정 — cooldownSec 포함 데이터만 정의.",
   "heroes": [
     {
       "id": "black_archduke", "name": "검은 대공", "suit": "S", "unlock": "basic", "race": "human",
@@ -17,7 +17,7 @@
       "id": "guardian_sage", "name": "수호 현자", "suit": "H", "unlock": "basic", "race": "human",
       "combat": { "baseDps": 80, "attackInterval": 1.2, "attackType": "magic" , "range": 3},
       "passive": { "type": "global_attack_speed_pct", "pct": 10 },
-      "active": { "id": "sanctuary", "name": "성역", "cooldownSec": 45, "desc": "8초간 라이프 피해 완전 무효", "params": { "durationSec": 8 } }
+      "active": { "id": "sanctuary", "name": "성역", "cooldownSec": 45, "desc": "8초간 하트 피해 완전 무효", "params": { "durationSec": 8 } }
     },
     {
       "id": "mountain_warden", "name": "태산 수호자", "suit": "H", "unlock": "meta", "race": "monster",

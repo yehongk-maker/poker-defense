@@ -4,7 +4,7 @@
     "human": "휴먼 — 대열: 같은 행/열 휴먼 수만큼 공격력, 7기 가장자리 사거리 +1",
     "goblin": "고블린 — 약탈: 처치/웨이브 시작 골드, 5기 이탈 적당 골드 회수",
     "monster": "몬스터 — 위압: 광역 반경, 적 이속 감소, 6기 웨이브 시작 기절",
-    "spirit": "정령 — 가호: 제한 시간 +초, 3기 라이프 회복"
+    "spirit": "정령 — 가호: 제한 시간 +초, 3기 하트 회복"
   },
   "classes": {
     "raider": "약탈자 — 빠르고 값싼 습격꾼 (2기: 전체 공속 +8% / 4기: +18% + 처치 골드 +1)",
@@ -22,7 +22,7 @@
 
     { "id": "novice_priest", "name": "견습 사제", "suit": "H", "tier": 1, "class": "saint", "race": "human", "attackType": "magic", "baseDps": 8, "dpsFactor": 0.5, "attackInterval": 1.0, "range": 3, "value": 40, "effect": { "type": "aura_attack_speed", "pct": 3, "area": "adjacent" }, "desc": "약공격 + 주변 공속 +3%" },
     { "id": "choir_singer", "name": "성가대원", "suit": "H", "tier": 2, "class": "saint", "race": "human", "attackType": "magic", "baseDps": 17.6, "dpsFactor": 0.5, "attackInterval": 1.0, "range": 3, "value": 100, "effect": { "type": "aura_attack_pct", "pct": 8, "area": "adjacent4" }, "desc": "인접 4칸 공격력 +8% 오라" },
-    { "id": "light_healer", "name": "빛의 치유사", "suit": "H", "tier": 3, "class": "saint", "race": "spirit", "attackType": "magic", "baseDps": 38.7, "dpsFactor": 0.4, "attackInterval": 1.2, "range": 3, "value": 250, "effect": { "type": "negate_life_loss", "perWave": 1 }, "desc": "웨이브당 1회 라이프 피해 무효" },
+    { "id": "light_healer", "name": "빛의 치유사", "suit": "H", "tier": 3, "class": "saint", "race": "spirit", "attackType": "magic", "baseDps": 38.7, "dpsFactor": 0.4, "attackInterval": 1.2, "range": 3, "value": 250, "effect": { "type": "negate_life_loss", "perWave": 1 }, "desc": "웨이브당 1회 하트 피해 무효" },
     { "id": "cathedral_knight", "name": "대성전 기사", "suit": "H", "tier": 4, "class": "saint", "race": "human", "attackType": "melee", "baseDps": 85.2, "dpsFactor": 0.7, "attackInterval": 1.1, "range": 2, "value": 625, "effect": { "type": "aura_attack_speed", "pct": 10, "area": "global" }, "desc": "전체 공속 +10% 오라 + 중견 딜" },
     { "id": "seraphim", "name": "세라핌", "suit": "H", "tier": 5, "class": "transcendent", "race": "spirit", "attackType": "magic", "baseDps": 187.4, "dpsFactor": 0.8, "attackInterval": 1.4, "range": 4, "value": 1563, "effect": { "type": "aura_attack_pct", "pct": 15, "area": "global" }, "desc": "아군 전체 공격력 +15% + 신성 광역" },
 
