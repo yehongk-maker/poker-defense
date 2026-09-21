@@ -27,7 +27,7 @@ export class ManagePanel extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene, y: number, cb: ManageCallbacks) {
     super(scene, 0, y);
     this.summary = scene.add.text(GAME_WIDTH / 2, -130, '', { fontSize: '34px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.hint = scene.add.text(GAME_WIDTH / 2, -62, '새로 소환된 유닛(배치 표시)은 빈 칸 탭으로 1회 이동 · 확정된 유닛은 판매만 가능 · 같은 수트 한 줄 = 빙고', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
+    this.hint = scene.add.text(GAME_WIDTH / 2, -62, '반투명 유닛은 빈 칸 탭으로 1회 이동 가능 (안 옮기면 그 자리로 확정) · 확정 유닛은 판매만 · 같은 수트 한 줄 = 빙고', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
     this.add([this.summary, this.hint]);
 
     const row = 20;
@@ -50,7 +50,7 @@ export class ManagePanel extends Phaser.GameObjects.Container {
     const isHero = !!u && loop.hero?.unit === u;
     if (u && !isHero) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
     else this.sellBtn.setLabel(isHero ? '영웅은 판매 불가' : '판매 (유닛 탭)').setEnabled(false);
-    this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸${auraText(u.def.effect)} — ${u.placed ? '배치 확정 (판매만 가능)' : '빈 칸 탭: 1회 배치'}` : '새로 소환된 유닛(배치 표시)은 빈 칸 탭으로 1회 이동 · 확정된 유닛은 판매만 가능 · 같은 수트 한 줄 = 빙고');
+    this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸${auraText(u.def.effect)} — ${u.placed ? '배치 확정 (판매만 가능)' : '빈 칸 탭: 1회 배치'}` : '반투명 유닛은 빈 칸 탭으로 1회 이동 가능 (안 옮기면 그 자리로 확정) · 확정 유닛은 판매만 · 같은 수트 한 줄 = 빙고');
     const hero = loop.canSummonHero ? '영웅 소환 가능!' : '업그레이드';
     this.upgradesBtn.setLabel(`${hero}\n영웅 ▶`);
   }

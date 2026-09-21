@@ -88,13 +88,12 @@ export class TrackView {
       const range = this.scene.add.text(CELL / 2 - 10, -CELL / 2 + 8, `⌖${u.def.range}`, { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0);
       c.add([shape, badge, name, range]);
       if (!u.placed) {
-        // 미확정: 점선 느낌의 금색 테두리 + "배치" 표시 (전투 시작 전 1회 이동 가능)
+        // 미확정(소환 직후, 1회 이동 가능): 반투명 + 금색 테두리 + "배치" 표시. 배치하지 않아도 전투 시작 시 이 자리로 확정된다
+        c.setAlpha(0.55);
         const ring = this.scene.add.rectangle(0, 0, CELL - 16, CELL - 16).setStrokeStyle(3, COLORS.goldLight, 0.9);
-        ring.setFillStyle(COLORS.goldLight, 0.06);
         const tag = this.scene.add.text(-CELL / 2 + 10, -CELL / 2 + 8, '배치', { fontSize: '18px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' });
         c.addAt(ring, 0);
         c.add(tag);
-        this.scene.tweens.add({ targets: ring, alpha: 0.35, duration: 600, yoyo: true, repeat: -1 });
       }
       this.unitSprites.push(c);
     };
@@ -109,6 +108,15 @@ export class TrackView {
       const color = SUIT_COLOR[line.key as keyof typeof SUIT_COLOR] ?? 0xf1d17a;
       this.bingoGfx.lineStyle(14, color, 0.28).lineBetween(a.x, a.y, b.x, b.y);
       this.bingoGfx.lineStyle(4, 0xf1d17a, 0.9).lineBetween(a.x, a.y, b.x, b.y);
+    }
+
+    // 미확정 유닛은 사거리 원을 항상 표시 (어디에 두면 트랙에 닿는지 바로 보이게)
+    for (const u of loop.unplacedUnits) {
+      if (u === selected) continue;
+      const { x, y } = this.cellCenter(u.slot);
+      const r = (u.def.range + (u.rangeBonus ?? 0)) * CELL;
+      this.rangeGfx.fillStyle(SUIT_COLOR[u.def.suit], 0.05).fillCircle(x, y, r);
+      this.rangeGfx.lineStyle(2, SUIT_COLOR[u.def.suit], 0.45).strokeCircle(x, y, r);
     }
 
     if (selected) {
