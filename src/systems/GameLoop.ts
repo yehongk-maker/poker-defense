@@ -27,6 +27,7 @@ import {
   type BattleTickEvents,
 } from './Battle.ts';
 import { SynergySystem, type SynergiesTable, type SynergyResult } from './SynergySystem.ts';
+import { coverage, type TrackGeometry } from './Geometry.ts';
 
 export type GamePhase = 'card' | 'manage' | 'combat' | 'victory' | 'defeat';
 
@@ -35,7 +36,7 @@ export interface HeroDef {
   name: string;
   suit: Suit;
   unlock: 'basic' | 'meta';
-  combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic' };
+  combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number };
   passive: Record<string, unknown> & { type: string };
   active: Record<string, unknown> & { id: string; cooldownSec: number };
 }
@@ -98,9 +99,14 @@ export class GameLoop {
   private battle_: Battle | null = null;
   private lastSynergy: SynergyResult | null = null;
   private lifeNegationsLeft = 0; // 빛의 치유사: 웨이브당 1회 무효
+  private coverageCache = new Map<number, number[]>(); // range → 슬롯별 트랙 커버리지
 
   constructor(private data: GameData, rng: () => number = Math.random) {
     this.rng = rng;
+    const g = data.battleConfig;
+    if (g.gridSize * g.gridSize !== data.config.maxSlots) {
+      throw new Error(`maxSlots(${data.config.maxSlots}) must equal gridSize²(${g.gridSize * g.gridSize})`);
+    }
     this._gold = data.config.startGold;
     this._life = data.config.startLife;
     this.mapper = new SummonMapper(data.units, data.hands, rng);
@@ -116,6 +122,30 @@ export class GameLoop {
   get life(): number { return this._life; }
   get shards(): number { return this._shards; }
   get units(): readonly DeployedUnit[] { return this._units; }
+  get geometry(): TrackGeometry { return { trackLength: this.data.battleConfig.trackLength, gridSize: this.data.battleConfig.gridSize }; }
+  /** 영웅 포함, 슬롯에 놓인 유닛 (없으면 null) */
+  unitAtSlot(slot: number): DeployedUnit | null {
+    if (this._hero && this._hero.unit.slot === slot) return this._hero.unit;
+    return this._units.find((u) => u.slot === slot) ?? null;
+  }
+  /** 비어 있는 슬롯 목록 */
+  get freeSlots(): number[] {
+    const used = new Set(this._units.map((u) => u.slot));
+    if (this._hero) used.add(this._hero.unit.slot);
+    const out: number[] = [];
+    for (let i = 0; i < this.data.config.maxSlots; i++) if (!used.has(i)) out.push(i);
+    return out;
+  }
+  /** 사거리별 슬롯 트랙 커버리지(0~1) — UI 힌트/자동 배치용 */
+  slotCoverage(range: number): number[] {
+    let c = this.coverageCache.get(range);
+    if (!c) {
+      c = [];
+      for (let i = 0; i < this.data.config.maxSlots; i++) c.push(coverage(this.geometry, i, range));
+      this.coverageCache.set(range, c);
+    }
+    return c;
+  }
   get hero() { return this._hero; }
   get activeSynergies() { return this.lastSynergy?.active ?? []; }
   /** 진행 중인 전투 (combat 페이즈에서만 non-null) — 씬이 적 위치를 그리는 데 사용 */
@@ -153,12 +183,13 @@ export class GameLoop {
     const res: DeployResult = { deployed: [], overflowSold: [], shardsGained: outcome.jokerShards, freeHeroSummon: false };
     for (const s of outcome.units) {
       const def = this.mapper.unitFor(s.suit, s.tier);
-      if (this._units.length >= this.data.config.maxSlots) {
+      const slot = this.autoSlot(def.range);
+      if (slot === null) {
         const gold = Math.floor(def.value * this.data.config.sellRatio);
         this._gold += gold;
         res.overflowSold.push({ unit: def, gold });
       } else {
-        const du: DeployedUnit = { def };
+        const du: DeployedUnit = { def, slot };
         this._units.push(du);
         res.deployed.push(du);
       }
@@ -174,6 +205,33 @@ export class GameLoop {
   }
 
   // ── 정비(manage): 판매/합성/업그레이드/영웅 ─────────────────
+  /**
+   * 유닛 배치 이동 (정비 페이즈). 대상 칸에 유닛/영웅이 있으면 자리를 맞바꾼다.
+   * @returns 이동 후 from 칸에 남는 유닛 (교환된 유닛) 또는 null
+   */
+  moveUnit(fromSlot: number, toSlot: number): DeployedUnit | null {
+    this.assertPhase('manage');
+    const max = this.data.config.maxSlots;
+    if (![fromSlot, toSlot].every((x) => Number.isInteger(x) && x >= 0 && x < max)) throw new Error(`Invalid slot ${fromSlot}→${toSlot}`);
+    const a = this.unitAtSlot(fromSlot);
+    if (!a) throw new Error(`No unit at slot ${fromSlot}`);
+    if (fromSlot === toSlot) return null;
+    const b = this.unitAtSlot(toSlot);
+    a.slot = toSlot;
+    if (b) b.slot = fromSlot;
+    return b;
+  }
+
+  /** 자동 배치: 사거리에 맞춰 트랙 커버리지가 가장 큰 빈 칸 (근접=가장자리, 원거리=안쪽이 자연 발생) */
+  private autoSlot(range: number): number | null {
+    const free = this.freeSlots;
+    if (free.length === 0) return null;
+    const cov = this.slotCoverage(range);
+    let best = free[0];
+    for (const s of free) if (cov[s] > cov[best] + 1e-9) best = s;
+    return best;
+  }
+
   /** 유닛 판매: 소환가치의 70% 환급 */
   sellUnit(index: number): number {
     this.assertPhase('manage');
@@ -197,7 +255,8 @@ export class GameLoop {
     const def = this._units[idxs[0]].def;
     if (def.tier >= 5) throw new Error('T5 units cannot merge');
     for (const i of idxs.slice(0, 3).reverse()) this._units.splice(i, 1);
-    const merged: DeployedUnit = { def: this.mapper.unitFor(def.suit, def.tier + 1) };
+    const mergedDef = this.mapper.unitFor(def.suit, def.tier + 1);
+    const merged: DeployedUnit = { def: mergedDef, slot: this.autoSlot(mergedDef.range)! };
     this._units.push(merged);
     this.recalcSynergy();
     return merged;
@@ -236,6 +295,8 @@ export class GameLoop {
     if (!this.canSummonHero) throw new Error('Not enough joker shards');
     const def = this.unlockedHeroes.find((h) => h.id === heroId);
     if (!def) throw new Error(`Hero not unlocked: ${heroId}`);
+    const slot = this.autoSlot(def.combat.range);
+    if (slot === null) throw new Error('No free slot for hero — sell a unit first');
 
     if (this.freeHero) this.freeHero = false;
     else this._shards -= this.data.config.hero.shardsRequired;
@@ -248,10 +309,10 @@ export class GameLoop {
       id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6,
       class: 'transcendent' as UnitClass, attackType: def.combat.attackType,
       baseDps: def.combat.baseDps * mult, dpsFactor: 1.0,
-      attackInterval: def.combat.attackInterval, range: 4,
+      attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
     };
-    this._hero = { def, grade, unit: { def: heroUnitDef } };
+    this._hero = { def, grade, unit: { def: heroUnitDef, slot } };
     this.recalcSynergy();
     return { def, grade };
   }

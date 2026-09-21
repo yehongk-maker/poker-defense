@@ -1,5 +1,5 @@
 {
-  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.15^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30). 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
+  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.15^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30), 제한시간 30s(보스 45s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 라이프, rangeDamageMult 사거리(셀)별 공격 배율. 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
   "formula": {
     "hpBase": 20,
     "hpGrowth": 1.15,
@@ -9,11 +9,19 @@
   },
   "config": {
     "trackLength": 40,
+    "gridSize": 5,
     "baseEnemySpeed": 4,
     "baseKillGold": 1,
     "bossKillGold": 20,
     "clearGoldBase": 30,
-    "clearGoldPerWave": 5
+    "clearGoldPerWave": 5,
+    "lifePerLeak": 1,
+    "bossLifePerLeak": 3,
+    "rangeDamageMult": {
+      "2": 1.35,
+      "3": 1,
+      "4": 0.75
+    }
   },
   "enemyTypes": {
     "normal": {
@@ -53,6 +61,7 @@
       "boss": false,
       "hp": 23,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -65,6 +74,7 @@
       "boss": false,
       "hp": 26,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -77,6 +87,7 @@
       "boss": false,
       "hp": 30,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -89,6 +100,7 @@
       "boss": false,
       "hp": 35,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -101,6 +113,7 @@
       "boss": false,
       "hp": 40,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -117,6 +130,7 @@
       "boss": false,
       "hp": 46,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -129,6 +143,7 @@
       "boss": false,
       "hp": 53,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "normal",
@@ -141,6 +156,7 @@
       "boss": false,
       "hp": 61,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -157,6 +173,7 @@
       "boss": false,
       "hp": 70,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -173,6 +190,7 @@
       "boss": true,
       "hp": 81,
       "spawnInterval": 0,
+      "timeLimit": 45,
       "groups": [
         {
           "type": "boss",
@@ -185,6 +203,7 @@
       "boss": false,
       "hp": 93,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -201,6 +220,7 @@
       "boss": false,
       "hp": 107,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -217,6 +237,7 @@
       "boss": false,
       "hp": 123,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -233,6 +254,7 @@
       "boss": false,
       "hp": 142,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -249,6 +271,7 @@
       "boss": false,
       "hp": 163,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -265,6 +288,7 @@
       "boss": false,
       "hp": 187,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -281,6 +305,7 @@
       "boss": false,
       "hp": 215,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -297,6 +322,7 @@
       "boss": false,
       "hp": 248,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -313,6 +339,7 @@
       "boss": false,
       "hp": 285,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -329,6 +356,7 @@
       "boss": true,
       "hp": 327,
       "spawnInterval": 0,
+      "timeLimit": 45,
       "groups": [
         {
           "type": "boss",
@@ -341,6 +369,7 @@
       "boss": false,
       "hp": 376,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -357,6 +386,7 @@
       "boss": false,
       "hp": 433,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -373,6 +403,7 @@
       "boss": false,
       "hp": 498,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -389,6 +420,7 @@
       "boss": false,
       "hp": 573,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -405,6 +437,7 @@
       "boss": false,
       "hp": 658,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -421,6 +454,7 @@
       "boss": false,
       "hp": 757,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -437,6 +471,7 @@
       "boss": false,
       "hp": 871,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -453,6 +488,7 @@
       "boss": false,
       "hp": 1001,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -469,6 +505,7 @@
       "boss": false,
       "hp": 1152,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -485,6 +522,7 @@
       "boss": true,
       "hp": 1324,
       "spawnInterval": 0,
+      "timeLimit": 45,
       "groups": [
         {
           "type": "boss",
@@ -497,6 +535,7 @@
       "boss": false,
       "hp": 1523,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -513,6 +552,7 @@
       "boss": false,
       "hp": 1751,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -529,6 +569,7 @@
       "boss": false,
       "hp": 2014,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -545,6 +586,7 @@
       "boss": false,
       "hp": 2316,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -561,6 +603,7 @@
       "boss": false,
       "hp": 2664,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -577,6 +620,7 @@
       "boss": false,
       "hp": 3063,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -593,6 +637,7 @@
       "boss": false,
       "hp": 3522,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "regen",
@@ -609,6 +654,7 @@
       "boss": false,
       "hp": 4051,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "fast",
@@ -625,6 +671,7 @@
       "boss": false,
       "hp": 4658,
       "spawnInterval": 0.8,
+      "timeLimit": 30,
       "groups": [
         {
           "type": "armored",
@@ -641,6 +688,7 @@
       "boss": true,
       "hp": 5357,
       "spawnInterval": 0,
+      "timeLimit": 45,
       "groups": [
         {
           "type": "boss",

@@ -13,7 +13,7 @@ src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
   scenes/        Boot, Lobby, Game (+ UpgradePanel 예정)  ← Phaser 의존 OK
-  systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop
+  systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출), Button, theme (Phaser)
@@ -34,7 +34,8 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 ## 데이터 스키마 요약
 - `units.json`: 수트(S/H/D/C)×티어(1~5) 20종. `baseDps×dpsFactor×attackInterval` = 1회 데미지. `effect.type`으로 특수 효과.
 - `hands.json`: 족보 → `summonTiers[]`, `jokerShards`, `heroSummon`.
-- `waves.json`: 40웨이브. `npm run waves`(scripts/generate-waves.mjs)로 생성. 공식은 파일의 `formula` 필드(hp = 20×1.15^wave, 마릿수 4+0.5w). 직접 편집도 가능.
+- `waves.json`: 40웨이브. `npm run waves`(scripts/generate-waves.mjs)로 생성. 공식은 파일의 `formula` 필드(hp = 20×1.15^wave, 마릿수 4+0.5w). 웨이브별 `timeLimit`(30s, 보스 45s). `config`: gridSize(5), lifePerLeak/bossLifePerLeak(1/3), rangeDamageMult(사거리 2/3/4 → ×1.35/1.0/0.75).
+- 전투 룰(GDD 3.5~3.6): 적은 제한 시간 동안 트랙을 돌고, 시간 종료 시 남은 적당 라이프 차감. 유닛은 슬롯에서 사거리(셀) 안의 적만 공격 → 배치가 핵심. `DeployedUnit.slot` 필수, 자동 배치는 `GameLoop.autoSlot`(커버리지 최대 빈 칸), 이동은 `moveUnit`.
 - 밸런스 검증: `npm run sim` (scripts/simulate.ts, 봇 3종 헤드리스). `tests/Balance.test.ts`가 GDD 3.5 목표를 회귀 테스트로 고정.
 - `synergies.json`: 수트(2/4/6) + 클래스(2/4) 2축. 상위 구간이 하위를 대체.
 - `heroes.json`: 영웅 8종. `active`는 데이터만 정의됨(미구현).
@@ -42,8 +43,8 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 
 ## 진행 상태 (2026-09-20)
 - 완료: Phase 0 셋업, Phase 1~2 로직 전부(systems/ + 테스트 121개).
-- 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 봇 기준 하이카드 중앙값 20, 무전략 22, 최선 29.
-- 완료: GameScene 플레이 가능. 카드 선택/교환/진행 → 정비(합성·판매·전투 시작) → 전투(적 순환·타격선·배속) → 승리/패배 화면.
+- 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 2026-09-21 제한 시간·사거리 룰 적용 후 봇 기준 하이카드 중앙값 22, 무전략 24, 최선 31 (목표 범위 안).
+- 완료: GameScene 플레이 가능. 카드 선택/교환/진행 → 정비(배치 이동·합성·판매·전투 시작) → 전투(제한 시간 타이머·적 순환·타격선·배속·시간 초과 토스트) → 승리/패배 화면. TrackView는 선택 유닛의 사거리 원과 빈 칸 커버리지 힌트를 표시.
 - 완료: 스와이프 업그레이드 화면(UpgradePanel + SwipeController). 종족 업그레이드 4종, 조커 조각, 영웅 8종 카드(기본 4 소환 가능·메타 4 잠금, 등급 미리보기). 좌스와이프/우측 핸들/정비 패널 버튼으로 열고, 우스와이프/게임 화면 버튼으로 닫음. 구매·소환은 정비 페이즈에서만.
 - 족보 표시/연출: CardHand가 패 위에 현재 족보를 라이브로 표시(evaluateHand 순수함수 재사용). HandFx.RANK_TIER(0~5)로 색·크기·맥동·불꽃·링·흔들림·플래시가 단계적으로 강해짐. 확정 시 트랙 중앙 큰 연출, 교환으로 족보가 오르면 패 위 작은 연출.
 - 입력 규칙: 버튼/카드/슬롯 탭은 pointerup + 이동거리 TAP_SLOP(24px) 이하일 때만 (스와이프와 구분).

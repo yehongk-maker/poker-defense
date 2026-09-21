@@ -35,7 +35,7 @@ export class GameScene extends Phaser.Scene {
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
   private toast!: Phaser.GameObjects.Text;
-  private selectedUnit = -1;
+  private selectedSlot = -1;
   private speed = 1;
   private ended = false;
 
@@ -46,7 +46,7 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.data_ = loadGameData();
     this.loop = new GameLoop(this.data_);
-    this.selectedUnit = -1;
+    this.selectedSlot = -1;
     this.speed = 1;
     this.ended = false;
 
@@ -75,18 +75,20 @@ export class GameScene extends Phaser.Scene {
       onMerge: () => this.safe(() => {
         const ids = this.loop.mergeable;
         for (const id of ids) { try { const m = this.loop.mergeUnits(id); this.showToast(`합성 → ${m.def.name} T${m.def.tier}`); } catch { /* 경합 */ } }
-        this.selectedUnit = -1;
+        this.selectedSlot = -1;
       }),
       onSell: () => this.safe(() => {
-        const g = this.loop.sellUnit(this.selectedUnit);
-        this.selectedUnit = -1;
+        const u = this.loop.unitAtSlot(this.selectedSlot);
+        const idx = u ? this.loop.units.indexOf(u) : -1;
+        if (idx < 0) throw new Error('판매할 유닛을 탭하세요');
+        const g = this.loop.sellUnit(idx);
+        this.selectedSlot = -1;
         this.showToast(`판매 +💰${g}`);
       }),
       onOpenUpgrades: () => this.swipe.open(),
       onStart: () => this.safe(() => {
         this.loop.startCombat();
-        this.selectedUnit = -1;
-        this.track.setUnits(this.loop.units);
+        this.selectedSlot = -1;
         this.refreshPanels();
       }),
     });
@@ -116,11 +118,20 @@ export class GameScene extends Phaser.Scene {
 
     this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(20);
 
-    this.track.setUnitTapHandler((i) => {
+    // 배치: 유닛 탭 = 선택, 선택 중 빈 칸 탭 = 이동, 다른 유닛 탭 = 자리 교환, 같은 칸 = 해제
+    this.track.setCellTapHandler((slot) => {
       if (this.loop.phase !== 'manage') return;
-      this.selectedUnit = this.selectedUnit === i || i >= this.loop.units.length ? -1 : i;
-      this.track.setUnits(this.loop.units, this.selectedUnit);
-      this.manage.refresh(this.loop, this.selectedUnit, this.data_.config.sellRatio);
+      const here = this.loop.unitAtSlot(slot);
+      if (this.selectedSlot < 0) {
+        this.selectedSlot = here ? slot : -1;
+      } else if (slot === this.selectedSlot) {
+        this.selectedSlot = -1;
+      } else {
+        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); });
+        this.selectedSlot = here ? -1 : slot; // 교환이면 해제, 이동이면 따라감
+      }
+      this.track.setField(this.loop, this.selectedSlot);
+      this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
     });
 
     this.refreshHand();
@@ -142,21 +153,24 @@ export class GameScene extends Phaser.Scene {
 
     if (this.loop.phase === 'combat') {
       const steps = this.speed;
-      let kills = 0;
       for (let i = 0; i < steps && this.loop.phase === 'combat'; i++) {
         const ev = this.loop.tickCombat(dt);
-        kills += ev.kills;
         const b = this.loop.battle;
-        if (b) this.track.addHits(ev.hits, this.loop, b.aliveEnemies, cfg.trackLength);
+        if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
+        if (ev.timeUp && ev.leaked > 0) {
+          this.showToast(`⏱ 시간 초과! 이탈 ${ev.leaked}기 → 라이프 -${ev.lifeLost}`);
+          this.cameras.main.flash(220, 224, 71, 63);
+        }
       }
       const b = this.loop.battle;
       if (b) {
         this.track.updateEnemies(b.aliveEnemies, cfg.trackLength);
-        this.combatText.setText(`웨이브 ${this.loop.wave} 전투 중 — 남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`);
+        const t = Math.ceil(b.timeRemaining);
+        this.combatText.setText(`웨이브 ${this.loop.wave}   ⏱ ${t}초   남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
+          .setColor(t <= 5 ? '#e0473f' : COLORS.text);
       }
       this.track.update(dt * steps);
       this.hud.refresh(this.loop, this.data_.config.totalWaves);
-      if (kills > 0 && this.loop.phase === 'combat') { /* 처치 골드는 HUD에 반영됨 */ }
 
       if (this.loop.phase !== 'combat') {
         // 클리어 → 카드 / 패배 / 승리
@@ -186,7 +200,7 @@ export class GameScene extends Phaser.Scene {
     if (res.shardsGained) lines.push(`조커 조각 +${res.shardsGained}`);
     if (res.freeHeroSummon) lines.push('로열 스트레이트 플러시! 영웅 즉시 소환 가능');
     this.manage.setSummary(lines.join('\n'));
-    this.selectedUnit = -1;
+    this.selectedSlot = -1;
     this.refreshPanels();
   }
 
@@ -204,8 +218,8 @@ export class GameScene extends Phaser.Scene {
     this.hand.setVisible(ph === 'card');
     this.manage.setVisible(ph === 'manage');
     this.combatPanel.setVisible(ph === 'combat');
-    this.track.setUnits(this.loop.units, ph === 'manage' ? this.selectedUnit : -1);
-    if (ph === 'manage') this.manage.refresh(this.loop, this.selectedUnit, this.data_.config.sellRatio);
+    this.track.setField(this.loop, ph === 'manage' ? this.selectedSlot : -1);
+    if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
     this.upgrades.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves);
   }

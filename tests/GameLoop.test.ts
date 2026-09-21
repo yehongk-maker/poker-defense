@@ -56,6 +56,7 @@ describe('confirmHand → 소환/조각/정비 페이즈', () => {
   it('슬롯(25) 초과 소환은 자동 판매로 골드 환급', () => {
     const data = baseData();
     data.config = { ...data.config, maxSlots: 1 };
+    data.battleConfig = { ...data.battleConfig, gridSize: 1 }; // maxSlots = gridSize²
     const g = new GameLoop(data, seededRng(3));
     const goldBefore = g.gold;
     const r = g.confirmHand();
@@ -214,14 +215,32 @@ describe('전투 통합', () => {
     throw new Error('no seed cleared wave 1');
   });
 
-  it('유닛 0기로 전투 시 라이프가 깎이고 결국 패배', () => {
+  it('유닛 0기로 전투 시 제한 시간마다 남은 적만큼 라이프가 깎이고 결국 패배', () => {
     const g = new GameLoop(baseData(), seededRng(50));
-    g.confirmHand();
-    while (g.units.length > 0) g.sellUnit(0);
-    g.startCombat();
-    fight(g, 600);
+    let rounds = 0;
+    while (g.phase !== 'defeat' && ++rounds < 20) {
+      g.confirmHand();
+      while (g.units.length > 0) g.sellUnit(0);
+      g.startCombat();
+      fight(g, 600);
+    }
     expect(g.phase).toBe('defeat');
     expect(g.life).toBe(0);
+    expect(rounds).toBeLessThanOrEqual(3); // 웨이브 1~2 = 5+5 이탈 ≥ 라이프 10
+  });
+
+  it('배치: 근접은 가장자리, 사거리 4는 안쪽 칸에 자동 배치되고 moveUnit으로 자리를 바꿀 수 있다', () => {
+    const g = new GameLoop(baseData(), seededRng(11));
+    g.confirmHand();
+    const u = g.units[0];
+    const cov = g.slotCoverage(u.def.range);
+    // 자동 배치 = 빈 칸 중 커버리지 최대
+    expect(cov[u.slot]).toBe(Math.max(...cov));
+    const target = g.freeSlots[0];
+    g.moveUnit(u.slot, target);
+    expect(u.slot).toBe(target);
+    expect(g.unitAtSlot(target)).toBe(u);
+    expect(() => g.moveUnit(target, 99)).toThrow();
   });
 });
 

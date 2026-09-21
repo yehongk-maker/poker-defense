@@ -10,6 +10,7 @@ import {
   type DeployedUnit,
 } from '../src/systems/Battle.ts';
 import { type UnitDef } from '../src/systems/SummonMapper.ts';
+import { coverage, type TrackGeometry } from '../src/systems/Geometry.ts';
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
 const wavesJson = JSON.parse(readFileSync(join(dataDir, 'waves.json'), 'utf8'));
@@ -24,23 +25,39 @@ const unit = (id: string): UnitDef => {
   if (!u) throw new Error(`no unit ${id}`);
   return u;
 };
-const deploy = (...ids: string[]): DeployedUnit[] => ids.map((id) => ({ def: unit(id) }));
+const geo: TrackGeometry = { trackLength: config.trackLength, gridSize: config.gridSize };
+/** 사거리에 맞춰 트랙 커버리지가 가장 큰 빈 슬롯에 배치 (GameLoop.autoSlot과 동일 규칙) */
+const deploy = (...ids: string[]): DeployedUnit[] => {
+  const used = new Set<number>();
+  return ids.map((id) => {
+    const def = unit(id);
+    let best = -1;
+    for (let sl = 0; sl < config.gridSize ** 2; sl++) {
+      if (used.has(sl)) continue;
+      if (best < 0 || coverage(geo, sl, def.range) > coverage(geo, best, def.range)) best = sl;
+    }
+    used.add(best);
+    return { def, slot: best };
+  });
+};
 
 /** dt 0.1초씩 seconds 동안 tick, 이벤트 합산 */
 function run(b: Battle, seconds: number) {
-  const sum = { kills: 0, goldEarned: 0, lifeLost: 0, cleared: false };
+  const sum = { kills: 0, goldEarned: 0, lifeLost: 0, leaked: 0, timeUp: false, cleared: false };
   for (let t = 0; t < seconds; t += 0.1) {
     const ev = b.tick(0.1);
     sum.kills += ev.kills;
     sum.goldEarned += ev.goldEarned;
     sum.lifeLost += ev.lifeLost;
+    sum.leaked += ev.leaked;
+    sum.timeUp ||= ev.timeUp;
     sum.cleared = ev.cleared;
     if (sum.cleared) break;
   }
   return sum;
 }
 
-const wave1: WaveDef = { wave: 1, boss: false, hp: 24, spawnInterval: 0.5, groups: [{ type: 'normal', count: 5 }] };
+const wave1: WaveDef = { wave: 1, boss: false, hp: 24, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
 
 describe('waves.json 데이터 무결성 — GDD 3.5', () => {
   it('40웨이브, 보스는 10/20/30/40', () => {
@@ -77,21 +94,64 @@ describe('waves.json 데이터 무결성 — GDD 3.5', () => {
   });
 });
 
-describe('적 이동과 완주 → 라이프 차감', () => {
-  it('유닛 없으면 한 바퀴(트랙 40 / 속도 4 = 10초)마다 적 1기당 라이프 -1', () => {
+describe('제한 시간 → 남은 적 이탈 → 라이프 차감', () => {
+  it('바퀴를 돌아도 라이프는 안 깎이고, 제한 시간이 끝나면 남은 적 1기당 -1', () => {
     const b = new Battle(wave1, enemyTypes, [], config);
-    // 5기 스폰(0~2초) 후 각자 10초에 첫 완주 → 12.5초까지 5회 완주
-    const sum = run(b, 12.5);
-    expect(sum.lifeLost).toBe(5);
-    expect(sum.kills).toBe(0);
-    expect(b.cleared).toBe(false); // 적이 살아있으면 클리어 아님
+    const mid = run(b, 12.5); // 5기 모두 한 바퀴 이상 완주
+    expect(mid.lifeLost).toBe(0);
+    expect(b.aliveEnemies.some((e) => e.laps >= 1)).toBe(true);
+    expect(b.cleared).toBe(false);
+    const end = run(b, 20); // 총 32.5초 > timeLimit 30
+    expect(end.timeUp).toBe(true);
+    expect(end.leaked).toBe(5);
+    expect(end.lifeLost).toBe(5 * config.lifePerLeak);
+    expect(end.cleared).toBe(true);
+    expect(b.aliveEnemies.length).toBe(0);
+    expect(b.tick(0.1).cleared).toBe(true); // 종료 후 tick은 멈춘 상태 유지
   });
 
-  it('fast 타입은 1.6배 빨리 완주', () => {
+  it('보스 이탈은 bossLifePerLeak만큼 차감', () => {
+    const w: WaveDef = { wave: 10, boss: true, hp: 1e9, spawnInterval: 0, timeLimit: 5, groups: [{ type: 'boss', count: 1 }] };
+    const sum = run(new Battle(w, enemyTypes, [], config), 10);
+    expect(sum.lifeLost).toBe(config.bossLifePerLeak);
+  });
+
+  it('fast 타입은 1.6배 빨리 한 바퀴 (10초 → 6.25초)', () => {
     const w: WaveDef = { ...wave1, groups: [{ type: 'fast', count: 1 }] };
     const b = new Battle(w, enemyTypes, [], config);
-    const sum = run(b, 6.5); // 10/1.6 = 6.25초에 완주
-    expect(sum.lifeLost).toBe(1);
+    run(b, 6.5);
+    expect(b.aliveEnemies[0].laps).toBe(1);
+    const n = new Battle(wave1, enemyTypes, [], config);
+    run(n, 6.5);
+    expect(n.aliveEnemies.every((e) => e.laps === 0)).toBe(true);
+  });
+});
+
+describe('사거리와 배치 — 슬롯에서 사거리 안의 적만 공격', () => {
+  it('근접(사거리 2)은 가장자리 칸에서만 트랙에 닿고, 중앙 칸에서는 아무것도 못 때린다', () => {
+    const def = unit('spear_striker');
+    const w: WaveDef = { ...wave1, groups: [{ type: 'normal', count: 3 }] };
+    const edge = run(new Battle(w, enemyTypes, [{ def, slot: 0 }], config), 30);
+    const center = run(new Battle(w, enemyTypes, [{ def, slot: 12 }], config), 30);
+    expect(edge.kills).toBeGreaterThan(0);
+    expect(center.kills).toBe(0);
+    expect(center.leaked).toBe(3);
+  });
+
+  it('원거리(사거리 4)는 중앙 칸에서 트랙 4변 모두에 닿아 커버리지가 가장자리보다 크다', () => {
+    expect(coverage(geo, 12, 4)).toBeGreaterThan(coverage(geo, 0, 4));
+    expect(coverage(geo, 0, 2)).toBeGreaterThan(0);
+    expect(coverage(geo, 12, 2)).toBe(0);
+  });
+
+  it('사거리별 공격 배율: 근접(2) > 마법(3) > 원거리(4)', () => {
+    const m = config.rangeDamageMult;
+    expect(m['2']).toBeGreaterThan(m['3']);
+    expect(m['3']).toBeGreaterThan(m['4']);
+  });
+
+  it('잘못된 슬롯은 throw', () => {
+    expect(() => new Battle(wave1, enemyTypes, [{ def: unit('imp'), slot: 25 }], config)).toThrow();
   });
 });
 
@@ -106,8 +166,8 @@ describe('유닛 공격과 처치', () => {
   });
 
   it('공격력 보너스(attackPctBonus)만큼 더 빨리 잡는다', () => {
-    const weak: DeployedUnit[] = [{ def: unit('spear_striker') }];
-    const buffed: DeployedUnit[] = [{ def: unit('spear_striker'), attackPctBonus: 100 }];
+    const weak: DeployedUnit[] = deploy('spear_striker');
+    const buffed: DeployedUnit[] = [{ ...deploy('spear_striker')[0], attackPctBonus: 100 }];
     const w: WaveDef = { ...wave1, groups: [{ type: 'normal', count: 3 }] };
     const t1 = run(new Battle(w, enemyTypes, weak, config), 60);
     const t2 = run(new Battle(w, enemyTypes, buffed, config), 60);
@@ -117,7 +177,7 @@ describe('유닛 공격과 처치', () => {
 });
 
 describe('적 타입 상성 — GDD "적 웨이브 타입이 각 역할을 카운터"', () => {
-  const armoredWave: WaveDef = { wave: 8, boss: false, hp: 300, spawnInterval: 0.5, groups: [{ type: 'armored', count: 1 }] };
+  const armoredWave: WaveDef = { wave: 8, boss: false, hp: 300, spawnInterval: 0.5, timeLimit: 120, groups: [{ type: 'armored', count: 1 }] };
 
   it('중갑: 물리 공격은 50% 감소, 마법은 관통', () => {
     // 물리(창격병 dps 8) vs 마법(임프 dps 8) — 같은 dps로 중갑 1기 공격
@@ -135,14 +195,15 @@ describe('적 타입 상성 — GDD "적 웨이브 타입이 각 역할을 카�
   });
 
   it('armor_pierce(파쇄 기수)는 물리인데도 저항 무시', () => {
-    const bPierce = new Battle(armoredWave, enemyTypes, deploy('crusher_rider'), config);
-    run(bPierce, 10);
-    // 관통 dps 38.7 → 10초 387뎀 ≥ 360hp → 처치
-    expect(bPierce.cleared).toBe(true);
+    // 근접(사거리 2)은 가장자리 칸에서 트랙 일부만 커버하므로 여러 바퀴에 걸쳐 때린다
+    const pierce = run(new Battle(armoredWave, enemyTypes, deploy('crusher_rider'), config), 120);
+    const phys = run(new Battle(armoredWave, enemyTypes, deploy('spear_striker'), config), 120);
+    expect(pierce.kills).toBe(1);
+    expect(phys.kills).toBe(0); // 같은 근접·물리지만 저항 50%에 막혀 제한 시간 안에 못 잡음
   });
 
   it('regen 타입은 회복한다 (약한 유닛으론 오래 걸림)', () => {
-    const regenWave: WaveDef = { wave: 12, boss: false, hp: 100, spawnInterval: 0.5, groups: [{ type: 'regen', count: 1 }] };
+    const regenWave: WaveDef = { wave: 12, boss: false, hp: 100, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'regen', count: 1 }] };
     const b = new Battle(regenWave, enemyTypes, [], config);
     b.tick(0.1); // 스폰
     const e = b.aliveEnemies[0];
@@ -155,10 +216,11 @@ describe('적 타입 상성 — GDD "적 웨이브 타입이 각 역할을 카�
 describe('보스', () => {
   it('보스 웨이브: hpMult 25배, 처치 시 보스 골드', () => {
     const bossWave = waves.find((w) => w.wave === 10)!;
-    const strong: DeployedUnit[] = [{ def: unit('abyss_dragon') }, { def: unit('abyss_dragon') }];
+    const strong: DeployedUnit[] = deploy('abyss_dragon', 'abyss_dragon');
     const b = new Battle(bossWave, enemyTypes, strong, config);
     const sum = run(b, 120);
-    expect(sum.cleared).toBe(true);
+    expect(sum.kills).toBe(1);
+    expect(sum.timeUp).toBe(false);
     expect(sum.goldEarned).toBe(config.bossKillGold);
   });
 
@@ -178,18 +240,18 @@ describe('보스', () => {
 });
 
 describe('CC 효과', () => {
-  it('slow_curse(해골 주술사): 감속으로 완주가 늦어진다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0, groups: [{ type: 'normal', count: 1 }] };
+  it('slow_curse(해골 주술사): 감속으로 이동 거리가 줄어든다', () => {
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 1 }] };
     const free = new Battle(w, enemyTypes, [], config);
     const slowed = new Battle(w, enemyTypes, deploy('skull_shaman'), config);
-    const a = run(free, 10.5);
-    const c = run(slowed, 10.5);
-    expect(a.lifeLost).toBe(1);
-    expect(c.lifeLost).toBe(0); // 감속으로 아직 완주 못 함
+    run(free, 10.5);
+    run(slowed, 10.5);
+    const travelled = (b: Battle) => b.aliveEnemies[0].laps * 40 + b.aliveEnemies[0].pos;
+    expect(travelled(free)).toBeGreaterThan(travelled(slowed));
   });
 
   it('aoe_stun(강철 거신): 기절 동안 이동 정지', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, timeLimit: 30, groups: [{ type: 'normal', count: 3 }] };
     const free = new Battle(w, enemyTypes, [], config);
     const stunned = new Battle(w, enemyTypes, deploy('steel_colossus'), config);
     run(free, 10.5);
@@ -202,7 +264,7 @@ describe('CC 효과', () => {
 
 describe('다중 타겟', () => {
   it('chain_lightning(뇌전 군주): 한 공격이 최대 3체를 때린다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, groups: [{ type: 'normal', count: 5 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
     const b = new Battle(w, enemyTypes, deploy('thunder_lord'), config);
     run(b, 5);
     const damaged = b.aliveEnemies.filter((e) => e.hp < e.maxHp).length;
@@ -210,7 +272,7 @@ describe('다중 타겟', () => {
   });
 
   it('splash(화염 술사): 뭉친 적들이 같이 맞는다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, groups: [{ type: 'normal', count: 5 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
     const b = new Battle(w, enemyTypes, deploy('flame_caster'), config);
     run(b, 5);
     const damaged = b.aliveEnemies.filter((e) => e.hp < e.maxHp).length;
@@ -243,7 +305,7 @@ describe('경제 효과', () => {
   });
 
   it('gold_scaling_damage(황금 비룡): 보유 골드만큼 데미지 증가', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e6, spawnInterval: 0, groups: [{ type: 'normal', count: 1 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e6, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 1 }] };
     const poor = new Battle(w, enemyTypes, deploy('golden_wyrm'), config, { getGold: () => 0 });
     const rich = new Battle(w, enemyTypes, deploy('golden_wyrm'), config, { getGold: () => 10000 });
     run(poor, 5); run(rich, 5);
@@ -261,11 +323,12 @@ describe('통합: 실제 웨이브 진행 시뮬레이션', () => {
     }
   });
 
-  it('같은 부대로 웨이브 20은 클리어 불가 (난이도 상승 확인)', () => {
+  it('같은 부대로 웨이브 20은 전멸 불가 → 시간 초과로 이탈, 라이프 차감 (난이도 상승 확인)', () => {
     const squad = deploy('spear_striker', 'imp');
     const b = new Battle(waves[19], enemyTypes, squad, config);
     const sum = run(b, 180);
-    expect(sum.cleared).toBe(false);
+    expect(sum.timeUp).toBe(true);
+    expect(sum.leaked > 0).toBe(true);
     expect(sum.lifeLost > 0).toBe(true);
   });
 });

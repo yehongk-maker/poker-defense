@@ -1,16 +1,20 @@
 /**
  * Battle — 한 웨이브의 전투 시뮬레이션 (적 순환 트랙 이동 + 유닛 자동 공격)
  *
- * GDD 3.5 근거:
- *  - 적은 외곽 순환 트랙을 돌고, 한 바퀴 돌 때마다 라이프 -1 (적은 죽을 때까지 계속 돈다)
+ * GDD 3.5 (개정) 근거:
+ *  - 적은 외곽 순환 트랙을 제한 시간(timeLimit) 동안 계속 돈다. 시간 안에 못 잡은 적 1기당 라이프 차감
+ *    (lifePerLeak, 보스는 bossLifePerLeak). 바퀴 수는 라이프에 영향 없음.
  *  - 적 타입: normal / fast(이속↑) / armored(물리저항, 마법은 관통) / regen(초당 회복) / boss
- *  - 유닛은 자동 타겟팅(최전방 우선), 공격 쿨타임 = attackInterval / 공속 배율
+ *  - 유닛은 자기 슬롯에서 사거리(range, 셀 단위) 안의 적만 공격 (최전방 우선) → 배치가 중요
+ *  - 사거리별 공격 배율 rangeDamageMult: 근접(짧은 사거리)일수록 강하다
+ *  - 공격 쿨타임 = attackInterval / 공속 배율
  *
  * 순수 로직: Phaser 의존 없음. 씬은 tick(dt)의 이벤트로 연출만 그린다.
  * 시너지/업그레이드는 DeployedUnit의 보너스 필드로 주입된다 (SynergySystem이 채움).
  */
 
 import { type UnitDef } from './SummonMapper.ts';
+import { inRange, type TrackGeometry } from './Geometry.ts';
 
 export interface EnemyTypeDef {
   speedMult: number;
@@ -29,21 +33,32 @@ export interface WaveDef {
   boss: boolean;
   hp: number;
   spawnInterval: number;
+  /** 제한 시간(초). 초과 시 남은 적은 이탈 → 라이프 차감 */
+  timeLimit: number;
   groups: WaveGroup[];
 }
 
 export interface BattleConfig {
   trackLength: number;
+  /** 유닛 슬롯 격자 한 변 (5 → 25칸) */
+  gridSize: number;
   baseEnemySpeed: number;
   baseKillGold: number;
   bossKillGold: number;
   clearGoldBase: number;
   clearGoldPerWave: number;
+  /** 시간 초과 이탈 적 1기당 라이프 차감 */
+  lifePerLeak: number;
+  bossLifePerLeak: number;
+  /** 사거리(셀) → 공격 배율. 근접일수록 크다 (예: {"2":1.35,"3":1.0,"4":0.75}) */
+  rangeDamageMult: Record<string, number>;
 }
 
 /** 필드에 배치된 유닛. 보너스 필드는 SynergySystem이 채운다 (기본 0/false). */
 export interface DeployedUnit {
   def: UnitDef;
+  /** 격자 슬롯 (0 ~ gridSize²-1). 사거리 판정의 기준점 */
+  slot: number;
   /** 공격력 +% (수트 시너지, 오라, 라운드 업그레이드 등) */
   attackPctBonus?: number;
   /** 공속 +% */
@@ -97,7 +112,11 @@ export interface BattleTickEvents {
   goldEarned: number;
   /** 이번 tick에 잃은 라이프 (적 완주) */
   lifeLost: number;
-  /** 이번 tick 종료 기준 웨이브 클리어 여부 */
+  /** 이번 tick에 제한 시간이 끝났는가 */
+  timeUp: boolean;
+  /** 시간 초과로 이탈한 적 수 */
+  leaked: number;
+  /** 이번 tick 종료 기준 웨이브 종료 여부 (전멸 또는 시간 초과) */
   cleared: boolean;
 }
 
@@ -124,7 +143,9 @@ export class Battle {
   private enemies: Enemy[] = [];
   private spawnQueue: { type: string; at: number }[] = [];
   private elapsed = 0;
+  private timeUp = false;
   private nextEnemyId = 1;
+  readonly geometry: TrackGeometry;
   private getGold: () => number;
   private rng: () => number;
   private globalMods: { killGoldBonus: number; killGoldPct: number; bonusGoldChancePct: number; bonusGoldAmount: number };
@@ -136,6 +157,11 @@ export class Battle {
     private config: BattleConfig,
     options: BattleOptions = {}
   ) {
+    this.geometry = { trackLength: config.trackLength, gridSize: config.gridSize };
+    const maxSlot = config.gridSize * config.gridSize;
+    for (const u of units) {
+      if (!Number.isInteger(u.slot) || u.slot < 0 || u.slot >= maxSlot) throw new Error(`Invalid slot ${u.slot} for ${u.def.id}`);
+    }
     this.getGold = options.getGold ?? (() => 0);
     this.rng = options.rng ?? Math.random;
     this.globalMods = {
@@ -170,7 +196,16 @@ export class Battle {
   }
 
   get cleared(): boolean {
-    return this.allSpawned && this.enemies.every((e) => !e.alive);
+    return this.timeUp || (this.allSpawned && this.enemies.every((e) => !e.alive));
+  }
+
+  /** 남은 제한 시간(초) */
+  get timeRemaining(): number {
+    return Math.max(0, this.waveDef.timeLimit - this.elapsed);
+  }
+
+  get timeLimit(): number {
+    return this.waveDef.timeLimit;
   }
 
   /** 웨이브 클리어 골드: 30 + wave×5 (+금고 골렘 wave_gold_pct, 시너지 보정은 인자로) */
@@ -185,7 +220,8 @@ export class Battle {
 
   tick(dt: number): BattleTickEvents {
     this.elapsed += dt;
-    const ev: BattleTickEvents = { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, cleared: false };
+    const ev: BattleTickEvents = { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, timeUp: false, leaked: 0, cleared: false };
+    if (this.timeUp) { ev.cleared = true; return ev; }
 
     // 1) 스폰
     while (this.spawnQueue.length > 0 && this.spawnQueue[0].at <= this.elapsed) {
@@ -205,38 +241,55 @@ export class Battle {
       e.pos += speed * dt;
       while (e.pos >= this.config.trackLength) {
         e.pos -= this.config.trackLength;
-        e.laps++;
-        ev.lifeLost++; // GDD: 한 바퀴당 라이프 -1
+        e.laps++; // 바퀴 수는 표시용. 라이프는 시간 초과 시에만 차감
       }
     }
 
-    // 3) 유닛 공격
+    // 3) 유닛 공격: 자기 사거리 안의 최전방 적만
     for (const u of this.units) {
       u._cooldown = (u._cooldown ?? 0) - dt;
       const interval = u.def.attackInterval / (1 + (u.attackSpeedPctBonus ?? 0) / 100);
       while (u._cooldown! <= 0) {
-        const target = this.frontmost();
+        const target = this.frontmostInRange(u);
         if (!target) break;
         this.attack(u, target, ev);
         u._cooldown! += interval;
       }
-      if (u._cooldown! < 0) u._cooldown = 0; // 적이 없으면 즉시 발사 대기
+      if (u._cooldown! < 0) u._cooldown = 0; // 사거리 안에 적이 없으면 즉시 발사 대기
+    }
+
+    // 4) 제한 시간 종료: 남은 적 이탈 → 라이프 차감
+    if (this.elapsed >= this.waveDef.timeLimit) {
+      this.timeUp = true;
+      ev.timeUp = true;
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        e.alive = false;
+        ev.leaked++;
+        ev.lifeLost += e.isBoss ? this.config.bossLifePerLeak : this.config.lifePerLeak;
+      }
     }
 
     ev.cleared = this.cleared;
     return ev;
   }
 
-  /** 최전방 적 (누적 이동거리 최대) */
-  private frontmost(): Enemy | null {
+  /** 유닛 사거리 안의 최전방 적 (누적 이동거리 최대) */
+  private frontmostInRange(u: DeployedUnit): Enemy | null {
     let best: Enemy | null = null;
     let bestDist = -1;
     for (const e of this.enemies) {
       if (!e.alive) continue;
+      if (!inRange(this.geometry, u.slot, u.def.range, e.pos)) continue;
       const d = e.laps * this.config.trackLength + e.pos;
       if (d > bestDist) { bestDist = d; best = e; }
     }
     return best;
+  }
+
+  /** 슬롯에서 사거리 안에 있는 생존 적 수 (UI/디버그용) */
+  enemiesInRangeOf(slot: number, range: number): number {
+    return this.enemies.filter((e) => e.alive && inRange(this.geometry, slot, range, e.pos)).length;
   }
 
   private spawn(type: string): void {
@@ -305,6 +358,7 @@ export class Battle {
   private damageOf(u: DeployedUnit, e: Enemy): number {
     const d = u.def;
     let dmg = d.baseDps * d.dpsFactor * d.attackInterval;
+    dmg *= this.config.rangeDamageMult[String(d.range)] ?? 1; // 근접일수록 강하게
     dmg *= 1 + (u.attackPctBonus ?? 0) / 100;
 
     const eff = d.effect;

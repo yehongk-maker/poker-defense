@@ -14,6 +14,7 @@ export interface ManageCallbacks {
 /** 정비 페이즈 패널: 소환 결과 / 합성 / 판매 / 업그레이드·영웅 화면 열기 / 전투 시작 */
 export class ManagePanel extends Phaser.GameObjects.Container {
   private summary: Phaser.GameObjects.Text;
+  private hint: Phaser.GameObjects.Text;
   private mergeBtn: Button;
   private sellBtn: Button;
   private upgradesBtn: Button;
@@ -21,8 +22,9 @@ export class ManagePanel extends Phaser.GameObjects.Container {
 
   constructor(scene: Phaser.Scene, y: number, cb: ManageCallbacks) {
     super(scene, 0, y);
-    this.summary = scene.add.text(GAME_WIDTH / 2, -120, '', { fontSize: '34px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.add(this.summary);
+    this.summary = scene.add.text(GAME_WIDTH / 2, -130, '', { fontSize: '34px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
+    this.hint = scene.add.text(GAME_WIDTH / 2, -62, '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
+    this.add([this.summary, this.hint]);
 
     const row = 20;
     this.mergeBtn = new Button(scene, GAME_WIDTH / 2 - 340, row, '합성', () => cb.onMerge(), { width: 300, height: 100, fontSize: 32, fill: 0x3b4a66, textColor: COLORS.text });
@@ -37,12 +39,14 @@ export class ManagePanel extends Phaser.GameObjects.Container {
     this.summary.setText(text);
   }
 
-  refresh(loop: GameLoop, selectedUnit: number, sellRatio: number): void {
+  refresh(loop: GameLoop, selectedSlot: number, sellRatio: number): void {
     const m = loop.mergeable.length;
     this.mergeBtn.setLabel(m > 0 ? `합성 (${m})` : '합성').setEnabled(m > 0);
-    const u = loop.units[selectedUnit];
-    if (u) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
-    else this.sellBtn.setLabel('판매 (유닛 탭)').setEnabled(false);
+    const u = selectedSlot >= 0 ? loop.unitAtSlot(selectedSlot) : null;
+    const isHero = !!u && loop.hero?.unit === u;
+    if (u && !isHero) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
+    else this.sellBtn.setLabel(isHero ? '영웅은 판매 불가' : '판매 (유닛 탭)').setEnabled(false);
+    this.hint.setText(u ? `${u.def.name} 사거리 ${u.def.range}칸 — 빈 칸을 탭하면 이동, 다른 유닛을 탭하면 자리 교환` : '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)');
     const hero = loop.canSummonHero ? '영웅 소환 가능!' : '업그레이드';
     this.upgradesBtn.setLabel(`${hero}\n영웅 ▶`);
   }

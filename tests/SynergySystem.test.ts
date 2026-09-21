@@ -11,7 +11,7 @@ const table: SynergiesTable = JSON.parse(readFileSync(join(dataDir, 'synergies.j
 const units: UnitDef[] = JSON.parse(readFileSync(join(dataDir, 'units.json'), 'utf8')).units;
 
 const unit = (id: string): UnitDef => units.find((u) => u.id === id)!;
-const deploy = (...ids: string[]): DeployedUnit[] => ids.map((id) => ({ def: unit(id) }));
+const deploy = (...ids: string[]): DeployedUnit[] => ids.map((id, i) => ({ def: unit(id), slot: i }));
 const sys = () => new SynergySystem(table);
 
 describe('synergies.json 무결성', () => {
