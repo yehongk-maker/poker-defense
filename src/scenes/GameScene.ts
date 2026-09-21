@@ -221,7 +221,7 @@ export class GameScene extends Phaser.Scene {
           .setColor(t <= 5 ? '#e0473f' : COLORS.text);
       }
       this.track.update(dt * steps);
-      this.hud.refresh(this.loop, this.data_.config.totalWaves);
+      this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
 
       if (this.loop.phase !== 'combat') {
         // 클리어 → 카드 / 패배 / 승리
@@ -286,6 +286,11 @@ export class GameScene extends Phaser.Scene {
     else this.skillBtn.setLabel(`⚡ ${hero.def.active.name}\n${hero.def.active.desc}`).setEnabled(this.loop.heroSkillReady);
   }
 
+  /** 토큰 바에 필요한 고정값 (하트 최대·영웅 토큰 필요 수·보유 다이아) */
+  private tokenMeta(): { diamonds: number; heartsMax: number; heroTokensMax: number } {
+    return { diamonds: getMeta().gems, heartsMax: this.data_.config.startLife, heroTokensMax: this.data_.config.hero.shardsRequired };
+  }
+
   /** 카드별 남은 교환 횟수 */
   private exchangeLeft(): number[] {
     const p = this.loop.cardPhase;
@@ -313,7 +318,7 @@ export class GameScene extends Phaser.Scene {
     this.shop.refresh(this.loop);
     this.info.refresh(this.loop);
     this.chips.refresh(this.loop);
-    this.hud.refresh(this.loop, this.data_.config.totalWaves);
+    this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
   }
 
   /** manage 액션 공통: 실행 후 패널 갱신, 오류는 토스트 */
