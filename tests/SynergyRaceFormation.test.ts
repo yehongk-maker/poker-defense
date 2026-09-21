@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { SynergySystem, type SynergiesTable } from '../src/systems/SynergySystem.ts';
+import { SynergySystem, auraTargets, auraSlots, type SynergiesTable } from '../src/systems/SynergySystem.ts';
 import { Battle, type DeployedUnit, type WaveDef, type BattleConfig, type EnemyTypeDef } from '../src/systems/Battle.ts';
 import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
 import { type UnitDef, type UnitRace } from '../src/systems/SummonMapper.ts';
@@ -40,7 +40,7 @@ describe('데이터 무결성', () => {
   });
   it('synergies.json에 races 4종·formation 4종·caps 존재', () => {
     expect(Object.keys(table.races!)).toEqual(['human', 'goblin', 'monster', 'spirit']);
-    expect(Object.keys(table.formation!)).toEqual(['melee', 'ranged', 'mid', 'mixed']);
+    expect(Object.keys(table.formation!)).toEqual(['melee', 'ranged', 'mid', 'mixed', 'corners', 'block']);
     expect(table.caps!.attackPct).toBe(80);
   });
 });
@@ -142,6 +142,57 @@ describe('진형 — 사거리 자동 판정', () => {
       expect(u.attackPctBonus!).toBeLessThanOrEqual(80);
       expect(u.attackSpeedPctBonus!).toBeLessThanOrEqual(50);
     }
+  });
+});
+
+describe('위치 시너지 (3단계)', () => {
+  it('모서리 수비: 모서리 4칸(0,4,20,24)이 전부 근접이면 그 4기 공격 +15', () => {
+    const corners = place(['spear_striker', 0], ['twin_axe_warrior', 4], ['miner', 20], ['crusher_rider', 24]);
+    const r = sys().apply(corners);
+    expect(active(r, 'formation', 'corners')?.reached).toBe(1);
+    // 슬롯 0 창격병: ♠3 +10, 전열 4→3구간 +10, 휴먼 3 대열(같은 행 4번 창격병? 아니 쌍도끼) … 모서리 +15 포함 여부만 확인
+    const without = place(['spear_striker', 0], ['twin_axe_warrior', 4], ['miner', 20], ['crusher_rider', 23]); // 24 비움
+    const r2 = sys().apply(without);
+    expect(active(r2, 'formation', 'corners')).toBeUndefined();
+    expect(corners[0].attackPctBonus! - without[0].attackPctBonus!).toBeCloseTo(15);
+  });
+  it('모서리에 원거리가 있으면 발동 안 함 (requireRange 2)', () => {
+    const us = place(['spear_striker', 0], ['twin_axe_warrior', 4], ['miner', 20], ['coin_thrower', 24]);
+    expect(active(sys().apply(us), 'formation', 'corners')).toBeUndefined();
+  });
+  it('밀집 방진: 같은 수트 4기가 2×2를 이루면 그 4기 공격 +10, 블록 수만큼 카운트', () => {
+    const block = place(['spear_striker', 0], ['spear_striker', 1], ['twin_axe_warrior', 5], ['crusher_rider', 6]);
+    const r = sys().apply(block);
+    expect(active(r, 'formation', 'block')?.count).toBe(1);
+    const mixed = place(['spear_striker', 0], ['spear_striker', 1], ['twin_axe_warrior', 5], ['miner', 6]); // ♦ 섞임
+    expect(active(sys().apply(mixed), 'formation', 'block')).toBeUndefined();
+    // 같은 구성인데 위치만 흩어지면(0,1,5,7) 블록이 아님 → 차이는 방진 +10 뿐이어야 한다
+    const scattered = place(['spear_striker', 0], ['spear_striker', 1], ['twin_axe_warrior', 5], ['crusher_rider', 7]);
+    expect(active(sys().apply(scattered), 'formation', 'block')).toBeUndefined();
+    // 슬롯 5 쌍도끼: 대열(같은 열 0) 등 다른 축은 두 배치에서 동일
+    expect(block[2].attackPctBonus! - scattered[2].attackPctBonus!).toBeCloseTo(10);
+    // 2×3 → 블록 2개
+    const two = place(['spear_striker', 0], ['spear_striker', 1], ['spear_striker', 2], ['twin_axe_warrior', 5], ['crusher_rider', 6], ['blacksteel_knight', 7]);
+    expect(active(sys().apply(two), 'formation', 'block')?.count).toBe(2);
+  });
+  it('인접 오라: adjacent=8방, adjacent4=상하좌우, global=전체, 자기 제외', () => {
+    const geo = { trackLength: 40, gridSize: 5 };
+    expect(auraSlots(12, 'adjacent', geo).sort((a, b) => a - b)).toEqual([6, 7, 8, 11, 13, 16, 17, 18]);
+    expect(auraSlots(12, 'adjacent4', geo).sort((a, b) => a - b)).toEqual([7, 11, 13, 17]);
+    expect(auraSlots(0, 'adjacent', geo).sort((a, b) => a - b)).toEqual([1, 5, 6]);
+    expect(auraSlots(12, 'global', geo).length).toBe(24);
+    // 임프(고블린, 공격 시너지 없음)로 오라만 격리
+    const us = place(['choir_singer', 12], ['imp', 7], ['imp', 6], ['imp', 24]);
+    const t = auraTargets(us[0], 'adjacent4', us, geo);
+    expect(t).toEqual([us[1]]); // 7만 상하좌우
+    sys().apply(us);
+    expect(us[1].attackPctBonus! - us[3].attackPctBonus!).toBeCloseTo(8); // 성가대원 오라 +8은 인접한 7에만
+  });
+  it('대성전 기사(global 오라)는 위치와 무관하게 전원 공속', () => {
+    const us = place(['cathedral_knight', 0], ['spear_striker', 24], ['imp', 12]);
+    sys().apply(us);
+    expect(us[1].attackSpeedPctBonus).toBeGreaterThanOrEqual(10);
+    expect(us[2].attackSpeedPctBonus).toBeGreaterThanOrEqual(10);
   });
 });
 

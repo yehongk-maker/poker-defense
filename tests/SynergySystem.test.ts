@@ -85,10 +85,12 @@ describe('수트 시너지 — 2/4/6 구간', () => {
   });
 
   it('♥ 시너지: 전체 공속 (수트 무관 전 유닛)', () => {
-    const squad = deploy('novice_priest', 'choir_singer', 'spear_striker');
+    const squad = deploy('novice_priest', 'choir_singer', 'spear_striker'); // 슬롯 0,1,2 (한 행)
     sys().apply(squad);
-    // ♥2 시너지 global 공속 +8, 그리고 두 오라 유닛(공속+3, 공격+8)이 성령체 2시너지 ×1.25 증폭
-    expect(squad[2].attackSpeedPctBonus! > 8).toBe(true);
+    // ♥2 시너지 global 공속 +8. 창격병(슬롯 2)은 견습 사제(슬롯 0)와 인접하지 않아 오라는 못 받음
+    expect(squad[2].attackSpeedPctBonus).toBe(8);
+    // 성가대원(슬롯 1)은 사제와 인접 → 오라 +3 ×1.25(성령체 2)
+    expect(squad[1].attackSpeedPctBonus! > 8).toBe(true);
   });
 
   it('♦ 시너지: 경제 전역 효과 (waveGoldPct)', () => {
@@ -148,16 +150,18 @@ describe('영웅 패시브: 클래스 카운트 +1 (강철 파멸기/도굴왕)'
 describe('성령체 버프 증폭 — 오라 효과 배율', () => {
   it('성령체 2시너지: 오라 pct ×1.25', () => {
     // 견습 사제(오라 공속+3) + 성가대원(오라 공격+8) → saint 2종 발동
-    const squad = deploy('novice_priest', 'choir_singer');
+    const squad = deploy('novice_priest', 'choir_singer'); // 슬롯 0,1 — 서로 인접, 오라는 자기 자신 제외
     sys().apply(squad);
-    // 공속: ♥2 global 8 + 오라 3×1.25 = 11.75
-    expect(Math.abs(squad[0].attackSpeedPctBonus! - 11.75) < 0.01).toBe(true);
-    // 공격: 오라 8×1.25 = 10
+    // 성가대원 공속: ♥2 global 8 + 사제 오라 3×1.25 = 11.75
+    expect(Math.abs(squad[1].attackSpeedPctBonus! - 11.75) < 0.01).toBe(true);
+    // 사제 공격: 성가대원 오라 8×1.25 = 10
     expect(Math.abs(squad[0].attackPctBonus! - 10) < 0.01).toBe(true);
+    // 자기 자신은 못 받음
+    expect(squad[0].attackSpeedPctBonus).toBe(8);
   });
 
   it('성령체 미발동이면 오라는 원래 수치', () => {
-    const squad = deploy('novice_priest', 'spear_striker');
+    const squad = deploy('novice_priest', 'spear_striker'); // 슬롯 0,1 인접
     sys().apply(squad);
     expect(squad[1].attackSpeedPctBonus).toBe(3); // 오라만, 증폭 없음
   });

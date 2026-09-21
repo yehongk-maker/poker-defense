@@ -23,7 +23,7 @@ export class HUD {
     this.phaseText.setText(phase[loop.phase] ?? loop.phase);
 
     const syn = loop.activeSynergies
-      .map((s) => (s.kind === 'suit' ? `${SUIT_SYMBOL[s.key as Suit]}${s.reached}` : `${s.name}${s.reached}`))
+      .map((s) => (s.kind === 'suit' ? `${SUIT_SYMBOL[s.key as Suit]}${s.reached}` : s.reached === 1 ? s.name : `${s.name}${s.reached}`))
       .join('  ');
     const hero = loop.hero ? `   영웅: ${loop.hero.def.name} (${loop.hero.grade})` : '';
     const shards = loop.shards > 0 ? `   조각 ${'●'.repeat(loop.shards)}` : '';

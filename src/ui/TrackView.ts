@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { DeployedUnit, Enemy, HitEvent } from '../systems/Battle.ts';
 import type { GameLoop } from '../systems/GameLoop.ts';
+import { auraSlots } from '../systems/SynergySystem.ts';
 import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP } from './theme.ts';
 
 /**
@@ -89,9 +90,17 @@ export class TrackView {
 
     if (selected) {
       const { x, y } = this.cellCenter(selected.slot);
-      const r = selected.def.range * CELL;
+      const r = (selected.def.range + (selected.rangeBonus ?? 0)) * CELL;
       this.rangeGfx.fillStyle(SUIT_COLOR[selected.def.suit], 0.10).fillCircle(x, y, r);
       this.rangeGfx.lineStyle(3, SUIT_COLOR[selected.def.suit], 0.8).strokeCircle(x, y, r);
+      // 오라 유닛: 버프가 닿는 칸 테두리 표시 (인접/상하좌우/전체)
+      const eff = selected.def.effect;
+      if (eff && String(eff.type).startsWith('aura_')) {
+        for (const sl of auraSlots(selected.slot, String(eff.area ?? 'global'), loop.geometry)) {
+          const c = this.cellCenter(sl);
+          this.rangeGfx.lineStyle(3, 0xf1d17a, 0.9).strokeRect(c.x - CELL / 2 + 8, c.y - CELL / 2 + 8, CELL - 16, CELL - 16);
+        }
+      }
     }
   }
 

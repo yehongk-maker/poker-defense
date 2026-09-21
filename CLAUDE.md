@@ -51,5 +51,6 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 입력 규칙: 버튼/카드/슬롯 탭은 pointerup + 이동거리 TAP_SLOP(24px) 이하일 때만 (스와이프와 구분).
 - 개발 편의: dev 빌드에서 `window.__game`으로 Phaser 인스턴스 노출. 브라우저 탭이 숨겨져 rAF가 멈출 때 `__game.step(t, 16.7)`로 수동 진행 가능.
 - 완료: 종족·진형 시너지 1~2단계 (SynergySystem 4축, Battle rangeBonus/timeLimitBonus/enemySpeedPct/waveStartStun/rangeMultOverride, GameLoop waveStartGold/leakGold).
-- 미구현: 시너지 3단계(위치: 모서리 수비·밀집 방진·인접 오라), 영웅 액티브 스킬(데이터만), 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
+- 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
+- 미구현: 영웅 액티브 스킬(데이터만), 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

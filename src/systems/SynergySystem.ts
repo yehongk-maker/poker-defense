@@ -10,7 +10,8 @@
  *  - 상위 구간이 하위 구간을 대체 (누적 아님)
  *  - 영웅 패시브 "시너지 +1 카운트"(강철 파멸기/도굴왕)는 extraClassCounts로 주입
  *  - 성령체(saint) 시너지는 오라 유닛의 버프 효과를 증폭
- *  - 오라(aura_*) 효과 MVP 규칙: 위치 개념 없이 전체 유닛에 적용 (3단계에서 인접 칸으로 교체 예정)
+ *  - 위치 시너지(3단계): 모서리 수비(슬롯 조건) · 밀집 방진(2×2 같은 수트) — formation 그룹의 countBy로 판정
+ *  - 오라(aura_*)는 effect.area 대로 실제 칸에 적용: adjacent=8방 인접, adjacent4=상하좌우, global=전체 (자기 자신 제외)
  *  - caps: 시너지+오라 합산 공격력/공속 상한 (업그레이드·영웅 패시브는 상한 밖)
  *
  * 순수 로직: 데이터 주입(DI), Phaser 의존 없음.
@@ -46,10 +47,17 @@ export interface SynergyGroupDef {
   name: string;
   thresholds: number[];
   effects: SynergyEffect[][];
-  /** formation 전용: 'range' = 해당 사거리 유닛 기수, 'condition' = 다른 진형 그룹 카운트 조건 */
-  countBy?: 'range' | 'condition';
+  /**
+   * formation 전용 카운트 방식:
+   *  'range' = 해당 사거리 유닛 기수 / 'condition' = 다른 진형 그룹 카운트 조건 /
+   *  'slots' = 지정 슬롯이 전부 (requireRange 사거리의) 유닛으로 차 있으면 1 /
+   *  'block2x2SameSuit' = 같은 수트 4기가 2×2 블록을 이룬 개수
+   */
+  countBy?: 'range' | 'condition' | 'slots' | 'block2x2SameSuit';
   range?: number;
   condition?: Record<string, number>;
+  slots?: number[];
+  requireRange?: number;
 }
 
 export interface SynergiesTable {
@@ -112,6 +120,33 @@ export interface ApplyOptions {
 }
 
 const DEFAULT_GEOMETRY: TrackGeometry = { trackLength: 40, gridSize: 5 };
+
+/** 오라 범위 안의 아군 (자기 자신 제외) */
+export function auraTargets(src: DeployedUnit, area: string, units: DeployedUnit[], geo: TrackGeometry): DeployedUnit[] {
+  if (area === 'global') return units.filter((u) => u !== src);
+  const n = geo.gridSize;
+  const r0 = Math.floor(src.slot / n), c0 = src.slot % n;
+  const maxDist = area === 'adjacent4' ? 1 : 2; // adjacent4: 맨해튼 1, adjacent: 체비셰프 1
+  return units.filter((u) => {
+    if (u === src) return false;
+    const dr = Math.abs(Math.floor(u.slot / n) - r0), dc = Math.abs((u.slot % n) - c0);
+    return area === 'adjacent4' ? dr + dc === 1 : Math.max(dr, dc) === 1 && dr + dc <= maxDist;
+  });
+}
+
+/** 오라 범위 슬롯 목록 (UI 표시용) */
+export function auraSlots(slot: number, area: string, geo: TrackGeometry): number[] {
+  const n = geo.gridSize;
+  if (area === 'global') return Array.from({ length: n * n }, (_, i) => i).filter((i) => i !== slot);
+  const r0 = Math.floor(slot / n), c0 = slot % n;
+  const out: number[] = [];
+  for (let i = 0; i < n * n; i++) {
+    if (i === slot) continue;
+    const dr = Math.abs(Math.floor(i / n) - r0), dc = Math.abs((i % n) - c0);
+    if (area === 'adjacent4' ? dr + dc === 1 : Math.max(dr, dc) === 1) out.push(i);
+  }
+  return out;
+}
 
 export class SynergySystem {
   constructor(private table: SynergiesTable) {}
@@ -188,6 +223,16 @@ export class SynergySystem {
       if (def.countBy === 'condition') {
         const met = Object.entries(def.condition ?? {}).every(([k, n]) => (formationCounts.get(k) ?? 0) >= n);
         collect('formation', key, def, met ? 1 : 0, []);
+      } else if (def.countBy === 'slots') {
+        // 지정 슬롯이 전부 (사거리 조건을 만족하는) 유닛으로 차 있어야 발동
+        const members = (def.slots ?? [])
+          .map((sl) => units.find((u) => u.slot === sl))
+          .filter((u): u is DeployedUnit => !!u && (def.requireRange === undefined || u.def.range === def.requireRange));
+        const full = members.length === (def.slots ?? []).length && members.length > 0;
+        collect('formation', key, def, full ? 1 : 0, full ? members : []);
+      } else if (def.countBy === 'block2x2SameSuit') {
+        const { blocks, members } = this.sameSuitBlocks(units, geo);
+        collect('formation', key, def, blocks, members);
       }
     }
 
@@ -200,16 +245,15 @@ export class SynergySystem {
         ].find((e) => e.type === 'buff_effect_pct')?.pct ?? 0) / 100
       : 1;
 
-    // 4) 오라 유닛 효과 (MVP: 전체 적용) — 성령체 배율 반영
+    // 4) 오라 유닛 효과 — effect.area(adjacent/adjacent4/global) 범위의 아군에게, 성령체 배율 반영
     for (const src of units) {
       const eff = src.def.effect;
       if (!eff) continue;
-      if (eff.type === 'aura_attack_speed') {
-        const pct = (eff.pct as number) * buffMult;
-        for (const u of units) u.attackSpeedPctBonus! += pct;
-      } else if (eff.type === 'aura_attack_pct') {
-        const pct = (eff.pct as number) * buffMult;
-        for (const u of units) u.attackPctBonus! += pct;
+      if (eff.type !== 'aura_attack_speed' && eff.type !== 'aura_attack_pct') continue;
+      const pct = (eff.pct as number) * buffMult;
+      for (const u of auraTargets(src, String(eff.area ?? 'global'), units, geo)) {
+        if (eff.type === 'aura_attack_speed') u.attackSpeedPctBonus! += pct;
+        else u.attackPctBonus! += pct;
       }
     }
 
@@ -229,6 +273,27 @@ export class SynergySystem {
     }
 
     return { active, global };
+  }
+
+  /** 같은 수트 4기가 이루는 2×2 블록 수와 그 구성원(중복 제거) */
+  private sameSuitBlocks(units: DeployedUnit[], geo: TrackGeometry): { blocks: number; members: DeployedUnit[] } {
+    const n = geo.gridSize;
+    const bySlot = new Map<number, DeployedUnit>();
+    for (const u of units) bySlot.set(u.slot, u);
+    const members = new Set<DeployedUnit>();
+    let blocks = 0;
+    for (let row = 0; row < n - 1; row++) {
+      for (let col = 0; col < n - 1; col++) {
+        const tl = row * n + col;
+        const quad = [tl, tl + 1, tl + n, tl + n + 1].map((sl) => bySlot.get(sl));
+        if (quad.some((u) => !u)) continue;
+        const suit = quad[0]!.def.suit;
+        if (!quad.every((u) => u!.def.suit === suit)) continue;
+        blocks++;
+        for (const u of quad) members.add(u!);
+      }
+    }
+    return { blocks, members: [...members] };
   }
 
   private applyEffect(

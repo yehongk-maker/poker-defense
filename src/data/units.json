@@ -1,5 +1,5 @@
 {
-  "comment": "GDD 3.2.1 유닛 로스터 20종. race = 종족 시너지 축 (human/goblin/monster/spirit, docs/synergy-design.md). baseDps = 8×2.2^(티어-1), value = 40×2.5^(티어-1). 실제 DPS = baseDps×dpsFactor (지원/경제 유닛은 공격력 대신 효과로 기여). damage = 실제DPS×attackInterval.",
+  "comment": "GDD 3.2.1 유닛 로스터 20종. race = 종족 시너지 축 (human/goblin/monster/spirit, docs/synergy-design.md). effect.area: adjacent=8방 인접 칸, adjacent4=상하좌우, global=전체 (오라는 자기 자신 제외). baseDps = 8×2.2^(티어-1), value = 40×2.5^(티어-1). 실제 DPS = baseDps×dpsFactor (지원/경제 유닛은 공격력 대신 효과로 기여). damage = 실제DPS×attackInterval.",
   "races": {
     "human": "휴먼 — 대열: 같은 행/열 휴먼 수만큼 공격력, 7기 가장자리 사거리 +1",
     "goblin": "고블린 — 약탈: 처치/웨이브 시작 골드, 5기 이탈 적당 골드 회수",

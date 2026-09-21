@@ -11,6 +11,10 @@ export interface ManageCallbacks {
   onStart: () => void;
 }
 
+const AURA_AREA: Record<string, string> = { adjacent: '인접 8칸', adjacent4: '상하좌우 4칸', global: '전체' };
+const auraText = (eff: Record<string, unknown> | null): string =>
+  eff && String(eff.type).startsWith('aura_') ? ` · 오라 ${AURA_AREA[String(eff.area ?? 'global')] ?? ''}` : '';
+
 /** 정비 페이즈 패널: 소환 결과 / 합성 / 판매 / 업그레이드·영웅 화면 열기 / 전투 시작 */
 export class ManagePanel extends Phaser.GameObjects.Container {
   private summary: Phaser.GameObjects.Text;
@@ -46,7 +50,7 @@ export class ManagePanel extends Phaser.GameObjects.Container {
     const isHero = !!u && loop.hero?.unit === u;
     if (u && !isHero) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
     else this.sellBtn.setLabel(isHero ? '영웅은 판매 불가' : '판매 (유닛 탭)').setEnabled(false);
-    this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸 — 빈 칸 탭: 이동 / 유닛 탭: 교환` : '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)');
+    this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸${auraText(u.def.effect)} — 빈 칸 탭: 이동 / 유닛 탭: 교환` : '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)');
     const hero = loop.canSummonHero ? '영웅 소환 가능!' : '업그레이드';
     this.upgradesBtn.setLabel(`${hero}\n영웅 ▶`);
   }
