@@ -6,4 +6,5 @@ export const SCENE = {
   Boot: 'Boot',
   Lobby: 'Lobby',
   Game: 'Game',
+  Meta: 'Meta',
 } as const;

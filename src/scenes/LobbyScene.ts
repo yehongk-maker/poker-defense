@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
+import { getMeta } from '../meta.ts';
 
 /** 로비 — GDD 4: [게임 시작] [메타 업그레이드] [상점] [설정]. Phase 0에서는 게임 시작만 동작. */
 export class LobbyScene extends Phaser.Scene {
@@ -14,10 +15,15 @@ export class LobbyScene extends Phaser.Scene {
     this.add
       .text(GAME_WIDTH / 2, 540, '족보로 소환하고, 시너지로 버텨라', { fontSize: '40px', color: '#8f98a8' })
       .setOrigin(0.5);
+    const meta = getMeta();
+    const st = meta.stats;
+    this.add
+      .text(GAME_WIDTH / 2, 700, `💎 ${meta.gems}    최고 웨이브 ${st.bestWave}    ${st.runs}판 / 승리 ${st.wins}`, { fontSize: '34px', color: '#8fe3ff' })
+      .setOrigin(0.5);
 
     const buttons: { label: string; enabled: boolean; onClick?: () => void }[] = [
       { label: '게임 시작', enabled: true, onClick: () => this.scene.start(SCENE.Game) },
-      { label: '메타 업그레이드', enabled: false },
+      { label: '메타 업그레이드', enabled: true, onClick: () => this.scene.start(SCENE.Meta) },
       { label: '상점', enabled: false },
       { label: '설정', enabled: false },
     ];
@@ -40,7 +46,7 @@ export class LobbyScene extends Phaser.Scene {
     });
 
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 80, 'v0.1.0 · Phase 1', { fontSize: '30px', color: '#4a5364' })
+      .text(GAME_WIDTH / 2, GAME_HEIGHT - 80, 'v0.2.0 · 메타 저장: localStorage', { fontSize: '30px', color: '#4a5364' })
       .setOrigin(0.5);
   }
 }

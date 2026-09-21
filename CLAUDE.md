@@ -12,8 +12,10 @@
 src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
-  scenes/        Boot, Lobby, Game (+ UpgradePanel 예정)  ← Phaser 의존 OK
-  systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리)
+  scenes/        Boot, Lobby, Game, Meta(메타 업그레이드 화면)  ← Phaser 의존 OK
+  meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
+  systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리),
+                 MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출), Button, theme (Phaser)
@@ -40,7 +42,8 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - `synergies.json`: 4축 — suits(수트 기수 2/4/6) · classes(종류 2/4) · races(종족 기수+영웅 3/5/7 등) · formation(사거리/조건 자동 판정) + caps(합산 상한). 상위 구간이 하위를 대체. 설계 근거 docs/synergy-design.md.
 - `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅(`ApplyOptions.hero`)은 수트·클래스 축만 제외, 나머지(종족·진형·빙고·global·오라·상한·업그레이드)에 포함. caps 공격 120/공속 70.
 - `heroes.json`: 영웅 8종. `active.id`별 구현은 GameLoop.useHeroSkill의 switch, 수치는 `active.params`.
-- `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM.
+- `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM + `meta`(영구 업그레이드 3종·영웅 해금 비용·젬 보상·저장 키).
+- 메타 저장: localStorage 키 `poker-defense.meta.v1`, JSON {version, gems, upgrades, unlockedHeroes, claimedMilestones, stats}. GameScene은 `getMeta().applyTo(loadGameData())`로 시작하고, 판 종료 시 `recordRun`으로 젬 지급·저장.
 
 ## 진행 상태 (2026-09-20)
 - 완료: Phase 0 셋업, Phase 1~2 로직 전부(systems/ + 테스트 121개).
@@ -53,5 +56,6 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 종족·진형 시너지 1~2단계 (SynergySystem 4축, Battle rangeBonus/timeLimitBonus/enemySpeedPct/waveStartStun/rangeMultOverride, GameLoop waveStartGold/leakGold).
 - 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화) + 빙고(countBy 'lines', matchBy suit|race, per_line_attack_pct 줄 수 중첩, SynergyResult.bingoLines → TrackView 선 표시). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
 - 완료: 영웅 액티브 스킬 8종 (GameLoop.useHeroSkill → Battle 스킬 API: damageAllEnemies/hitTopHpEnemies/executeHighestHp/freezeEnemies/setSanctuary/slowAllEnemies/addTemporaryUnits/startStorm). 쿨 45초는 전투 시간 기준, 웨이브 넘어 유지. 전투 패널의 ⚡ 버튼.
-- 미구현: 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
+- 완료: 메타 업그레이드(교환 +1·타이머 +10초·시작 골드 +100×3)·메타 영웅 젬 해금·젬 마일스톤·localStorage 저장, 로비 → MetaScene.
+- 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

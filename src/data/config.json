@@ -14,23 +14,58 @@
   "hero": {
     "shardsRequired": 3,
     "grades": {
-      "S": { "minRemainingWaves": 20, "mult": 1.5 },
-      "A": { "minRemainingWaves": 10, "mult": 1.0 },
-      "B": { "minRemainingWaves": 0, "mult": 0.7 }
+      "S": {
+        "minRemainingWaves": 20,
+        "mult": 1.5
+      },
+      "A": {
+        "minRemainingWaves": 10,
+        "mult": 1.0
+      },
+      "B": {
+        "minRemainingWaves": 0,
+        "mult": 0.7
+      }
     }
   },
   "monetization": {
     "comment": "GDD §9. 가챠 금지 — 모든 IAP는 확정 지급. removeAdsAutoGrant=true면 광고제거 구매자에게 보상형 보상 자동 지급.",
     "rewardedAds": {
-      "extraExchange": { "enabled": true, "grantExchanges": 1 },
-      "revive": { "enabled": true, "restoreLife": 3, "maxPerRun": 1 },
-      "doubleClearGold": { "enabled": true, "multiplier": 2 }
+      "extraExchange": {
+        "enabled": true,
+        "grantExchanges": 1
+      },
+      "revive": {
+        "enabled": true,
+        "restoreLife": 3,
+        "maxPerRun": 1
+      },
+      "doubleClearGold": {
+        "enabled": true,
+        "multiplier": 2
+      }
     },
-    "interstitial": { "onlyAfterGameOver": true, "capPerRuns": 3 },
+    "interstitial": {
+      "onlyAfterGameOver": true,
+      "capPerRuns": 3
+    },
     "removeAdsAutoGrant": true,
     "gems": {
       "rewards": {
-        "firstClearPerWaveMilestone": { "waves": [10, 20, 30, 40], "gems": [20, 30, 50, 100] },
+        "firstClearPerWaveMilestone": {
+          "waves": [
+            10,
+            20,
+            30,
+            40
+          ],
+          "gems": [
+            20,
+            30,
+            50,
+            100
+          ]
+        },
         "dailyMission": 10
       },
       "costs": {
@@ -41,11 +76,90 @@
       }
     },
     "iapProducts": [
-      { "id": "remove_ads", "krw": 5900, "type": "nonconsumable" },
-      { "id": "starter_pack", "krw": 3300, "type": "nonconsumable", "oncePerAccount": true, "contents": { "gems": 500, "heroChoice": 1, "startGoldBoost": 100 } },
-      { "id": "gems_small", "krw": 1100, "type": "consumable", "gems": 120 },
-      { "id": "gems_medium", "krw": 5500, "type": "consumable", "gems": 650 },
-      { "id": "gems_large", "krw": 11000, "type": "consumable", "gems": 1400 }
+      {
+        "id": "remove_ads",
+        "krw": 5900,
+        "type": "nonconsumable"
+      },
+      {
+        "id": "starter_pack",
+        "krw": 3300,
+        "type": "nonconsumable",
+        "oncePerAccount": true,
+        "contents": {
+          "gems": 500,
+          "heroChoice": 1,
+          "startGoldBoost": 100
+        }
+      },
+      {
+        "id": "gems_small",
+        "krw": 1100,
+        "type": "consumable",
+        "gems": 120
+      },
+      {
+        "id": "gems_medium",
+        "krw": 5500,
+        "type": "consumable",
+        "gems": 650
+      },
+      {
+        "id": "gems_large",
+        "krw": 11000,
+        "type": "consumable",
+        "gems": 1400
+      }
     ]
+  },
+  "meta": {
+    "comment": "GDD 3.4 영구 메타 업그레이드 (젬). 편의까지만 — 유닛 데미지 직접 판매 금지 (§9.1). 저장은 localStorage (MetaProgress).",
+    "saveKey": "poker-defense.meta.v1",
+    "upgrades": [
+      {
+        "id": "exchange_plus1",
+        "name": "교환 +1회",
+        "desc": "카드 교환을 2회까지 (최대 2회)",
+        "cost": 500,
+        "max": 1
+      },
+      {
+        "id": "timer_plus10",
+        "name": "타이머 +10초",
+        "desc": "카드 선택 시간 30초 → 40초",
+        "cost": 300,
+        "max": 1
+      },
+      {
+        "id": "start_gold_plus100",
+        "name": "시작 골드 +100",
+        "desc": "판 시작 골드 +100 (최대 3단계)",
+        "cost": 200,
+        "max": 3
+      }
+    ],
+    "heroUnlockCost": 300,
+    "gemRewards": {
+      "waveMilestones": [
+        {
+          "wave": 10,
+          "gems": 20
+        },
+        {
+          "wave": 20,
+          "gems": 30
+        },
+        {
+          "wave": 30,
+          "gems": 50
+        },
+        {
+          "wave": 40,
+          "gems": 100
+        }
+      ],
+      "perRun": 5,
+      "victory": 50
+    }
   }
 }

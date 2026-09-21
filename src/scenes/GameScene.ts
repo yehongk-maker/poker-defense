@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { loadGameData } from '../data/index.ts';
+import { getMeta } from '../meta.ts';
 import { GameLoop, type GameData } from '../systems/GameLoop.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
 import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
@@ -45,7 +46,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.data_ = loadGameData();
+    this.data_ = getMeta().applyTo(loadGameData()); // 메타 업그레이드(교환 횟수·타이머·시작 골드·해금 영웅) 반영
     this.loop = new GameLoop(this.data_);
     this.selectedSlot = -1;
     this.speed = 1;
@@ -273,6 +274,12 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
     this.add.text(GAME_WIDTH / 2, 760, win ? '승리!' : '패배', { fontSize: '120px', color: win ? '#f1d17a' : '#e0473f', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
     this.add.text(GAME_WIDTH / 2, 880, `도달 웨이브 ${this.loop.wave} / ${this.data_.config.totalWaves}   💰 ${Math.floor(this.loop.gold)}`, { fontSize: '40px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    // 메타 진행 기록 + 젬 지급 (localStorage 저장)
+    const reward = getMeta().recordRun({ wave: win ? this.data_.config.totalWaves : this.loop.wave, victory: win });
+    const parts = [`💎 +${reward.gemsGained}`];
+    if (reward.newMilestones.length) parts.push(`마일스톤 ${reward.newMilestones.map((w) => `웨이브 ${w}`).join('·')} 최초 달성!`);
+    if (reward.newBest) parts.push('최고 기록 갱신!');
+    this.add.text(GAME_WIDTH / 2, 950, parts.join('   '), { fontSize: '34px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(0.5).setDepth(31);
     new Button(this, GAME_WIDTH / 2, 1040, '다시 시작', () => this.scene.restart(), { width: 480, height: 120, fontSize: 44 }).setDepth(31);
     new Button(this, GAME_WIDTH / 2, 1200, '로비로', () => this.scene.start(SCENE.Lobby), { width: 480, height: 120, fontSize: 44, fill: 0x3b4a66, textColor: COLORS.text }).setDepth(31);
   }
