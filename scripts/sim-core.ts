@@ -6,7 +6,7 @@
  *  - highcard : 매 라운드 하이카드처럼 T1 1기만 소환(최악 케이스). 교환·영웅 없음, 골드는 다수 수트 업그레이드.
  *               → GDD 7 "하이카드/원페어로도 15웨이브는 버틴다" 검증용.
  *  - naive    : 즉시 확정, 합성, 골드 300 이상이면 ♠ 업그레이드 (GameLoop.test와 동일).
- *  - smart    : 족보 구성 카드 유지 + 나머지 교환, 합성, 영웅 즉시 소환, 골드 전부 다수 수트 업그레이드.
+ *  - smart    : 족보 구성 카드 유지 + 나머지 한 장씩 교환, 합성, 영웅 즉시 소환·액티브 사용, 골드 전부 다수 수트 업그레이드.
  *               → GDD 9.5 "봇 기준 웨이브 21 저지선" 검증용.
  *
  * 출력: 전략별 승률·평균 도달 웨이브·웨이브 도달률(10/15/21/30/40)·패배 웨이브 히스토그램.
@@ -84,8 +84,8 @@ function smartCardPhase(g: GameLoop): void {
       keep = n >= 3 ? new Set(hand.filter((c) => c.suit === suit)) : new Set([r.coreCards[0]]);
     }
     if (r.rank < HandRank.Straight) {
-      hand.forEach((c, i) => { if (!keep.has(c)) p.toggleSelect(i); });
-      if (p.selectedIndices.length > 0) p.exchange();
+      // 카드별 교환: 족보 구성 카드는 두고 나머지를 한 장씩 교환
+      hand.forEach((c, i) => { if (!keep.has(c) && p.canExchange(i)) p.exchangeCard(i); });
     }
   }
   g.confirmHand();

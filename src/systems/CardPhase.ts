@@ -1,9 +1,9 @@
 /**
- * CardPhase — 라운드 시작 시 카드 배분/선택/교환(제한 횟수)/타이머/확정 상태머신
+ * CardPhase — 라운드 시작 시 카드 배분/교환(카드별 제한 횟수)/타이머/확정 상태머신
  *
- * GDD 3.0/3.4 근거:
- *  - 라운드마다 52장 덱 리셋 → 5장 배분
- *  - 원하는 카드 선택 후 "교환"(기본 1회, 메타 업그레이드로 최대 2회) 또는 "바로 진행"
+ * GDD 3.0/3.4 (v1.4 개정) 근거:
+ *  - 라운드마다 52장 덱 리셋 → 5장 배분 (뒷면으로 받아 UI가 순차 오픈)
+ *  - 카드는 **한 장씩** 교환한다. 각 카드는 exchangeLimit번(기본 1, 메타 업그레이드로 2)까지 교환 가능 → 5장 전부 바꿀 수 있다
  *  - 30초 타이머(메타 업그레이드 +10초), 0초 = 자동 진행
  *
  * 순수 로직: Phaser 의존 없음. 씬은 tick(dt)을 update()에서 호출하고,
@@ -22,7 +22,7 @@ export type CardPhaseState = 'idle' | 'choosing' | 'done';
 export interface CardPhaseConfig {
   /** 배분 장수 (기본 5) */
   handSize?: number;
-  /** 교환 가능 횟수 (기본 1, 메타 업그레이드 시 2) */
+  /** 카드 1장당 교환 가능 횟수 (기본 1, 메타 업그레이드 시 2). 총 교환 가능 = handSize × exchangeLimit */
   exchangeLimit?: number;
   /** 제한 시간 초 (기본 30, 메타 업그레이드 시 40) */
   timerSeconds?: number;
@@ -43,8 +43,8 @@ export class CardPhase {
   private rng: () => number;
   private deck: Card[] = [];
   private handCards: Card[] = [];
-  private selected = new Set<number>();
-  private exchangesUsed = 0;
+  /** 카드 위치별 교환 횟수 */
+  private exchangedCount: number[] = [];
   private remainingTime = 0;
   private phaseState: CardPhaseState = 'idle';
   private result: HandResult | null = null;
@@ -60,8 +60,7 @@ export class CardPhase {
   start(): readonly Card[] {
     this.deck = this.shuffle(createDeck());
     this.handCards = this.deck.splice(0, this.handSize);
-    this.selected.clear();
-    this.exchangesUsed = 0;
+    this.exchangedCount = new Array(this.handSize).fill(0);
     this.remainingTime = this.timerSeconds;
     this.phaseState = 'choosing';
     this.result = null;
@@ -80,12 +79,21 @@ export class CardPhase {
     return this.deck.length;
   }
 
-  get selectedIndices(): readonly number[] {
-    return [...this.selected].sort((a, b) => a - b);
+  /** 남은 총 교환 가능 횟수 (카드별 남은 횟수 합) */
+  get exchangesRemaining(): number {
+    return this.exchangedCount.reduce((s, n) => s + (this.exchangeLimit - n), 0);
   }
 
-  get exchangesRemaining(): number {
-    return this.exchangeLimit - this.exchangesUsed;
+  /** 특정 카드의 남은 교환 횟수 */
+  exchangesRemainingFor(index: number): number {
+    this.assertIndex(index);
+    return this.exchangeLimit - this.exchangedCount[index];
+  }
+
+  /** 이 카드를 교환할 수 있는가 (choosing 상태 + 횟수 남음 + 덱 잔여) */
+  canExchange(index: number): boolean {
+    return this.phaseState === 'choosing' && Number.isInteger(index) && index >= 0 && index < this.handCards.length
+      && this.exchangedCount[index] < this.exchangeLimit && this.deck.length > 0;
   }
 
   get timeRemaining(): number {
@@ -97,34 +105,19 @@ export class CardPhase {
     return this.result;
   }
 
-  /** 카드 탭: 교환 대상 선택/해제 토글 */
-  toggleSelect(index: number): boolean {
-    this.assertChoosing();
-    if (!Number.isInteger(index) || index < 0 || index >= this.handCards.length) {
-      throw new Error(`Invalid card index: ${index}`);
-    }
-    if (this.exchangesRemaining <= 0) return false; // 교환 소진 시 선택 불가
-    if (this.selected.has(index)) this.selected.delete(index);
-    else this.selected.add(index);
-    return this.selected.has(index);
-  }
-
   /**
-   * 선택한 카드를 덱의 새 카드로 교환. 버린 카드는 덱으로 돌아가지 않는다.
-   * @returns 교환 후의 손패
+   * 카드 1장 교환: 해당 위치의 카드를 덱의 새 카드로 바꾼다. 버린 카드는 덱으로 돌아가지 않는다.
+   * @returns 새 카드
    */
-  exchange(): readonly Card[] {
+  exchangeCard(index: number): Card {
     this.assertChoosing();
-    if (this.exchangesRemaining <= 0) throw new Error('No exchanges remaining');
-    if (this.selected.size === 0) throw new Error('No cards selected for exchange');
-    if (this.selected.size > this.deck.length) throw new Error('Not enough cards in deck');
-
-    for (const idx of this.selected) {
-      this.handCards[idx] = this.deck.shift()!;
-    }
-    this.selected.clear();
-    this.exchangesUsed++;
-    return this.hand;
+    this.assertIndex(index);
+    if (this.exchangedCount[index] >= this.exchangeLimit) throw new Error(`Card ${index} has no exchanges left`);
+    if (this.deck.length === 0) throw new Error('Not enough cards in deck');
+    const next = this.deck.shift()!;
+    this.handCards[index] = next;
+    this.exchangedCount[index]++;
+    return next;
   }
 
   /** "진행" 버튼: 족보 확정. 타이머 만료 시에도 내부적으로 호출된다. */
@@ -148,6 +141,12 @@ export class CardPhase {
       return { remaining: 0, autoConfirmed: this.confirm() };
     }
     return { remaining: this.remainingTime, autoConfirmed: null };
+  }
+
+  private assertIndex(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= this.handCards.length) {
+      throw new Error(`Invalid card index: ${index}`);
+    }
   }
 
   private assertChoosing(): void {

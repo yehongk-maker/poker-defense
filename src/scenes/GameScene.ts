@@ -61,18 +61,19 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
 
     this.hand = new CardHand(this, PANEL_Y - 60, {
-      onToggle: (i) => { this.loop.cardPhase.toggleSelect(i); this.refreshHand(); },
-      onExchange: () => {
-        const before = evaluateHand([...this.loop.cardPhase.hand], () => 0).rank;
-        this.loop.cardPhase.exchange();
-        this.refreshHand();
-        const after = evaluateHand([...this.loop.cardPhase.hand], () => 0).rank;
-        // 교환으로 족보가 올랐으면 패 위에서 작은 연출
-        if (after > before && RANK_TIER[after] >= 1) {
-          const p = this.hand.rankLabelPosition;
-          this.fx.celebrate(after, p.x, p.y, false);
+      onExchange: (i) => this.safe(() => {
+        const p = this.loop.cardPhase;
+        if (!p.canExchange(i)) return;
+        const before = evaluateHand([...p.hand], () => 0).rank;
+        const card = p.exchangeCard(i);
+        const result = evaluateHand([...p.hand], () => 0);
+        // 카드가 뒤집혀 새 카드로 오픈된 뒤 족보 갱신
+        this.hand.exchangeCard(i, card, this.exchangeLeft(), result);
+        // 교환으로 족보가 올랐으면 오픈 직후 패 위에서 작은 연출
+        if (result.rank > before && RANK_TIER[result.rank] >= 1) {
+          this.time.delayedCall(360, () => { const pos = this.hand.rankLabelPosition; this.fx.celebrate(result.rank, pos.x, pos.y, false); });
         }
-      },
+      }),
       onConfirm: () => this.confirmHand(),
     });
 
@@ -237,12 +238,19 @@ export class GameScene extends Phaser.Scene {
     else this.skillBtn.setLabel(`⚡ ${hero.def.active.name}\n${hero.def.active.desc}`).setEnabled(this.loop.heroSkillReady);
   }
 
+  /** 카드별 남은 교환 횟수 */
+  private exchangeLeft(): number[] {
+    const p = this.loop.cardPhase;
+    return p.hand.map((_, i) => p.exchangesRemainingFor(i));
+  }
+
+  /** 새 라운드: 뒷면으로 받아 한 장씩 오픈 */
   private refreshHand(): void {
     const p = this.loop.cardPhase;
     if (p.state !== 'choosing') return;
     // 라이브 족보: 수트 동수 경합은 표시에 영향 없으므로 고정 rng
     const result = evaluateHand([...p.hand], () => 0);
-    this.hand.setHand(p.hand, p.selectedIndices, p.exchangesRemaining, result);
+    this.hand.deal(p.hand, this.exchangeLeft(), result);
     this.hand.setTimer(p.timeRemaining);
   }
 
