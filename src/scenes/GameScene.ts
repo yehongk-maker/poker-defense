@@ -11,6 +11,7 @@ import { TrackView } from '../ui/TrackView.ts';
 import { ManagePanel } from '../ui/ManagePanel.ts';
 import { UpgradePanel } from '../ui/UpgradePanel.ts';
 import { SwipeController } from '../ui/SwipeController.ts';
+import { SynergyCodex } from '../ui/SynergyCodex.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
 
@@ -32,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private upgrades!: UpgradePanel;
   private swipe!: SwipeController;
   private fx!: HandFx;
+  private codex!: SynergyCodex;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -52,9 +54,10 @@ export class GameScene extends Phaser.Scene {
     this.speed = 1;
     this.ended = false;
 
-    this.hud = new HUD(this);
+    this.hud = new HUD(this, () => this.codex.open(this.loop));
     this.track = new TrackView(this);
     this.fx = new HandFx(this);
+    this.codex = new SynergyCodex(this, () => this.codex.setVisible(false));
     this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
 
     this.hand = new CardHand(this, PANEL_Y - 60, {
@@ -252,6 +255,7 @@ export class GameScene extends Phaser.Scene {
     this.track.setField(this.loop, ph === 'manage' ? this.selectedSlot : -1);
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
     this.upgrades.refresh(this.loop);
+    this.codex.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves);
   }
 

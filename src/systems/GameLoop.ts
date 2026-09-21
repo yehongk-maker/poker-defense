@@ -165,6 +165,9 @@ export class GameLoop {
   get activeSynergies() { return this.lastSynergy?.active ?? []; }
   /** 완성된 빙고 줄 (TrackView가 선으로 표시) */
   get bingoLines() { return this.lastSynergy?.bingoLines ?? []; }
+  /** 모든 시너지 그룹의 현재 카운트 (`kind:key` → n). 도감 UI용 */
+  get synergyCounts(): Readonly<Record<string, number>> { return this.lastSynergy?.counts ?? {}; }
+  get synergyTable(): SynergiesTable { return this.data.synergies; }
   /** 진행 중인 전투 (combat 페이즈에서만 non-null) — 씬이 적 위치를 그리는 데 사용 */
   get battle(): Battle | null { return this.battle_; }
   get upgrades(): Readonly<Record<Suit, number>> { return this.upgradeLevels; }

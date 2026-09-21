@@ -122,6 +122,8 @@ export interface SynergyResult {
   global: GlobalSynergyMods;
   /** 완성된 빙고 줄 목록 */
   bingoLines: BingoLine[];
+  /** 모든 그룹의 현재 카운트 (미발동 포함) — 키 `${kind}:${key}`. 도감 UI용 */
+  counts: Record<string, number>;
 }
 
 export interface ApplyOptions {
@@ -193,6 +195,7 @@ export class SynergySystem {
     };
     const active: ActiveSynergy[] = [];
     const bingoLines: BingoLine[] = [];
+    const counts: Record<string, number> = {};
     /** 유닛별 속한 빙고 줄 수 (per_line_attack_pct가 사용) */
     const lineCounts = new Map<DeployedUnit, number>();
 
@@ -208,6 +211,7 @@ export class SynergySystem {
 
     // 2) 발동 구간 판정 → 효과 수집
     const collect = (kind: SynergyKind, key: string, def: SynergyGroupDef, count: number, members: DeployedUnit[]): void => {
+      counts[`${kind}:${key}`] = count;
       let reachedIdx = -1;
       for (let i = 0; i < def.thresholds.length; i++) {
         if (count >= def.thresholds[i]) reachedIdx = i;
@@ -297,7 +301,7 @@ export class SynergySystem {
       }
     }
 
-    return { active, global, bingoLines };
+    return { active, global, bingoLines, counts };
   }
 
   /** 같은 수트 4기가 이루는 2×2 블록 수와 그 구성원(중복 제거) */

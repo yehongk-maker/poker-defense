@@ -18,7 +18,8 @@ src/
                  MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
-  ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출), Button, theme (Phaser)
+  ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
+                 SynergyCodex(도감 오버레이) + synergyText(JSON→한글 설명, 순수), Button, theme (Phaser)
   data/          units, hands, waves, synergies, heroes, config .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
@@ -57,5 +58,6 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화) + 빙고(countBy 'lines', matchBy suit|race, per_line_attack_pct 줄 수 중첩, SynergyResult.bingoLines → TrackView 선 표시). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
 - 완료: 영웅 액티브 스킬 8종 (GameLoop.useHeroSkill → Battle 스킬 API: damageAllEnemies/hitTopHpEnemies/executeHighestHp/freezeEnemies/setSanctuary/slowAllEnemies/addTemporaryUnits/startStorm). 쿨 45초는 전투 시간 기준, 웨이브 넘어 유지. 전투 패널의 ⚡ 버튼.
 - 완료: 메타 업그레이드(교환 +1·타이머 +10초·시작 골드 +100×3)·메타 영웅 젬 해금·젬 마일스톤·localStorage 저장, 로비 → MetaScene.
+- 완료: 시너지 도감 (HUD 📖 도감/시너지 줄 탭 → 4축 탭 오버레이, 현재 카운트·도달 구간 강조). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
