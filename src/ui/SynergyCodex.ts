@@ -39,7 +39,7 @@ export class SynergyCodex extends Phaser.GameObjects.Container {
 
     this.content = scene.add.container(0, 320);
     this.add(this.content);
-    this.setDepth(12).setVisible(false);
+    this.setDepth(18).setVisible(false); // 족보 연출(15~16)보다 위, 토스트(20)·종료 오버레이(30)보다 아래
     scene.add.existing(this);
   }
 
