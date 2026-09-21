@@ -13,6 +13,7 @@ import { UpgradePanel } from '../ui/UpgradePanel.ts';
 import { SwipeNav } from '../ui/SwipeNav.ts';
 import { InfoPanel } from '../ui/InfoPanel.ts';
 import { OpponentPanel } from '../ui/OpponentPanel.ts';
+import { SynergyChips } from '../ui/SynergyChips.ts';
 import { OpponentAI, raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
@@ -40,6 +41,7 @@ export class GameScene extends Phaser.Scene {
   private fx!: HandFx;
   private opponent!: OpponentAI;
   private oppRefreshAcc = 0;
+  private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
@@ -68,6 +70,7 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.track = new TrackView(this);
+    this.chips = new SynergyChips(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.fx = new HandFx(this);
     this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
 
@@ -132,8 +135,9 @@ export class GameScene extends Phaser.Scene {
       r.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) this.nav.open(side); });
       this.add.text(x, y, label, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setAngle(angle);
     };
-    mkHandle(22, 690, 44, 220, '상점 · 영웅 ▶', 90, 'left');
-    mkHandle(GAME_WIDTH - 22, 690, 44, 220, '◀ 족보 · 시너지', -90, 'right');
+    // 왼쪽 위는 시너지 칩이 차지하므로 핸들은 카드 패널 높이에
+    mkHandle(22, 1500, 44, 220, '상점 · 영웅 ▶', 90, 'left');
+    mkHandle(GAME_WIDTH - 22, 1500, 44, 220, '◀ 족보 · 시너지', -90, 'right');
     mkHandle(GAME_WIDTH / 2, GAME_HEIGHT - 22, 360, 40, '▲ 상대 진행 상황', 0, 'bottom');
 
     // 전투 패널
@@ -308,6 +312,7 @@ export class GameScene extends Phaser.Scene {
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
     this.shop.refresh(this.loop);
     this.info.refresh(this.loop);
+    this.chips.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves);
   }
 
