@@ -229,18 +229,52 @@ describe('전투 통합', () => {
     expect(rounds).toBeLessThanOrEqual(3); // 웨이브 1~2 = 5+5 이탈 ≥ 라이프 10
   });
 
-  it('배치: 근접은 가장자리, 사거리 4는 안쪽 칸에 자동 배치되고 moveUnit으로 자리를 바꿀 수 있다', () => {
+  it('배치: 자동 배치는 커버리지 최대 빈 칸, 소환 직후 1회만 빈 칸으로 이동 가능, 이후 고정·판매만 가능', () => {
     const g = new GameLoop(baseData(), seededRng(11));
     g.confirmHand();
     const u = g.units[0];
     const cov = g.slotCoverage(u.def.range);
-    // 자동 배치 = 빈 칸 중 커버리지 최대
-    expect(cov[u.slot]).toBe(Math.max(...cov));
+    expect(cov[u.slot]).toBe(Math.max(...cov)); // 자동 배치 = 빈 칸 중 커버리지 최대
+    expect(u.placed).toBe(false);
+    expect(g.unplacedUnits).toContain(u);
     const target = g.freeSlots[0];
     g.moveUnit(u.slot, target);
     expect(u.slot).toBe(target);
-    expect(g.unitAtSlot(target)).toBe(u);
+    expect(u.placed).toBe(true);
+    expect(g.unplacedUnits).not.toContain(u);
+    expect(() => g.moveUnit(target, g.freeSlots[0])).toThrow(/확정/); // 두 번째 이동 불가
     expect(() => g.moveUnit(target, 99)).toThrow();
+    // 판매는 가능
+    const gold = g.gold;
+    g.sellUnit(0);
+    expect(g.gold).toBeGreaterThan(gold);
+  });
+
+  it('배치: 점유된 칸으로는 못 옮기고(교환 없음), 전투 시작 시 미확정 유닛은 전부 확정된다', () => {
+    let g: GameLoop | null = null;
+    for (let seed = 1; seed < 80; seed++) {
+      const t = new GameLoop(baseData(), seededRng(seed));
+      t.confirmHand();
+      if (t.units.length >= 2) { g = t; break; }
+    }
+    expect(g).not.toBeNull();
+    const [a, b] = g!.units;
+    expect(() => g!.moveUnit(a.slot, b.slot)).toThrow(/빈 칸/);
+    g!.startCombat();
+    expect(g!.units.every((u) => u.placed)).toBe(true);
+    expect(g!.unplacedUnits.length).toBe(0);
+  });
+
+  it('배치: 합성 결과와 영웅도 소환 직후 1회 배치 가능', () => {
+    const g = new GameLoop(baseData(), seededRng(5));
+    g.confirmHand();
+    (g as unknown as { _shards: number })._shards = 3;
+    g.summonHero(g.unlockedHeroes[0].id);
+    expect(g.hero!.unit.placed).toBe(false);
+    const to = g.freeSlots[0];
+    g.moveUnit(g.hero!.unit.slot, to);
+    expect(g.hero!.unit.slot).toBe(to);
+    expect(g.hero!.unit.placed).toBe(true);
   });
 });
 

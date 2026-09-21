@@ -59,6 +59,11 @@ export interface DeployedUnit {
   def: UnitDef;
   /** 격자 슬롯 (0 ~ gridSize²-1). 사거리 판정의 기준점 */
   slot: number;
+  /**
+   * 배치 확정 여부. 소환(합성·영웅 포함) 직후 false → 정비에서 빈 칸으로 1회 이동 가능.
+   * 이동하거나 전투가 시작되면 true가 되어 더는 못 움직인다 (판매는 항상 가능).
+   */
+  placed?: boolean;
   /** 공격력 +% (수트 시너지, 오라, 라운드 업그레이드 등) */
   attackPctBonus?: number;
   /** 공속 +% */

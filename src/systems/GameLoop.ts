@@ -212,7 +212,7 @@ export class GameLoop {
         this._gold += gold;
         res.overflowSold.push({ unit: def, gold });
       } else {
-        const du: DeployedUnit = { def, slot };
+        const du: DeployedUnit = { def, slot, placed: false }; // 소환 직후: 1회 배치 가능
         this._units.push(du);
         res.deployed.push(du);
       }
@@ -229,20 +229,29 @@ export class GameLoop {
 
   // ── 정비(manage): 판매/합성/업그레이드/영웅 ─────────────────
   /**
-   * 유닛 배치 이동 (정비 페이즈). 대상 칸에 유닛/영웅이 있으면 자리를 맞바꾼다.
-   * @returns 이동 후 from 칸에 남는 유닛 (교환된 유닛) 또는 null
+   * 유닛 배치 (정비 페이즈). 소환 직후(placed=false)인 유닛만, 빈 칸으로, 1회만 옮길 수 있다.
+   * 옮기면 배치가 확정되어(placed=true) 더는 못 움직인다. 전투 시작 시 남은 미확정 유닛도 모두 확정된다.
+   * 자리 교환은 없다 (확정된 유닛은 판매만 가능).
    */
-  moveUnit(fromSlot: number, toSlot: number): DeployedUnit | null {
+  moveUnit(fromSlot: number, toSlot: number): void {
     this.assertPhase('manage');
     const max = this.data.config.maxSlots;
     if (![fromSlot, toSlot].every((x) => Number.isInteger(x) && x >= 0 && x < max)) throw new Error(`Invalid slot ${fromSlot}→${toSlot}`);
     const a = this.unitAtSlot(fromSlot);
     if (!a) throw new Error(`No unit at slot ${fromSlot}`);
-    if (fromSlot === toSlot) return null;
-    const b = this.unitAtSlot(toSlot);
+    if (a.placed) throw new Error('배치가 확정된 유닛은 옮길 수 없습니다 (판매만 가능)');
+    if (fromSlot === toSlot) return;
+    if (this.unitAtSlot(toSlot)) throw new Error('빈 칸으로만 옮길 수 있습니다');
     a.slot = toSlot;
-    if (b) b.slot = fromSlot;
-    return b;
+    a.placed = true;
+    this.recalcSynergy();
+  }
+
+  /** 아직 배치를 확정하지 않은(1회 이동 가능한) 유닛 — 영웅 포함 */
+  get unplacedUnits(): DeployedUnit[] {
+    const out = this._units.filter((u) => !u.placed);
+    if (this._hero && !this._hero.unit.placed) out.push(this._hero.unit);
+    return out;
   }
 
   /** 자동 배치: 사거리에 맞춰 트랙 커버리지가 가장 큰 빈 칸 (근접=가장자리, 원거리=안쪽이 자연 발생) */
@@ -279,7 +288,7 @@ export class GameLoop {
     if (def.tier >= 5) throw new Error('T5 units cannot merge');
     for (const i of idxs.slice(0, 3).reverse()) this._units.splice(i, 1);
     const mergedDef = this.mapper.unitFor(def.suit, def.tier + 1);
-    const merged: DeployedUnit = { def: mergedDef, slot: this.autoSlot(mergedDef.range)! };
+    const merged: DeployedUnit = { def: mergedDef, slot: this.autoSlot(mergedDef.range)!, placed: false }; // 합성 결과도 1회 배치 가능
     this._units.push(merged);
     this.recalcSynergy();
     return merged;
@@ -335,7 +344,7 @@ export class GameLoop {
       attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
     };
-    this._hero = { def, grade, unit: { def: heroUnitDef, slot } };
+    this._hero = { def, grade, unit: { def: heroUnitDef, slot, placed: false } };
     this.recalcSynergy();
     return { def, grade };
   }
@@ -345,6 +354,9 @@ export class GameLoop {
     this.assertPhase('manage');
     const waveDef = this.data.waves[this._wave - 1];
     if (!waveDef) throw new Error(`No wave ${this._wave}`);
+    // 전투 시작 = 배치 확정
+    for (const u of this._units) u.placed = true;
+    if (this._hero) this._hero.unit.placed = true;
     this.recalcSynergy();
 
     const g = this.lastSynergy!.global;

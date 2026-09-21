@@ -128,17 +128,20 @@ export class GameScene extends Phaser.Scene {
 
     this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(20);
 
-    // 배치: 유닛 탭 = 선택, 선택 중 빈 칸 탭 = 이동, 다른 유닛 탭 = 자리 교환, 같은 칸 = 해제
+    // 배치: 유닛 탭 = 선택(판매 대상), 미확정 유닛 선택 중 빈 칸 탭 = 1회 이동 후 확정, 다른 유닛 탭 = 선택 변경, 같은 칸 = 해제
     this.track.setCellTapHandler((slot) => {
       if (this.loop.phase !== 'manage') return;
       const here = this.loop.unitAtSlot(slot);
-      if (this.selectedSlot < 0) {
-        this.selectedSlot = here ? slot : -1;
-      } else if (slot === this.selectedSlot) {
+      const sel = this.selectedSlot >= 0 ? this.loop.unitAtSlot(this.selectedSlot) : null;
+      if (slot === this.selectedSlot) {
         this.selectedSlot = -1;
-      } else {
-        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); });
-        this.selectedSlot = here ? -1 : slot; // 교환이면 해제, 이동이면 따라감
+      } else if (here) {
+        this.selectedSlot = slot;
+      } else if (sel && !sel.placed) {
+        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); this.showToast(`${sel.def.name} 배치 확정`); });
+        this.selectedSlot = -1;
+      } else if (sel) {
+        this.showToast('배치가 확정된 유닛은 옮길 수 없습니다 (판매만 가능)');
       }
       this.track.setField(this.loop, this.selectedSlot);
       this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);

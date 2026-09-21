@@ -63,11 +63,12 @@ export class TrackView {
     this.rangeGfx.clear();
 
     const selected = selectedSlot >= 0 ? loop.unitAtSlot(selectedSlot) : null;
-    const cov = selected ? loop.slotCoverage(selected.def.range) : null;
+    // 이동 힌트는 아직 배치를 확정하지 않은(1회 이동 가능) 유닛을 골랐을 때만
+    const cov = selected && !selected.placed ? loop.slotCoverage(selected.def.range) : null;
     this.cells.forEach((c, i) => {
       const isSel = i === selectedSlot;
       c.setStrokeStyle(isSel ? 5 : 2, isSel ? COLORS.goldLight : COLORS.cellLine);
-      // 선택 중: 빈 칸을 이 유닛의 사거리 커버리지(트랙에 닿는 비율)로 색칠 → 어디에 두면 좋은지 힌트
+      // 미확정 유닛 선택 중: 빈 칸을 이 유닛의 사거리 커버리지(트랙에 닿는 비율)로 색칠 → 어디에 두면 좋은지 힌트
       if (cov && !loop.unitAtSlot(i)) {
         const v = cov[i];
         c.setFillStyle(v <= 0 ? 0x2a1a1a : Phaser.Display.Color.GetColor(16 + v * 40, 21 + v * 120, 31 + v * 60));
@@ -86,6 +87,15 @@ export class TrackView {
       const name = this.scene.add.text(0, CELL / 2 - 22, `${SUIT_SYMBOL[u.def.suit]}${u.def.name}`, { fontSize: '20px', color: isHero ? '#f1d17a' : COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
       const range = this.scene.add.text(CELL / 2 - 10, -CELL / 2 + 8, `⌖${u.def.range}`, { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0);
       c.add([shape, badge, name, range]);
+      if (!u.placed) {
+        // 미확정: 점선 느낌의 금색 테두리 + "배치" 표시 (전투 시작 전 1회 이동 가능)
+        const ring = this.scene.add.rectangle(0, 0, CELL - 16, CELL - 16).setStrokeStyle(3, COLORS.goldLight, 0.9);
+        ring.setFillStyle(COLORS.goldLight, 0.06);
+        const tag = this.scene.add.text(-CELL / 2 + 10, -CELL / 2 + 8, '배치', { fontSize: '18px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' });
+        c.addAt(ring, 0);
+        c.add(tag);
+        this.scene.tweens.add({ targets: ring, alpha: 0.35, duration: 600, yoyo: true, repeat: -1 });
+      }
       this.unitSprites.push(c);
     };
     for (const u of loop.units) draw(u, false);
