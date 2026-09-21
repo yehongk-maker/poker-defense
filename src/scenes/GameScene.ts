@@ -7,6 +7,8 @@ import { HUD } from '../ui/HUD.ts';
 import { CardHand } from '../ui/CardHand.ts';
 import { TrackView } from '../ui/TrackView.ts';
 import { ManagePanel } from '../ui/ManagePanel.ts';
+import { UpgradePanel } from '../ui/UpgradePanel.ts';
+import { SwipeController } from '../ui/SwipeController.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
 
@@ -25,6 +27,8 @@ export class GameScene extends Phaser.Scene {
   private hand!: CardHand;
   private track!: TrackView;
   private manage!: ManagePanel;
+  private upgrades!: UpgradePanel;
+  private swipe!: SwipeController;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -55,24 +59,17 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.manage = new ManagePanel(this, PANEL_Y, {
-      onUpgrade: (s: Suit) => this.safe(() => { this.loop.buyUpgrade(s); this.showToast(`${SUIT_SYMBOL[s]} 공격력 Lv${this.loop.upgrades[s]}`); }),
       onMerge: () => this.safe(() => {
         const ids = this.loop.mergeable;
         for (const id of ids) { try { const m = this.loop.mergeUnits(id); this.showToast(`합성 → ${m.def.name} T${m.def.tier}`); } catch { /* 경합 */ } }
         this.selectedUnit = -1;
-      }),
-      onHero: () => this.safe(() => {
-        // Phase 3(스와이프 화면)에서 선택 UI로 교체. 지금은 필드 다수 수트의 기본 영웅.
-        const s = this.dominantSuit();
-        const h = this.loop.unlockedHeroes.find((h) => h.suit === s) ?? this.loop.unlockedHeroes[0];
-        const r = this.loop.summonHero(h.id);
-        this.showToast(`영웅 소환: ${r.def.name} ${r.grade}급`);
       }),
       onSell: () => this.safe(() => {
         const g = this.loop.sellUnit(this.selectedUnit);
         this.selectedUnit = -1;
         this.showToast(`판매 +💰${g}`);
       }),
+      onOpenUpgrades: () => this.swipe.open(),
       onStart: () => this.safe(() => {
         this.loop.startCombat();
         this.selectedUnit = -1;
@@ -80,6 +77,21 @@ export class GameScene extends Phaser.Scene {
         this.refreshPanels();
       }),
     });
+
+    // 스와이프 업그레이드/영웅 화면 (GDD 4 우측 화면)
+    this.upgrades = new UpgradePanel(this, this.loop, {
+      onUpgrade: (s: Suit) => this.safe(() => { this.loop.buyUpgrade(s); this.showToast(`${SUIT_SYMBOL[s]} 공격력 Lv${this.loop.upgrades[s]}`); }),
+      onSummonHero: (id) => this.safe(() => {
+        const r = this.loop.summonHero(id);
+        this.showToast(`영웅 소환: ${r.def.name} ${r.grade}급`);
+      }),
+      onClose: () => this.swipe.close(),
+    }, this.data_.config.upgrade.attackPctPerLevel).setDepth(10);
+    this.swipe = new SwipeController(this, this.upgrades, (open) => { if (open) this.upgrades.refresh(this.loop); });
+    // 우측 가장자리 탭 핸들 (모든 페이즈에서 열기 가능)
+    const handle = this.add.rectangle(GAME_WIDTH - 22, 690, 44, 220, COLORS.panel).setStrokeStyle(2, COLORS.panelLine).setInteractive({ useHandCursor: true });
+    handle.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) this.swipe.open(); });
+    this.add.text(GAME_WIDTH - 22, 690, '◀ 업그레이드', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setAngle(-90);
 
     // 전투 패널
     this.combatText = this.add.text(GAME_WIDTH / 2, PANEL_Y - 40, '', { fontSize: '36px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
@@ -89,7 +101,7 @@ export class GameScene extends Phaser.Scene {
     }, { width: 300, height: 100, fontSize: 34, fill: 0x3b4a66, textColor: COLORS.text });
     this.combatPanel = this.add.container(0, 0, [this.combatText, this.speedBtn]);
 
-    this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0);
+    this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(20);
 
     this.track.setUnitTapHandler((i) => {
       if (this.loop.phase !== 'manage') return;
@@ -176,6 +188,7 @@ export class GameScene extends Phaser.Scene {
     this.combatPanel.setVisible(ph === 'combat');
     this.track.setUnits(this.loop.units, ph === 'manage' ? this.selectedUnit : -1);
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedUnit, this.data_.config.sellRatio);
+    this.upgrades.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves);
   }
 
@@ -183,12 +196,6 @@ export class GameScene extends Phaser.Scene {
   private safe(fn: () => void): void {
     try { fn(); } catch (e) { this.showToast(String((e as Error).message)); }
     this.refreshPanels();
-  }
-
-  private dominantSuit(): Suit {
-    const c: Record<Suit, number> = { S: 0, H: 0, D: 0, C: 0 };
-    for (const u of this.loop.units) c[u.def.suit]++;
-    return (['S', 'H', 'D', 'C'] as Suit[]).reduce((a, b) => (c[b] > c[a] ? b : a));
   }
 
   private showToast(msg: string): void {
@@ -200,10 +207,11 @@ export class GameScene extends Phaser.Scene {
   private showEnd(): void {
     this.ended = true;
     const win = this.loop.phase === 'victory';
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75);
-    this.add.text(GAME_WIDTH / 2, 760, win ? '승리!' : '패배', { fontSize: '120px', color: win ? '#f1d17a' : '#e0473f', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5);
-    this.add.text(GAME_WIDTH / 2, 880, `도달 웨이브 ${this.loop.wave} / ${this.data_.config.totalWaves}   💰 ${Math.floor(this.loop.gold)}`, { fontSize: '40px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5);
-    new Button(this, GAME_WIDTH / 2, 1040, '다시 시작', () => this.scene.restart(), { width: 480, height: 120, fontSize: 44 });
-    new Button(this, GAME_WIDTH / 2, 1200, '로비로', () => this.scene.start(SCENE.Lobby), { width: 480, height: 120, fontSize: 44, fill: 0x3b4a66, textColor: COLORS.text });
+    this.swipe.close();
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
+    this.add.text(GAME_WIDTH / 2, 760, win ? '승리!' : '패배', { fontSize: '120px', color: win ? '#f1d17a' : '#e0473f', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 880, `도달 웨이브 ${this.loop.wave} / ${this.data_.config.totalWaves}   💰 ${Math.floor(this.loop.gold)}`, { fontSize: '40px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    new Button(this, GAME_WIDTH / 2, 1040, '다시 시작', () => this.scene.restart(), { width: 480, height: 120, fontSize: 44 }).setDepth(31);
+    new Button(this, GAME_WIDTH / 2, 1200, '로비로', () => this.scene.start(SCENE.Lobby), { width: 480, height: 120, fontSize: 44, fill: 0x3b4a66, textColor: COLORS.text }).setDepth(31);
   }
 }

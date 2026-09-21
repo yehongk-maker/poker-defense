@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { DeployedUnit, Enemy, HitEvent } from '../systems/Battle.ts';
 import type { GameLoop } from '../systems/GameLoop.ts';
-import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL } from './theme.ts';
+import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP } from './theme.ts';
 
 /**
  * 순환 트랙 + 유닛 슬롯(5×5) + 적 + 타격 연출.
@@ -41,7 +41,7 @@ export class TrackView {
     for (let i = 0; i < GRID_N * GRID_N; i++) {
       const { x, y } = this.cellCenter(i);
       const r = scene.add.rectangle(x, y, CELL - 8, CELL - 8, COLORS.cell).setStrokeStyle(2, COLORS.cellLine);
-      r.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.onUnitTap?.(i));
+      r.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) this.onUnitTap?.(i); });
       this.cells.push(r);
     }
     this.fxGfx = scene.add.graphics();

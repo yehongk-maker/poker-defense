@@ -126,8 +126,20 @@ export class GameLoop {
       (this.freeHero || this._shards >= this.data.config.hero.shardsRequired);
   }
   get unlockedHeroes(): HeroDef[] {
+    return this.data.heroes.filter((h) => this.isHeroUnlocked(h.id));
+  }
+  /** 전체 영웅 8종 (해금 여부 무관 — 선택 UI에서 잠금 표시용) */
+  get allHeroes(): readonly HeroDef[] { return this.data.heroes; }
+  isHeroUnlocked(id: string): boolean {
     const ids = this.data.unlockedHeroes;
-    return this.data.heroes.filter((h) => (ids ? ids.includes(h.id) : h.unlock === 'basic'));
+    const h = this.data.heroes.find((h) => h.id === id);
+    return !!h && (ids ? ids.includes(h.id) : h.unlock === 'basic');
+  }
+  /** 지금 소환하면 받을 영웅 등급 (남은 웨이브 기준 — GDD 3.3) */
+  get heroGradeNow(): HeroGrade {
+    const remaining = this.data.config.totalWaves - this._wave + 1;
+    const g = this.data.config.hero.grades;
+    return remaining >= g.S.minRemainingWaves ? 'S' : remaining >= g.A.minRemainingWaves ? 'A' : 'B';
   }
 
   // ── 카드 페이즈 → 소환 ─────────────────────────────────────
@@ -228,11 +240,8 @@ export class GameLoop {
     if (this.freeHero) this.freeHero = false;
     else this._shards -= this.data.config.hero.shardsRequired;
 
-    const remaining = this.data.config.totalWaves - this._wave + 1;
-    const g = this.data.config.hero.grades;
-    const grade: HeroGrade =
-      remaining >= g.S.minRemainingWaves ? 'S' : remaining >= g.A.minRemainingWaves ? 'A' : 'B';
-    const mult = g[grade].mult;
+    const grade = this.heroGradeNow;
+    const mult = this.data.config.hero.grades[grade].mult;
 
     // 영웅을 전투 유닛으로 구성 (시너지 카운트 제외 — GDD 3.3)
     const heroUnitDef: UnitDef = {

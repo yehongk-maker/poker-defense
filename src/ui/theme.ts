@@ -39,6 +39,11 @@ export const ENEMY_COLOR: Record<string, number> = {
 export const RANK_LABEL: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
 export const rankLabel = (r: number): string => RANK_LABEL[r] ?? String(r);
 
+/** 탭으로 인정하는 최대 이동 거리(px). 이보다 크면 스와이프로 본다 */
+export const TAP_SLOP = 24;
+
+export const CLASS_NAME: Record<string, string> = { raider: '약탈자', destroyer: '파괴병기', saint: '성령체', arcanist: '술법체', transcendent: '초월체' };
+
 export const FONT = 'Helvetica Neue, Apple SD Gothic Neo, Noto Sans KR, sans-serif';
 
 export const HAND_NAME: Record<number, string> = {

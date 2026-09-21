@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { Card } from '../systems/PokerEvaluator.ts';
 import { GAME_WIDTH } from '../config.ts';
 import { Button } from './Button.ts';
-import { COLORS, FONT, SUIT_CARD_COLOR, SUIT_SYMBOL, rankLabel } from './theme.ts';
+import { COLORS, FONT, SUIT_CARD_COLOR, SUIT_SYMBOL, TAP_SLOP, rankLabel } from './theme.ts';
 
 export interface CardHandCallbacks {
   onToggle: (index: number) => void;
@@ -33,7 +33,7 @@ export class CardHand extends Phaser.GameObjects.Container {
       const suit = scene.add.text(0, 14, '', { fontSize: '96px', fontFamily: FONT }).setOrigin(0.5);
       c.add([bg, rank, suit]);
       c.setSize(CARD_W, CARD_H).setInteractive({ useHandCursor: true });
-      c.on('pointerdown', () => this.cb.onToggle(i));
+      c.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) this.cb.onToggle(i); });
       this.cards.push(c);
       this.add(c);
     }

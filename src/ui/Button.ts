@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, FONT } from './theme.ts';
+import { COLORS, FONT, TAP_SLOP } from './theme.ts';
 
 export interface ButtonOptions {
   width?: number;
@@ -30,7 +30,8 @@ export class Button extends Phaser.GameObjects.Container {
     this.add([this.rect, this.label]);
     this.setSize(w, h);
     this.setInteractive({ useHandCursor: true });
-    this.on('pointerdown', () => { if (this.enabled) onClick(); });
+    // 스와이프 제스처와 구분: 누른 뒤 거의 움직이지 않고 뗐을 때만 클릭
+    this.on('pointerup', (p: Phaser.Input.Pointer) => { if (this.enabled && p.getDistance() < TAP_SLOP) onClick(); });
     this.on('pointerover', () => { if (this.enabled) this.rect.setFillStyle(COLORS.goldLight); });
     this.on('pointerout', () => { if (this.enabled) this.rect.setFillStyle(this.fill); });
     scene.add.existing(this);
