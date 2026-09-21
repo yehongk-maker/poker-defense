@@ -1,6 +1,7 @@
 // waves.json 생성 스크립트 — GDD 3.5. 수정 후 재실행하면 waves.json 갱신.
-// 실행: npm run waves -- [--timeLimit 30] [--bossTimeLimit 45] [--hpBase 20] [--hpGrowth 1.15] [--countBase 4] [--countPer 0.5] [--countMax 30] [--bossMult 25] [--armoredMult 1.0] [--specialShare 0.7] [--out path]
+// 실행: npm run waves -- [--timeLimit 30] [--bossTimeLimit 45] [--hpBase 20] [--hpGrowth 1.16] [--countBase 4] [--countPer 0.5] [--countMax 30] [--bossMult 25] [--armoredMult 1.0] [--specialShare 0.7] [--out path]
 // 2026-09-20 밸런스: 1.18^w/15~30마리 → 하이카드 봇 98% 웨이브1 사망. 1.15^w/4+0.5w/중갑 hpMult 1.0으로 조정 (근거: npm run sim).
+// 2026-09-21 종족·진형 시너지 추가로 화력 상승 → hpGrowth 1.15→1.16 (봇 기준 하이카드 22 / 무전략 24 / 최선 31 유지).
 // 밸런스 근거는 scripts/simulate.ts 결과로 검증한다 (npm run sim).
 import { writeFileSync } from 'node:fs';
 
@@ -10,7 +11,7 @@ const optS = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[
 
 // ── 밸런스 파라미터 (기본값 = 현재 채택값) ──
 const HP_BASE = opt('hpBase', 20);
-const HP_GROWTH = opt('hpGrowth', 1.15);
+const HP_GROWTH = opt('hpGrowth', 1.16);
 const COUNT_BASE = opt('countBase', 4);
 const COUNT_PER = opt('countPer', 0.5);
 const COUNT_MAX = opt('countMax', 30);

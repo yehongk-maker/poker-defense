@@ -12,7 +12,8 @@ const units: UnitDef[] = JSON.parse(readFileSync(join(dataDir, 'units.json'), 'u
 
 const unit = (id: string): UnitDef => units.find((u) => u.id === id)!;
 const deploy = (...ids: string[]): DeployedUnit[] => ids.map((id, i) => ({ def: unit(id), slot: i }));
-const sys = () => new SynergySystem(table);
+// 이 파일은 수트·클래스 축만 검증한다 (종족·진형 축은 SynergyRaceFormation.test.ts) → 두 축만 있는 테이블로 격리
+const sys = () => new SynergySystem({ suits: table.suits, classes: table.classes });
 
 describe('synergies.json 무결성', () => {
   it('수트 4종 + 클래스 5종, thresholds와 effects 길이 일치', () => {

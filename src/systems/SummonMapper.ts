@@ -19,6 +19,8 @@ import {
 } from './PokerEvaluator.ts';
 
 export type UnitClass = 'raider' | 'destroyer' | 'saint' | 'arcanist' | 'transcendent';
+/** 종족 시너지 축 (docs/synergy-design.md) */
+export type UnitRace = 'human' | 'goblin' | 'monster' | 'spirit';
 
 export interface UnitDef {
   id: string;
@@ -26,6 +28,7 @@ export interface UnitDef {
   suit: Suit;
   tier: number;
   class: UnitClass;
+  race: UnitRace;
   attackType: 'melee' | 'ranged' | 'magic';
   baseDps: number;
   dpsFactor: number;

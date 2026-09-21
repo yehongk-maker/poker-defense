@@ -1,82 +1,558 @@
 {
-  "comment": "GDD 3.2/3.2.2 시너지 테이블. thresholds[i]에 도달하면 effects[i]가 적용 (상위 구간이 하위를 대체). scope: suit=해당 수트 유닛, class=해당 클래스 유닛, global=전체 유닛, economy=경제 규칙.",
+  "comment": "GDD 3.2/3.2.2 + docs/synergy-design.md. 4축: suits(수트, 기수 2/4/6) · classes(클래스, 종류 2/4) · races(종족, 기수+영웅 1) · formation(진형, 사거리/조건 자동 판정). thresholds[i] 도달 시 effects[i] 적용(상위가 하위 대체). scope: suit/class/race/formation=그룹 소속 유닛, global=전체 유닛, economy=경제 규칙, battle=전투 규칙. caps: 시너지 합산 상한.",
   "suits": {
     "S": {
       "name": "강철 군단",
-      "thresholds": [2, 4, 6],
+      "thresholds": [
+        2,
+        4,
+        6
+      ],
       "effects": [
-        [{ "type": "attack_pct", "pct": 10, "scope": "suit" }],
-        [{ "type": "attack_pct", "pct": 25, "scope": "suit" }],
-        [{ "type": "attack_pct", "pct": 25, "scope": "suit" }, { "type": "armor_pierce", "scope": "suit" }]
+        [
+          {
+            "type": "attack_pct",
+            "pct": 10,
+            "scope": "suit"
+          }
+        ],
+        [
+          {
+            "type": "attack_pct",
+            "pct": 25,
+            "scope": "suit"
+          }
+        ],
+        [
+          {
+            "type": "attack_pct",
+            "pct": 25,
+            "scope": "suit"
+          },
+          {
+            "type": "armor_pierce",
+            "scope": "suit"
+          }
+        ]
       ]
     },
     "H": {
       "name": "성소 교단",
-      "thresholds": [2, 4, 6],
+      "thresholds": [
+        2,
+        4,
+        6
+      ],
       "effects": [
-        [{ "type": "attack_speed_pct", "pct": 8, "scope": "global" }],
-        [{ "type": "attack_speed_pct", "pct": 18, "scope": "global" }],
-        [{ "type": "attack_speed_pct", "pct": 18, "scope": "global" }, { "type": "life_per_wave", "amount": 1, "scope": "economy" }]
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 8,
+            "scope": "global"
+          }
+        ],
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 18,
+            "scope": "global"
+          }
+        ],
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 18,
+            "scope": "global"
+          },
+          {
+            "type": "life_per_wave",
+            "amount": 1,
+            "scope": "economy"
+          }
+        ]
       ]
     },
     "D": {
       "name": "황금 상단",
-      "thresholds": [2, 4, 6],
+      "thresholds": [
+        2,
+        4,
+        6
+      ],
       "effects": [
-        [{ "type": "wave_gold_pct", "pct": 10, "scope": "economy" }],
-        [{ "type": "wave_gold_pct", "pct": 25, "scope": "economy" }],
-        [{ "type": "wave_gold_pct", "pct": 25, "scope": "economy" }, { "type": "kill_bonus_gold_chance", "pct": 20, "amount": 3, "scope": "economy" }]
+        [
+          {
+            "type": "wave_gold_pct",
+            "pct": 10,
+            "scope": "economy"
+          }
+        ],
+        [
+          {
+            "type": "wave_gold_pct",
+            "pct": 25,
+            "scope": "economy"
+          }
+        ],
+        [
+          {
+            "type": "wave_gold_pct",
+            "pct": 25,
+            "scope": "economy"
+          },
+          {
+            "type": "kill_bonus_gold_chance",
+            "pct": 20,
+            "amount": 3,
+            "scope": "economy"
+          }
+        ]
       ]
     },
     "C": {
       "name": "심연 마족",
-      "thresholds": [2, 4, 6],
+      "thresholds": [
+        2,
+        4,
+        6
+      ],
       "effects": [
-        [{ "type": "attack_pct", "pct": 12, "scope": "suit" }],
-        [{ "type": "attack_pct", "pct": 30, "scope": "suit" }],
-        [{ "type": "attack_pct", "pct": 30, "scope": "suit" }, { "type": "aoe_radius_pct", "pct": 25, "scope": "suit" }]
+        [
+          {
+            "type": "attack_pct",
+            "pct": 12,
+            "scope": "suit"
+          }
+        ],
+        [
+          {
+            "type": "attack_pct",
+            "pct": 30,
+            "scope": "suit"
+          }
+        ],
+        [
+          {
+            "type": "attack_pct",
+            "pct": 30,
+            "scope": "suit"
+          },
+          {
+            "type": "aoe_radius_pct",
+            "pct": 25,
+            "scope": "suit"
+          }
+        ]
       ]
     }
   },
   "classes": {
     "raider": {
       "name": "약탈자",
-      "thresholds": [2, 4],
+      "thresholds": [
+        2,
+        4
+      ],
       "effects": [
-        [{ "type": "attack_speed_pct", "pct": 8, "scope": "global" }],
-        [{ "type": "attack_speed_pct", "pct": 18, "scope": "global" }, { "type": "kill_gold_bonus", "amount": 1, "scope": "economy" }]
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 8,
+            "scope": "global"
+          }
+        ],
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 18,
+            "scope": "global"
+          },
+          {
+            "type": "kill_gold_bonus",
+            "amount": 1,
+            "scope": "economy"
+          }
+        ]
       ]
     },
     "destroyer": {
       "name": "파괴병기",
-      "thresholds": [2, 4],
+      "thresholds": [
+        2,
+        4
+      ],
       "effects": [
-        [{ "type": "single_target_pct", "pct": 12, "scope": "class" }],
-        [{ "type": "single_target_pct", "pct": 30, "scope": "class" }]
+        [
+          {
+            "type": "single_target_pct",
+            "pct": 12,
+            "scope": "class"
+          }
+        ],
+        [
+          {
+            "type": "single_target_pct",
+            "pct": 30,
+            "scope": "class"
+          }
+        ]
       ]
     },
     "saint": {
       "name": "성령체",
-      "thresholds": [2, 4],
+      "thresholds": [
+        2,
+        4
+      ],
       "effects": [
-        [{ "type": "buff_effect_pct", "pct": 25, "scope": "global" }],
-        [{ "type": "buff_effect_pct", "pct": 60, "scope": "global" }]
+        [
+          {
+            "type": "buff_effect_pct",
+            "pct": 25,
+            "scope": "global"
+          }
+        ],
+        [
+          {
+            "type": "buff_effect_pct",
+            "pct": 60,
+            "scope": "global"
+          }
+        ]
       ]
     },
     "arcanist": {
       "name": "술법체",
-      "thresholds": [2, 4],
+      "thresholds": [
+        2,
+        4
+      ],
       "effects": [
-        [{ "type": "debuff_duration_pct", "pct": 30, "scope": "class" }],
-        [{ "type": "debuff_duration_pct", "pct": 30, "scope": "class" }, { "type": "extra_slow_pct", "pct": 10, "scope": "class" }]
+        [
+          {
+            "type": "debuff_duration_pct",
+            "pct": 30,
+            "scope": "class"
+          }
+        ],
+        [
+          {
+            "type": "debuff_duration_pct",
+            "pct": 30,
+            "scope": "class"
+          },
+          {
+            "type": "extra_slow_pct",
+            "pct": 10,
+            "scope": "class"
+          }
+        ]
       ]
     },
     "transcendent": {
       "name": "초월체",
-      "thresholds": [2, 4],
+      "thresholds": [
+        2,
+        4
+      ],
       "effects": [
-        [{ "type": "aoe_radius_pct", "pct": 15, "scope": "class" }],
-        [{ "type": "aoe_radius_pct", "pct": 35, "scope": "class" }]
+        [
+          {
+            "type": "aoe_radius_pct",
+            "pct": 15,
+            "scope": "class"
+          }
+        ],
+        [
+          {
+            "type": "aoe_radius_pct",
+            "pct": 35,
+            "scope": "class"
+          }
+        ]
+      ]
+    }
+  },
+  "caps": {
+    "attackPct": 80,
+    "attackSpeedPct": 50
+  },
+  "races": {
+    "human": {
+      "name": "휴먼",
+      "thresholds": [
+        3,
+        5,
+        7
+      ],
+      "effects": [
+        [
+          {
+            "type": "line_attack_pct",
+            "pctPerAlly": 4,
+            "max": 16,
+            "scope": "race"
+          }
+        ],
+        [
+          {
+            "type": "line_attack_pct",
+            "pctPerAlly": 6,
+            "max": 24,
+            "scope": "race"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 8,
+            "scope": "race"
+          }
+        ],
+        [
+          {
+            "type": "line_attack_pct",
+            "pctPerAlly": 6,
+            "max": 24,
+            "scope": "race"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 8,
+            "scope": "race"
+          },
+          {
+            "type": "range_plus",
+            "amount": 1,
+            "onlyEdge": true,
+            "scope": "race"
+          }
+        ]
+      ]
+    },
+    "goblin": {
+      "name": "고블린",
+      "thresholds": [
+        3,
+        5
+      ],
+      "effects": [
+        [
+          {
+            "type": "kill_gold_bonus",
+            "amount": 1,
+            "scope": "economy"
+          },
+          {
+            "type": "wave_start_gold",
+            "amount": 10,
+            "scope": "economy"
+          }
+        ],
+        [
+          {
+            "type": "kill_gold_bonus",
+            "amount": 1,
+            "scope": "economy"
+          },
+          {
+            "type": "wave_start_gold",
+            "amount": 10,
+            "scope": "economy"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 15,
+            "scope": "race"
+          },
+          {
+            "type": "leak_gold",
+            "amount": 8,
+            "scope": "economy"
+          }
+        ]
+      ]
+    },
+    "monster": {
+      "name": "몬스터",
+      "thresholds": [
+        2,
+        4,
+        6
+      ],
+      "effects": [
+        [
+          {
+            "type": "aoe_radius_pct",
+            "pct": 15,
+            "scope": "race"
+          }
+        ],
+        [
+          {
+            "type": "aoe_radius_pct",
+            "pct": 15,
+            "scope": "race"
+          },
+          {
+            "type": "enemy_speed_pct",
+            "pct": -8,
+            "scope": "battle"
+          }
+        ],
+        [
+          {
+            "type": "aoe_radius_pct",
+            "pct": 15,
+            "scope": "race"
+          },
+          {
+            "type": "enemy_speed_pct",
+            "pct": -8,
+            "scope": "battle"
+          },
+          {
+            "type": "wave_start_stun",
+            "sec": 3,
+            "scope": "battle"
+          }
+        ]
+      ]
+    },
+    "spirit": {
+      "name": "정령",
+      "thresholds": [
+        2,
+        3
+      ],
+      "effects": [
+        [
+          {
+            "type": "time_limit_plus",
+            "sec": 4,
+            "scope": "battle"
+          }
+        ],
+        [
+          {
+            "type": "time_limit_plus",
+            "sec": 8,
+            "scope": "battle"
+          },
+          {
+            "type": "life_per_wave",
+            "amount": 1,
+            "scope": "economy"
+          }
+        ]
+      ]
+    }
+  },
+  "formation": {
+    "melee": {
+      "name": "전열",
+      "countBy": "range",
+      "range": 2,
+      "thresholds": [
+        3,
+        6
+      ],
+      "effects": [
+        [
+          {
+            "type": "attack_pct",
+            "pct": 10,
+            "scope": "formation"
+          }
+        ],
+        [
+          {
+            "type": "attack_pct",
+            "pct": 20,
+            "scope": "formation"
+          },
+          {
+            "type": "range_plus",
+            "amount": 1,
+            "scope": "formation"
+          }
+        ]
+      ]
+    },
+    "ranged": {
+      "name": "후열",
+      "countBy": "range",
+      "range": 4,
+      "thresholds": [
+        3,
+        6
+      ],
+      "effects": [
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 10,
+            "scope": "formation"
+          }
+        ],
+        [
+          {
+            "type": "attack_speed_pct",
+            "pct": 20,
+            "scope": "formation"
+          },
+          {
+            "type": "range_mult_override",
+            "range": 4,
+            "mult": 0.9,
+            "scope": "battle"
+          }
+        ]
+      ]
+    },
+    "mid": {
+      "name": "중열",
+      "countBy": "range",
+      "range": 3,
+      "thresholds": [
+        3
+      ],
+      "effects": [
+        [
+          {
+            "type": "debuff_duration_pct",
+            "pct": 25,
+            "scope": "formation"
+          },
+          {
+            "type": "aoe_radius_pct",
+            "pct": 10,
+            "scope": "formation"
+          }
+        ]
+      ]
+    },
+    "mixed": {
+      "name": "전후열 완성",
+      "countBy": "condition",
+      "condition": {
+        "melee": 3,
+        "ranged": 3
+      },
+      "thresholds": [
+        1
+      ],
+      "effects": [
+        [
+          {
+            "type": "attack_pct",
+            "pct": 8,
+            "scope": "global"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 5,
+            "scope": "global"
+          }
+        ]
       ]
     }
   }

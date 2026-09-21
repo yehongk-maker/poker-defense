@@ -1,8 +1,8 @@
 {
-  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.15^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30), 제한시간 30s(보스 45s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 라이프, rangeDamageMult 사거리(셀)별 공격 배율. 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
+  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.16^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30), 제한시간 30s(보스 45s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 라이프, rangeDamageMult 사거리(셀)별 공격 배율. 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
   "formula": {
     "hpBase": 20,
-    "hpGrowth": 1.15,
+    "hpGrowth": 1.16,
     "countBase": 4,
     "countPerWave": 0.5,
     "countMax": 30
@@ -72,7 +72,7 @@
     {
       "wave": 2,
       "boss": false,
-      "hp": 26,
+      "hp": 27,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -85,7 +85,7 @@
     {
       "wave": 3,
       "boss": false,
-      "hp": 30,
+      "hp": 31,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -98,7 +98,7 @@
     {
       "wave": 4,
       "boss": false,
-      "hp": 35,
+      "hp": 36,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -111,7 +111,7 @@
     {
       "wave": 5,
       "boss": false,
-      "hp": 40,
+      "hp": 42,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -128,7 +128,7 @@
     {
       "wave": 6,
       "boss": false,
-      "hp": 46,
+      "hp": 49,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -141,7 +141,7 @@
     {
       "wave": 7,
       "boss": false,
-      "hp": 53,
+      "hp": 57,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -154,7 +154,7 @@
     {
       "wave": 8,
       "boss": false,
-      "hp": 61,
+      "hp": 66,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -171,7 +171,7 @@
     {
       "wave": 9,
       "boss": false,
-      "hp": 70,
+      "hp": 76,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -188,7 +188,7 @@
     {
       "wave": 10,
       "boss": true,
-      "hp": 81,
+      "hp": 88,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
@@ -201,7 +201,7 @@
     {
       "wave": 11,
       "boss": false,
-      "hp": 93,
+      "hp": 102,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -218,7 +218,7 @@
     {
       "wave": 12,
       "boss": false,
-      "hp": 107,
+      "hp": 119,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -235,7 +235,7 @@
     {
       "wave": 13,
       "boss": false,
-      "hp": 123,
+      "hp": 138,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -252,7 +252,7 @@
     {
       "wave": 14,
       "boss": false,
-      "hp": 142,
+      "hp": 160,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -269,7 +269,7 @@
     {
       "wave": 15,
       "boss": false,
-      "hp": 163,
+      "hp": 185,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -286,7 +286,7 @@
     {
       "wave": 16,
       "boss": false,
-      "hp": 187,
+      "hp": 215,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -303,7 +303,7 @@
     {
       "wave": 17,
       "boss": false,
-      "hp": 215,
+      "hp": 249,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -320,7 +320,7 @@
     {
       "wave": 18,
       "boss": false,
-      "hp": 248,
+      "hp": 289,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -337,7 +337,7 @@
     {
       "wave": 19,
       "boss": false,
-      "hp": 285,
+      "hp": 336,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -354,7 +354,7 @@
     {
       "wave": 20,
       "boss": true,
-      "hp": 327,
+      "hp": 389,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
@@ -367,7 +367,7 @@
     {
       "wave": 21,
       "boss": false,
-      "hp": 376,
+      "hp": 451,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -384,7 +384,7 @@
     {
       "wave": 22,
       "boss": false,
-      "hp": 433,
+      "hp": 524,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -401,7 +401,7 @@
     {
       "wave": 23,
       "boss": false,
-      "hp": 498,
+      "hp": 608,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -418,7 +418,7 @@
     {
       "wave": 24,
       "boss": false,
-      "hp": 573,
+      "hp": 705,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -435,7 +435,7 @@
     {
       "wave": 25,
       "boss": false,
-      "hp": 658,
+      "hp": 817,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -452,7 +452,7 @@
     {
       "wave": 26,
       "boss": false,
-      "hp": 757,
+      "hp": 948,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -469,7 +469,7 @@
     {
       "wave": 27,
       "boss": false,
-      "hp": 871,
+      "hp": 1100,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -486,7 +486,7 @@
     {
       "wave": 28,
       "boss": false,
-      "hp": 1001,
+      "hp": 1276,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -503,7 +503,7 @@
     {
       "wave": 29,
       "boss": false,
-      "hp": 1152,
+      "hp": 1480,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -520,7 +520,7 @@
     {
       "wave": 30,
       "boss": true,
-      "hp": 1324,
+      "hp": 1717,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
@@ -533,7 +533,7 @@
     {
       "wave": 31,
       "boss": false,
-      "hp": 1523,
+      "hp": 1992,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -550,7 +550,7 @@
     {
       "wave": 32,
       "boss": false,
-      "hp": 1751,
+      "hp": 2310,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -567,7 +567,7 @@
     {
       "wave": 33,
       "boss": false,
-      "hp": 2014,
+      "hp": 2680,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -584,7 +584,7 @@
     {
       "wave": 34,
       "boss": false,
-      "hp": 2316,
+      "hp": 3109,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -601,7 +601,7 @@
     {
       "wave": 35,
       "boss": false,
-      "hp": 2664,
+      "hp": 3606,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -618,7 +618,7 @@
     {
       "wave": 36,
       "boss": false,
-      "hp": 3063,
+      "hp": 4183,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -635,7 +635,7 @@
     {
       "wave": 37,
       "boss": false,
-      "hp": 3522,
+      "hp": 4853,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -652,7 +652,7 @@
     {
       "wave": 38,
       "boss": false,
-      "hp": 4051,
+      "hp": 5629,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -669,7 +669,7 @@
     {
       "wave": 39,
       "boss": false,
-      "hp": 4658,
+      "hp": 6530,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
@@ -686,7 +686,7 @@
     {
       "wave": 40,
       "boss": true,
-      "hp": 5357,
+      "hp": 7574,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [

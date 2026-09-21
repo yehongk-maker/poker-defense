@@ -42,6 +42,7 @@ export const rankLabel = (r: number): string => RANK_LABEL[r] ?? String(r);
 /** 탭으로 인정하는 최대 이동 거리(px). 이보다 크면 스와이프로 본다 */
 export const TAP_SLOP = 24;
 
+export const RACE_NAME: Record<string, string> = { human: '휴먼', goblin: '고블린', monster: '몬스터', spirit: '정령' };
 export const CLASS_NAME: Record<string, string> = { raider: '약탈자', destroyer: '파괴병기', saint: '성령체', arcanist: '술법체', transcendent: '초월체' };
 
 export const FONT = 'Helvetica Neue, Apple SD Gothic Neo, Noto Sans KR, sans-serif';

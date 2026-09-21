@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import { GAME_WIDTH } from '../config.ts';
 import { Button } from './Button.ts';
-import { COLORS, FONT } from './theme.ts';
+import { CLASS_NAME, COLORS, FONT, RACE_NAME } from './theme.ts';
 
 export interface ManageCallbacks {
   onMerge: () => void;
@@ -46,7 +46,7 @@ export class ManagePanel extends Phaser.GameObjects.Container {
     const isHero = !!u && loop.hero?.unit === u;
     if (u && !isHero) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
     else this.sellBtn.setLabel(isHero ? '영웅은 판매 불가' : '판매 (유닛 탭)').setEnabled(false);
-    this.hint.setText(u ? `${u.def.name} 사거리 ${u.def.range}칸 — 빈 칸을 탭하면 이동, 다른 유닛을 탭하면 자리 교환` : '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)');
+    this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸 — 빈 칸 탭: 이동 / 유닛 탭: 교환` : '유닛 탭 → 빈 칸 탭: 이동 (근접은 가장자리, 원거리는 안쪽이 유리)');
     const hero = loop.canSummonHero ? '영웅 소환 가능!' : '업그레이드';
     this.upgradesBtn.setLabel(`${hero}\n영웅 ▶`);
   }

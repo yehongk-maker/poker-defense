@@ -16,6 +16,7 @@ import {
   SummonMapper,
   type UnitDef,
   type UnitClass,
+  type UnitRace,
   type HandsTable,
 } from './SummonMapper.ts';
 import {
@@ -36,6 +37,8 @@ export interface HeroDef {
   name: string;
   suit: Suit;
   unlock: 'basic' | 'meta';
+  /** 종족 시너지 카운트 +1 (docs/synergy-design.md) */
+  race: UnitRace;
   combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number };
   passive: Record<string, unknown> & { type: string };
   active: Record<string, unknown> & { id: string; cooldownSec: number };
@@ -307,7 +310,7 @@ export class GameLoop {
     // 영웅을 전투 유닛으로 구성 (시너지 카운트 제외 — GDD 3.3)
     const heroUnitDef: UnitDef = {
       id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6,
-      class: 'transcendent' as UnitClass, attackType: def.combat.attackType,
+      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType,
       baseDps: def.combat.baseDps * mult, dpsFactor: 1.0,
       attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
@@ -329,6 +332,7 @@ export class GameLoop {
     if (this._hero?.def.passive.type === 'kill_gold_pct') {
       mods.killGoldPct = this._hero.def.passive.pct as number;
     }
+    this._gold += g.waveStartGold; // 고블린: 웨이브 시작 골드
 
     const combatUnits = this._hero ? [...this._units, this._hero.unit] : [...this._units];
     this.lifeNegationsLeft = this._units.filter((u) => u.def.effect?.type === 'negate_life_loss').length;
@@ -337,6 +341,12 @@ export class GameLoop {
       getGold: () => this._gold,
       rng: this.rng,
       globalMods: mods,
+      battleMods: {
+        timeLimitBonus: g.timeLimitPlus,
+        enemySpeedPct: g.enemySpeedPct,
+        waveStartStunSec: g.waveStartStunSec,
+        rangeMultOverride: g.rangeMultOverride,
+      },
     });
     this._phase = 'combat';
   }
@@ -346,6 +356,7 @@ export class GameLoop {
     this.assertPhase('combat');
     const ev = this.battle_!.tick(dt);
     this._gold += ev.goldEarned;
+    if (ev.leaked > 0) this._gold += ev.leaked * this.lastSynergy!.global.leakGold; // 고블린 5: 이탈 적당 골드 회수
 
     // 라이프 차감 (빛의 치유사 무효 → 태산 수호자 확률 무효 순서)
     let loss = ev.lifeLost;
@@ -393,13 +404,14 @@ export class GameLoop {
       S: this.upgradeLevels.S * up, H: this.upgradeLevels.H * up,
       D: this.upgradeLevels.D * up, C: this.upgradeLevels.C * up,
     };
-    this.lastSynergy = this.synergy.apply(this._units, { extraClassCounts, suitAttackUpgradePct });
+    this.lastSynergy = this.synergy.apply(this._units, { extraClassCounts, suitAttackUpgradePct, heroRace: this._hero?.def.race, geometry: this.geometry });
 
     // 영웅 패시브 (시너지 재계산 후 덧셈 — 영웅 유닛 자체는 시너지 카운트 제외)
     if (this._hero) {
       this._hero.unit.attackPctBonus = 0;
       this._hero.unit.attackSpeedPctBonus = 0;
       this._hero.unit.chainTargetsBonus = 0;
+      this._hero.unit.rangeBonus = 0;
       const hp = this._hero.def.passive;
       switch (hp.type) {
         case 'suit_attack_pct':

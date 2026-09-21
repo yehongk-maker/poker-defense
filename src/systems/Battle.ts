@@ -6,7 +6,7 @@
  *    (lifePerLeak, 보스는 bossLifePerLeak). 바퀴 수는 라이프에 영향 없음.
  *  - 적 타입: normal / fast(이속↑) / armored(물리저항, 마법은 관통) / regen(초당 회복) / boss
  *  - 유닛은 자기 슬롯에서 사거리(range, 셀 단위) 안의 적만 공격 (최전방 우선) → 배치가 중요
- *  - 사거리별 공격 배율 rangeDamageMult: 근접(짧은 사거리)일수록 강하다
+ *  - 사거리별 공격 배율 rangeDamageMult: 근접(짧은 사거리)일수록 강하다. 시너지로 사거리 +N(rangeBonus)·배율 덮어쓰기·제한 시간 +초·적 이속·시작 기절 주입
  *  - 공격 쿨타임 = attackInterval / 공속 배율
  *
  * 순수 로직: Phaser 의존 없음. 씬은 tick(dt)의 이벤트로 연출만 그린다.
@@ -75,6 +75,8 @@ export interface DeployedUnit {
   extraSlowPct?: number;
   /** 체인 라이트닝 연쇄 대상 +N (뇌운 폭군 패시브) */
   chainTargetsBonus?: number;
+  /** 사거리 +N 셀 (휴먼 7 / 전열 6 시너지) */
+  rangeBonus?: number;
   /** 내부 상태: 남은 쿨타임 */
   _cooldown?: number;
 }
@@ -134,6 +136,17 @@ interface BattleOptions {
     bonusGoldChancePct?: number;
     bonusGoldAmount?: number;
   };
+  /** 전투 규칙 시너지 (SynergySystem.global에서 전달) */
+  battleMods?: {
+    /** 제한 시간 +초 (정령) */
+    timeLimitBonus?: number;
+    /** 적 이동 속도 % (몬스터 4: -8) */
+    enemySpeedPct?: number;
+    /** 웨이브 시작 시 적 기절 초 (몬스터 6) */
+    waveStartStunSec?: number;
+    /** 사거리별 공격 배율 덮어쓰기 (후열 6) */
+    rangeMultOverride?: Record<string, number>;
+  };
 }
 
 /** 광역 radius 1당 트랙 거리 */
@@ -149,6 +162,8 @@ export class Battle {
   private getGold: () => number;
   private rng: () => number;
   private globalMods: { killGoldBonus: number; killGoldPct: number; bonusGoldChancePct: number; bonusGoldAmount: number };
+  private battleMods: { timeLimitBonus: number; enemySpeedPct: number; waveStartStunSec: number };
+  private rangeMult: Record<string, number>;
 
   constructor(
     private waveDef: WaveDef,
@@ -170,6 +185,12 @@ export class Battle {
       bonusGoldChancePct: options.globalMods?.bonusGoldChancePct ?? 0,
       bonusGoldAmount: options.globalMods?.bonusGoldAmount ?? 0,
     };
+    this.battleMods = {
+      timeLimitBonus: options.battleMods?.timeLimitBonus ?? 0,
+      enemySpeedPct: options.battleMods?.enemySpeedPct ?? 0,
+      waveStartStunSec: options.battleMods?.waveStartStunSec ?? 0,
+    };
+    this.rangeMult = { ...config.rangeDamageMult, ...(options.battleMods?.rangeMultOverride ?? {}) };
 
     let at = 0;
     for (const g of waveDef.groups) {
@@ -201,11 +222,12 @@ export class Battle {
 
   /** 남은 제한 시간(초) */
   get timeRemaining(): number {
-    return Math.max(0, this.waveDef.timeLimit - this.elapsed);
+    return Math.max(0, this.timeLimit - this.elapsed);
   }
 
+  /** 제한 시간 (웨이브 값 + 정령 시너지 보너스) */
   get timeLimit(): number {
-    return this.waveDef.timeLimit;
+    return this.waveDef.timeLimit + this.battleMods.timeLimitBonus;
   }
 
   /** 웨이브 클리어 골드: 30 + wave×5 (+금고 골렘 wave_gold_pct, 시너지 보정은 인자로) */
@@ -237,7 +259,7 @@ export class Battle {
       }
       if (this.elapsed < e.stunUntil) continue; // 기절: 이동 정지
       const slow = this.elapsed < e.slowUntil ? e.slowPct / 100 : 0;
-      const speed = this.config.baseEnemySpeed * t.speedMult * (1 - slow);
+      const speed = this.config.baseEnemySpeed * t.speedMult * (1 - slow) * (1 + this.battleMods.enemySpeedPct / 100);
       e.pos += speed * dt;
       while (e.pos >= this.config.trackLength) {
         e.pos -= this.config.trackLength;
@@ -259,7 +281,7 @@ export class Battle {
     }
 
     // 4) 제한 시간 종료: 남은 적 이탈 → 라이프 차감
-    if (this.elapsed >= this.waveDef.timeLimit) {
+    if (this.elapsed >= this.timeLimit) {
       this.timeUp = true;
       ev.timeUp = true;
       for (const e of this.enemies) {
@@ -280,7 +302,7 @@ export class Battle {
     let bestDist = -1;
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      if (!inRange(this.geometry, u.slot, u.def.range, e.pos)) continue;
+      if (!inRange(this.geometry, u.slot, u.def.range + (u.rangeBonus ?? 0), e.pos)) continue;
       const d = e.laps * this.config.trackLength + e.pos;
       if (d > bestDist) { bestDist = d; best = e; }
     }
@@ -304,7 +326,8 @@ export class Battle {
       laps: 0,
       slowPct: 0,
       slowUntil: 0,
-      stunUntil: 0,
+      // 몬스터 6 시너지: 웨이브 시작 직후 스폰된 적은 waveStartStunSec까지 기절
+      stunUntil: this.elapsed < this.battleMods.waveStartStunSec ? this.battleMods.waveStartStunSec : 0,
       alive: true,
       isBoss: type === 'boss',
     });
@@ -358,7 +381,7 @@ export class Battle {
   private damageOf(u: DeployedUnit, e: Enemy): number {
     const d = u.def;
     let dmg = d.baseDps * d.dpsFactor * d.attackInterval;
-    dmg *= this.config.rangeDamageMult[String(d.range)] ?? 1; // 근접일수록 강하게
+    dmg *= this.rangeMult[String(d.range)] ?? 1; // 근접일수록 강하게 (후열 6 시너지는 덮어쓰기)
     dmg *= 1 + (u.attackPctBonus ?? 0) / 100;
 
     const eff = d.effect;
