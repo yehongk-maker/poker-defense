@@ -153,12 +153,13 @@ export class GameScene extends Phaser.Scene {
 
     if (this.loop.phase === 'combat') {
       const steps = this.speed;
+      let leakMsg: string | null = null;
       for (let i = 0; i < steps && this.loop.phase === 'combat'; i++) {
         const ev = this.loop.tickCombat(dt);
         const b = this.loop.battle;
         if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
         if (ev.timeUp && ev.leaked > 0) {
-          this.showToast(`⏱ 시간 초과! 이탈 ${ev.leaked}기 → 라이프 -${ev.lifeLost}`);
+          leakMsg = `⏱ 시간 초과! 이탈 ${ev.leaked}기 → 라이프 -${ev.lifeLost}`;
           this.cameras.main.flash(220, 224, 71, 63);
         }
       }
@@ -176,8 +177,10 @@ export class GameScene extends Phaser.Scene {
         // 클리어 → 카드 / 패배 / 승리
         this.track.clearEnemies();
         if (this.loop.phase === 'card') {
-          this.showToast(`웨이브 ${this.loop.wave - 1} 클리어!`);
+          this.showToast(leakMsg ?? `웨이브 ${this.loop.wave - 1} 클리어!`);
           this.refreshHand();
+        } else if (leakMsg) {
+          this.showToast(leakMsg);
         }
         this.refreshPanels();
         if (this.loop.phase === 'victory' || this.loop.phase === 'defeat') this.showEnd();
