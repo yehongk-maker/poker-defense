@@ -11,6 +11,7 @@
  *  - 영웅 패시브 "시너지 +1 카운트"(강철 파멸기/도굴왕)는 extraClassCounts로 주입
  *  - 성령체(saint) 시너지는 오라 유닛의 버프 효과를 증폭
  *  - 위치 시너지(3단계): 모서리 수비(슬롯 조건) · 밀집 방진(2×2 같은 수트) — formation 그룹의 countBy로 판정
+ *  - 빙고(4단계): 가로/세로/대각 한 줄이 같은 수트로 꽉 차면 1줄. 줄 구성원은 속한 줄 수만큼 보너스 중첩(교차점 2배)
  *  - 오라(aura_*)는 effect.area 대로 실제 칸에 적용: adjacent=8방 인접, adjacent4=상하좌우, global=전체 (자기 자신 제외)
  *  - caps: 시너지+오라 합산 공격력/공속 상한 (업그레이드·영웅 패시브는 상한 밖)
  *
@@ -51,9 +52,12 @@ export interface SynergyGroupDef {
    * formation 전용 카운트 방식:
    *  'range' = 해당 사거리 유닛 기수 / 'condition' = 다른 진형 그룹 카운트 조건 /
    *  'slots' = 지정 슬롯이 전부 (requireRange 사거리의) 유닛으로 차 있으면 1 /
-   *  'block2x2SameSuit' = 같은 수트 4기가 2×2 블록을 이룬 개수
+   *  'block2x2SameSuit' = 같은 수트 4기가 2×2 블록을 이룬 개수 /
+   *  'lines' = 가로·세로·대각 한 줄이 전부 같은 matchBy(suit|race) 유닛으로 찬 줄 수 (빙고)
    */
-  countBy?: 'range' | 'condition' | 'slots' | 'block2x2SameSuit';
+  countBy?: 'range' | 'condition' | 'slots' | 'block2x2SameSuit' | 'lines';
+  /** lines 전용: 줄을 이루는 기준 (기본 suit) */
+  matchBy?: 'suit' | 'race';
   range?: number;
   condition?: Record<string, number>;
   slots?: number[];
@@ -103,9 +107,20 @@ export interface GlobalSynergyMods {
   rangeMultOverride: Record<string, number>;
 }
 
+/** 완성된 빙고 줄 (UI 표시용) */
+export interface BingoLine {
+  /** 줄을 이루는 슬롯 5칸 (행·열·대각) */
+  cells: number[];
+  /** 줄의 수트 또는 종족 값 */
+  key: string;
+  kind: 'row' | 'col' | 'diag';
+}
+
 export interface SynergyResult {
   active: ActiveSynergy[];
   global: GlobalSynergyMods;
+  /** 완성된 빙고 줄 목록 */
+  bingoLines: BingoLine[];
 }
 
 export interface ApplyOptions {
@@ -174,6 +189,9 @@ export class SynergySystem {
       waveStartGold: 0, leakGold: 0, timeLimitPlus: 0, enemySpeedPct: 0, waveStartStunSec: 0, rangeMultOverride: {},
     };
     const active: ActiveSynergy[] = [];
+    const bingoLines: BingoLine[] = [];
+    /** 유닛별 속한 빙고 줄 수 (per_line_attack_pct가 사용) */
+    const lineCounts = new Map<DeployedUnit, number>();
 
     // 1) 카운트
     const suitCounts = new Map<string, number>();
@@ -195,7 +213,7 @@ export class SynergySystem {
       if (reachedIdx < 0) return;
       active.push({ kind, key, name: def.name, count, reached: def.thresholds[reachedIdx] });
       for (const eff of def.effects[reachedIdx]) {
-        this.applyEffect(eff, kind, key, units, members, global, geo);
+        this.applyEffect(eff, kind, key, units, members, global, geo, lineCounts);
       }
     };
 
@@ -233,6 +251,11 @@ export class SynergySystem {
       } else if (def.countBy === 'block2x2SameSuit') {
         const { blocks, members } = this.sameSuitBlocks(units, geo);
         collect('formation', key, def, blocks, members);
+      } else if (def.countBy === 'lines') {
+        const found = this.bingoLines(units, geo, def.matchBy ?? 'suit');
+        bingoLines.push(...found.lines);
+        for (const [u, n] of found.counts) lineCounts.set(u, (lineCounts.get(u) ?? 0) + n);
+        collect('formation', key, def, found.lines.length, [...found.counts.keys()]);
       }
     }
 
@@ -272,7 +295,7 @@ export class SynergySystem {
       }
     }
 
-    return { active, global };
+    return { active, global, bingoLines };
   }
 
   /** 같은 수트 4기가 이루는 2×2 블록 수와 그 구성원(중복 제거) */
@@ -296,6 +319,33 @@ export class SynergySystem {
     return { blocks, members: [...members] };
   }
 
+  /**
+   * 빙고 줄 탐색: 가로 n줄 + 세로 n줄 + 대각 2줄. 줄의 모든 칸이 유닛으로 차 있고 matchBy 값이 같아야 완성.
+   * @returns 완성 줄 목록과 유닛별 속한 줄 수
+   */
+  private bingoLines(units: DeployedUnit[], geo: TrackGeometry, matchBy: 'suit' | 'race'): { lines: BingoLine[]; counts: Map<DeployedUnit, number> } {
+    const n = geo.gridSize;
+    const bySlot = new Map<number, DeployedUnit>();
+    for (const u of units) bySlot.set(u.slot, u);
+    const candidates: { cells: number[]; kind: BingoLine['kind'] }[] = [];
+    for (let r = 0; r < n; r++) candidates.push({ cells: Array.from({ length: n }, (_, c) => r * n + c), kind: 'row' });
+    for (let c = 0; c < n; c++) candidates.push({ cells: Array.from({ length: n }, (_, r) => r * n + c), kind: 'col' });
+    candidates.push({ cells: Array.from({ length: n }, (_, i) => i * n + i), kind: 'diag' });
+    candidates.push({ cells: Array.from({ length: n }, (_, i) => i * n + (n - 1 - i)), kind: 'diag' });
+
+    const lines: BingoLine[] = [];
+    const counts = new Map<DeployedUnit, number>();
+    for (const cand of candidates) {
+      const members = cand.cells.map((sl) => bySlot.get(sl));
+      if (members.some((u) => !u)) continue;
+      const key = members[0]!.def[matchBy];
+      if (!members.every((u) => u!.def[matchBy] === key)) continue;
+      lines.push({ cells: cand.cells, key, kind: cand.kind });
+      for (const u of members) counts.set(u!, (counts.get(u!) ?? 0) + 1);
+    }
+    return { lines, counts };
+  }
+
   private applyEffect(
     eff: SynergyEffect,
     kind: SynergyKind,
@@ -303,7 +353,8 @@ export class SynergySystem {
     units: DeployedUnit[],
     members: DeployedUnit[],
     global: GlobalSynergyMods,
-    geo: TrackGeometry
+    geo: TrackGeometry,
+    lineCounts: Map<DeployedUnit, number>
   ): void {
     const targets =
       eff.scope === 'global' ? units
@@ -352,6 +403,13 @@ export class SynergySystem {
         }
         break;
       }
+      case 'per_line_attack_pct':
+        // 빙고: 속한 줄 수만큼 중첩 (가로+세로 교차점은 2배)
+        for (const u of targets) u.attackPctBonus! += eff.pct! * (lineCounts.get(u) ?? 0);
+        break;
+      case 'per_line_attack_speed_pct':
+        for (const u of targets) u.attackSpeedPctBonus! += eff.pct! * (lineCounts.get(u) ?? 0);
+        break;
       case 'buff_effect_pct':
         break; // apply()의 오라 단계에서 배율로 처리
       case 'wave_gold_pct':

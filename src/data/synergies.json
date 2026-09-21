@@ -1,5 +1,5 @@
 {
-  "comment": "GDD 3.2/3.2.2 + docs/synergy-design.md. 4축: suits(수트, 기수 2/4/6) · classes(클래스, 종류 2/4) · races(종족, 기수+영웅 1) · formation(진형: 사거리 기수·조건·슬롯·2×2 블록 자동 판정). thresholds[i] 도달 시 effects[i] 적용(상위가 하위 대체). scope: suit/class/race/formation=그룹 소속 유닛, global=전체 유닛, economy=경제 규칙, battle=전투 규칙. caps: 시너지 합산 상한.",
+  "comment": "GDD 3.2/3.2.2 + docs/synergy-design.md. 4축: suits(수트, 기수 2/4/6) · classes(클래스, 종류 2/4) · races(종족, 기수+영웅 1) · formation(진형: 사거리 기수·조건·슬롯·2×2 블록·빙고 줄 자동 판정). thresholds[i] 도달 시 effects[i] 적용(상위가 하위 대체). scope: suit/class/race/formation=그룹 소속 유닛, global=전체 유닛, economy=경제 규칙, battle=전투 규칙. caps: 시너지 합산 상한.",
   "suits": {
     "S": {
       "name": "강철 군단",
@@ -590,6 +590,54 @@
             "type": "attack_pct",
             "pct": 10,
             "scope": "formation"
+          }
+        ]
+      ]
+    },
+    "bingo": {
+      "name": "빙고",
+      "countBy": "lines",
+      "matchBy": "suit",
+      "thresholds": [
+        1,
+        2,
+        3
+      ],
+      "effects": [
+        [
+          {
+            "type": "per_line_attack_pct",
+            "pct": 20,
+            "scope": "formation"
+          }
+        ],
+        [
+          {
+            "type": "per_line_attack_pct",
+            "pct": 20,
+            "scope": "formation"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 10,
+            "scope": "formation"
+          }
+        ],
+        [
+          {
+            "type": "per_line_attack_pct",
+            "pct": 20,
+            "scope": "formation"
+          },
+          {
+            "type": "attack_speed_pct",
+            "pct": 15,
+            "scope": "formation"
+          },
+          {
+            "type": "attack_pct",
+            "pct": 10,
+            "scope": "global"
           }
         ]
       ]

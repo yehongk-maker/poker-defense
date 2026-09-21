@@ -26,6 +26,7 @@ export class TrackView {
   private fx: HitFx[] = [];
   private fxGfx: Phaser.GameObjects.Graphics;
   private rangeGfx: Phaser.GameObjects.Graphics;
+  private bingoGfx: Phaser.GameObjects.Graphics;
   private onCellTap: ((slot: number) => void) | null = null;
   private tempSprites: Phaser.GameObjects.Container[] = [];
 
@@ -38,6 +39,7 @@ export class TrackView {
     scene.add.text(OUTER.x + 12, OUTER.y + 6, '▶ 스폰', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT });
 
     this.rangeGfx = scene.add.graphics();
+    this.bingoGfx = scene.add.graphics().setDepth(3);
     for (let i = 0; i < GRID_N * GRID_N; i++) {
       const { x, y } = this.cellCenter(i);
       const r = scene.add.rectangle(x, y, CELL - 8, CELL - 8, COLORS.cell).setStrokeStyle(2, COLORS.cellLine);
@@ -88,6 +90,16 @@ export class TrackView {
     };
     for (const u of loop.units) draw(u, false);
     if (loop.hero) draw(loop.hero.unit, true);
+
+    // 빙고 줄: 완성된 줄을 수트 색 굵은 선으로 관통 표시
+    this.bingoGfx.clear();
+    for (const line of loop.bingoLines) {
+      const a = this.cellCenter(line.cells[0]);
+      const b = this.cellCenter(line.cells[line.cells.length - 1]);
+      const color = SUIT_COLOR[line.key as keyof typeof SUIT_COLOR] ?? 0xf1d17a;
+      this.bingoGfx.lineStyle(14, color, 0.28).lineBetween(a.x, a.y, b.x, b.y);
+      this.bingoGfx.lineStyle(4, 0xf1d17a, 0.9).lineBetween(a.x, a.y, b.x, b.y);
+    }
 
     if (selected) {
       const { x, y } = this.cellCenter(selected.slot);

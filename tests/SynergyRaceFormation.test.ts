@@ -40,7 +40,7 @@ describe('데이터 무결성', () => {
   });
   it('synergies.json에 races 4종·formation 4종·caps 존재', () => {
     expect(Object.keys(table.races!)).toEqual(['human', 'goblin', 'monster', 'spirit']);
-    expect(Object.keys(table.formation!)).toEqual(['melee', 'ranged', 'mid', 'mixed', 'corners', 'block']);
+    expect(Object.keys(table.formation!)).toEqual(['melee', 'ranged', 'mid', 'mixed', 'corners', 'block', 'bingo']);
     expect(table.caps!.attackPct).toBe(80);
   });
 });
@@ -193,6 +193,67 @@ describe('위치 시너지 (3단계)', () => {
     sys().apply(us);
     expect(us[1].attackSpeedPctBonus).toBeGreaterThanOrEqual(10);
     expect(us[2].attackSpeedPctBonus).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe('빙고 (4단계) — 같은 수트로 한 줄 완성', () => {
+  const S = ['spear_striker', 'twin_axe_warrior', 'crusher_rider', 'blacksteel_knight', 'steel_colossus'];
+  const row0 = () => place(...S.map((id, i) => [id, i] as [string, number]));
+
+  it('가로 한 줄 5기 같은 수트 → 빙고 1줄, 줄 구성원 공격 +20', () => {
+    const us = row0();
+    const r = sys().apply(us);
+    expect(active(r, 'formation', 'bingo')?.count).toBe(1);
+    expect(r.bingoLines.length).toBe(1);
+    expect(r.bingoLines[0]).toEqual({ cells: [0, 1, 2, 3, 4], key: 'S', kind: 'row' });
+    // 줄이 안 되는 배치(0,7,12,18,21)와 비교 — 강철 거신(몬스터, 대열 없음)으로 순수 빙고 차이 확인
+    const scattered = place(...S.map((id, i) => [id, [0, 7, 12, 18, 21][i]] as [string, number]));
+    const r2 = sys().apply(scattered);
+    expect(active(r2, 'formation', 'bingo')).toBeUndefined();
+    expect(us[4].attackPctBonus! - scattered[4].attackPctBonus!).toBeCloseTo(20);
+  });
+
+  it('세로·대각선도 줄로 인정', () => {
+    const col = place(...S.map((id, i) => [id, i * 5] as [string, number]));
+    expect(sys().apply(col).bingoLines[0].kind).toBe('col');
+    const diag = place(...S.map((id, i) => [id, i * 6] as [string, number]));
+    // 대각선 (0,6,12,18,24)
+    expect(sys().apply(diag).bingoLines.map((l) => l.kind)).toEqual(['diag']);
+    const anti = place(...S.map((id, i) => [id, 4 + i * 4] as [string, number])); // 4,8,12,16,20
+    expect(sys().apply(anti).bingoLines.map((l) => l.kind)).toEqual(['diag']);
+  });
+
+  it('빈 칸이 있거나 수트가 섞이면 줄 아님', () => {
+    const four = place(...S.slice(0, 4).map((id, i) => [id, i] as [string, number]));
+    expect(sys().apply(four).bingoLines.length).toBe(0);
+    const mixed = place(...S.slice(0, 4).map((id, i) => [id, i] as [string, number]), ['miner', 4]);
+    expect(sys().apply(mixed).bingoLines.length).toBe(0);
+  });
+
+  it('교차점(가로+세로)은 줄 2개 → 보너스 2배 중첩, 2줄 구간 공속 +10', () => {
+    // 행 0: 슬롯 0~4 ♠, 열 0: 슬롯 0,5,10,15,20 ♠ (슬롯 0 공유) → 9기
+    const ids = ['spear_striker', 'twin_axe_warrior', 'crusher_rider', 'blacksteel_knight', 'steel_colossus', 'spear_striker', 'twin_axe_warrior', 'crusher_rider', 'blacksteel_knight'];
+    const slots = [0, 1, 2, 3, 4, 5, 10, 15, 20];
+    const us = place(...ids.map((id, i) => [id, slots[i]] as [string, number]));
+    const r = sys().apply(us);
+    expect(active(r, 'formation', 'bingo')?.count).toBe(2);
+    expect(r.bingoLines.map((l) => l.kind).sort()).toEqual(['col', 'row']);
+    // 다른 축·상한(caps)을 배제하고 빙고만 있는 테이블로 순수 값 확인
+    const only = new SynergySystem({ suits: {}, classes: {}, formation: { bingo: table.formation!.bingo } });
+    only.apply(us);
+    expect(us[0].attackPctBonus).toBe(40); // 교차점: 행+열 = 2줄
+    expect(us[5].attackPctBonus).toBe(20); // 열만
+    expect(us[4].attackPctBonus).toBe(20); // 행만
+    expect(us[8].attackSpeedPctBonus).toBe(10); // 2줄 구간 공속
+  });
+
+  it('종족 기준 줄(matchBy race)도 지원한다', () => {
+    const custom = new SynergySystem({ suits: {}, classes: {}, formation: { rb: { name: '종족 빙고', countBy: 'lines', matchBy: 'race', thresholds: [1], effects: [[{ type: 'per_line_attack_pct', pct: 5, scope: 'formation' }]] } } });
+    // 휴먼 5기 한 줄 (수트 섞임: ♠4 + ♥1)
+    const us = place(['spear_striker', 0], ['twin_axe_warrior', 1], ['crusher_rider', 2], ['blacksteel_knight', 3], ['novice_priest', 4]);
+    const r = custom.apply(us);
+    expect(r.bingoLines[0]?.key).toBe('human');
+    expect(us[4].attackPctBonus).toBe(5);
   });
 });
 

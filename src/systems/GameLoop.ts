@@ -163,6 +163,8 @@ export class GameLoop {
   }
   get hero() { return this._hero; }
   get activeSynergies() { return this.lastSynergy?.active ?? []; }
+  /** 완성된 빙고 줄 (TrackView가 선으로 표시) */
+  get bingoLines() { return this.lastSynergy?.bingoLines ?? []; }
   /** 진행 중인 전투 (combat 페이즈에서만 non-null) — 씬이 적 위치를 그리는 데 사용 */
   get battle(): Battle | null { return this.battle_; }
   get upgrades(): Readonly<Record<Suit, number>> { return this.upgradeLevels; }
