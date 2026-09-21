@@ -21,7 +21,7 @@ interface HeroCard {
 }
 
 /**
- * 스와이프 업그레이드 화면 (GDD 4 우측 화면):
+ * 상점 & 영웅 화면 (GDD 4, 오른쪽으로 스와이프 → 왼쪽에서 들어옴):
  *  종족 업그레이드 4종 / 조커 조각 ●●○ / 영웅 선택(8종, 기본 4 + 메타 4 잠금)
  * 업그레이드·소환은 정비 페이즈에서만 가능 (GameLoop 제약) — 다른 페이즈엔 버튼 비활성 + 안내.
  */
@@ -36,12 +36,12 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     super(scene, GAME_WIDTH, 0);
     // 배경: 아래 화면 입력 차단
     const bg = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.bg).setInteractive();
-    const line = scene.add.rectangle(2, GAME_HEIGHT / 2, 4, GAME_HEIGHT, COLORS.panelLine);
+    const line = scene.add.rectangle(GAME_WIDTH - 2, GAME_HEIGHT / 2, 4, GAME_HEIGHT, COLORS.panelLine);
     this.add([bg, line]);
 
     // 헤더
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
-    this.add(scene.add.text(40, 70, '업그레이드 & 영웅', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
+    this.add(scene.add.text(40, 70, '상점 & 영웅', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
     this.phaseHint = scene.add.text(40, 130, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
     this.add(this.phaseHint);
     this.add(new Button(scene, GAME_WIDTH - 170, 90, '게임 화면 ▶', () => cb.onClose(), { width: 260, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
@@ -74,7 +74,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       this.add(this.heroCard(scene, h, x, y, cw, ch));
     });
 
-    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '오른쪽으로 스와이프하면 게임 화면 ▶', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5));
+    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '◀ 왼쪽으로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5));
     scene.add.existing(this);
   }
 

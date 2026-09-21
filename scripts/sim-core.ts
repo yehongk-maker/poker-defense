@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
-import { HandRank, evaluateHand, type Suit } from '../src/systems/PokerEvaluator.ts';
+
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
 const load = (f: string) => JSON.parse(readFileSync(join(dataDir, f), 'utf8'));
@@ -54,42 +54,7 @@ export function seededRng(seed: number): () => number {
 }
 
 export type Bot = 'highcard' | 'naive' | 'smart';
-const SUITS: Suit[] = ['S', 'H', 'D', 'C'];
-
-function dominantSuit(g: GameLoop): Suit {
-  const c: Record<Suit, number> = { S: 0, H: 0, D: 0, C: 0 };
-  for (const u of g.units) c[u.def.suit]++;
-  return SUITS.reduce((a, b) => (c[b] > c[a] ? b : a));
-}
-
-function spendAllOnUpgrades(g: GameLoop, suit: Suit): void {
-  let cost = g.upgradeCost(suit);
-  while (cost !== null && g.gold >= cost) {
-    g.buyUpgrade(suit);
-    cost = g.upgradeCost(suit);
-  }
-}
-
-function smartCardPhase(g: GameLoop): void {
-  const p = g.cardPhase;
-  if (p.exchangesRemaining > 0) {
-    const hand = p.hand;
-    // 예비 판정: 족보 구성 카드(core)를 남기고 나머지 교환. 하이카드는 3장 이상 같은 수트면 플러시 드로우.
-    const r = evaluateHand([...hand], () => 0);
-    let keep = new Set(r.coreCards);
-    if (r.rank === HandRank.HighCard) {
-      const bySuit = new Map<Suit, number>();
-      for (const c of hand) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
-      const [suit, n] = [...bySuit.entries()].sort((a, b) => b[1] - a[1])[0];
-      keep = n >= 3 ? new Set(hand.filter((c) => c.suit === suit)) : new Set([r.coreCards[0]]);
-    }
-    if (r.rank < HandRank.Straight) {
-      // 카드별 교환: 족보 구성 카드는 두고 나머지를 한 장씩 교환
-      hand.forEach((c, i) => { if (!keep.has(c) && p.canExchange(i)) p.exchangeCard(i); });
-    }
-  }
-  g.confirmHand();
-}
+import { dominantSuit, spendAllOnUpgrades, smartCardPhase } from '../src/systems/bots.ts';
 
 export function playGame(bot: Bot, seed: number): GameLoop {
   const g = new GameLoop(baseData(bot === 'highcard'), seededRng(seed));

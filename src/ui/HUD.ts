@@ -10,18 +10,25 @@ export class HUD {
   private sub: Phaser.GameObjects.Text;
   private phaseText: Phaser.GameObjects.Text;
   private codexBtn: Phaser.GameObjects.Text;
+  private oppText: Phaser.GameObjects.Text;
 
   constructor(private scene: Phaser.Scene, onOpenCodex?: () => void) {
     scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel);
     this.main = scene.add.text(40, 58, '', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.phaseText = scene.add.text(GAME_WIDTH - 40, 58, '', { fontSize: '34px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
+    this.phaseText = scene.add.text(GAME_WIDTH - 40, 70, '', { fontSize: '34px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
     this.sub = scene.add.text(40, 128, '', { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
     // 시너지 도감 열기 (시너지 줄 탭 또는 버튼)
     this.codexBtn = scene.add.text(GAME_WIDTH - 40, 128, '📖 도감', { fontSize: '28px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(1, 0.5);
+    this.oppText = scene.add.text(GAME_WIDTH - 40, 20, '', { fontSize: '24px', color: '#e0a0a0', fontFamily: FONT }).setOrigin(1, 0.5);
     if (onOpenCodex) {
       this.codexBtn.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) onOpenCodex(); });
       this.sub.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) onOpenCodex(); });
     }
+  }
+
+  /** 상대 요약 (1:1 대결) */
+  setOpponent(text: string): void {
+    this.oppText.setText(text);
   }
 
   refresh(loop: GameLoop, totalWaves: number): void {

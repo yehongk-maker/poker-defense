@@ -19,27 +19,34 @@ export class SynergyCodex extends Phaser.GameObjects.Container {
   private kind: SynergyKind = 'suit';
   private loopRef: GameLoop | null = null;
 
-  constructor(scene: Phaser.Scene, private onClose: () => void) {
+  /**
+   * @param opts.embedded true면 배경/헤더/닫기 없이 탭+내용만 (다른 패널 안에 넣을 때). top = 탭의 y
+   */
+  constructor(scene: Phaser.Scene, private onClose: () => void, opts: { embedded?: boolean; top?: number } = {}) {
     super(scene, 0, 0);
-    const bg = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.bg, 0.97).setInteractive();
-    this.add(bg);
-    this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
-    this.add(scene.add.text(40, 70, '시너지 도감', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.add(scene.add.text(40, 130, '금색 = 현재 발동 중 · 회색 = 미도달. 상위 구간이 하위 구간을 대체', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
-    this.add(new Button(scene, GAME_WIDTH - 130, 90, '닫기 ✕', () => this.onClose(), { width: 200, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
+    const embedded = opts.embedded ?? false;
+    const top = opts.top ?? 250;
+    if (!embedded) {
+      const bg = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.bg, 0.97).setInteractive();
+      this.add(bg);
+      this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
+      this.add(scene.add.text(40, 70, '시너지 도감', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
+      this.add(scene.add.text(40, 130, '금색 = 현재 발동 중 · 회색 = 미도달. 상위 구간이 하위 구간을 대체', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
+      this.add(new Button(scene, GAME_WIDTH - 130, 90, '닫기 ✕', () => this.onClose(), { width: 200, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
+    }
 
     // 탭
     const tw = 240, gap = 16;
     const x0 = (GAME_WIDTH - (4 * tw + 3 * gap)) / 2 + tw / 2;
     KINDS.forEach((k, i) => {
-      const b = new Button(scene, x0 + i * (tw + gap), 250, KIND_LABEL[k], () => { this.kind = k; this.render(); }, { width: tw, height: 80, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text });
+      const b = new Button(scene, x0 + i * (tw + gap), top, KIND_LABEL[k], () => { this.kind = k; this.render(); }, { width: tw, height: 80, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text });
       this.tabBtns.set(k, b);
       this.add(b);
     });
 
-    this.content = scene.add.container(0, 320);
+    this.content = scene.add.container(0, top + 70);
     this.add(this.content);
-    this.setDepth(18).setVisible(false); // 족보 연출(15~16)보다 위, 토스트(20)·종료 오버레이(30)보다 아래
+    if (!embedded) this.setDepth(18).setVisible(false); // 족보 연출(15~16)보다 위, 토스트(20)·종료 오버레이(30)보다 아래
     scene.add.existing(this);
   }
 

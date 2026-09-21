@@ -10,18 +10,21 @@ import { CardHand } from '../ui/CardHand.ts';
 import { TrackView } from '../ui/TrackView.ts';
 import { ManagePanel } from '../ui/ManagePanel.ts';
 import { UpgradePanel } from '../ui/UpgradePanel.ts';
-import { SwipeController } from '../ui/SwipeController.ts';
-import { SynergyCodex } from '../ui/SynergyCodex.ts';
+import { SwipeNav } from '../ui/SwipeNav.ts';
+import { InfoPanel } from '../ui/InfoPanel.ts';
+import { OpponentPanel } from '../ui/OpponentPanel.ts';
+import { OpponentAI, resolveDuel, sideOf } from '../systems/Duel.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
 
 const PANEL_Y = 1490; // 하단 패널 중심
 
 /**
- * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다.
+ * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. 1:1 대결: 상대 AI(OpponentAI)를 매 프레임 같이 진행.
  *  card   : CardHand 표시, cardPhase.tick → 자동 확정
- *  manage : ManagePanel 표시 (업그레이드/합성/영웅/판매/전투 시작)
+ *  manage : ManagePanel 표시 (합성/판매/전투 시작)
  *  combat : tickCombat → TrackView에 적/타격 그리기
+ *  스와이프: 오른쪽 → 상점·영웅(왼쪽 패널), 왼쪽 → 족보·시너지(오른쪽 패널), 위 → 상대 현황(아래 패널)
  */
 export class GameScene extends Phaser.Scene {
   private data_!: GameData;
@@ -30,10 +33,14 @@ export class GameScene extends Phaser.Scene {
   private hand!: CardHand;
   private track!: TrackView;
   private manage!: ManagePanel;
-  private upgrades!: UpgradePanel;
-  private swipe!: SwipeController;
+  private shop!: UpgradePanel;
+  private info!: InfoPanel;
+  private oppPanel!: OpponentPanel;
+  private nav!: SwipeNav;
   private fx!: HandFx;
-  private codex!: SynergyCodex;
+  private opponent!: OpponentAI;
+  private oppRefreshAcc = 0;
+  private oppDefeatAnnounced = false;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -54,10 +61,14 @@ export class GameScene extends Phaser.Scene {
     this.speed = 1;
     this.ended = false;
 
-    this.hud = new HUD(this, () => this.codex.open(this.loop));
+    // 1:1 대결 상대 (메타 업그레이드 없는 기본 설정, smart 봇)
+    this.opponent = new OpponentAI(loadGameData());
+    this.oppDefeatAnnounced = false;
+    this.oppRefreshAcc = 0;
+
+    this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.track = new TrackView(this);
     this.fx = new HandFx(this);
-    this.codex = new SynergyCodex(this, () => this.codex.setVisible(false));
     this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
 
     this.hand = new CardHand(this, PANEL_Y - 60, {
@@ -91,7 +102,7 @@ export class GameScene extends Phaser.Scene {
         this.selectedSlot = -1;
         this.showToast(`판매 +💰${g}`);
       }),
-      onOpenUpgrades: () => this.swipe.open(),
+      onOpenUpgrades: () => this.nav.open('left'),
       onStart: () => this.safe(() => {
         this.loop.startCombat();
         this.selectedSlot = -1;
@@ -99,20 +110,31 @@ export class GameScene extends Phaser.Scene {
       }),
     });
 
-    // 스와이프 업그레이드/영웅 화면 (GDD 4 우측 화면)
-    this.upgrades = new UpgradePanel(this, this.loop, {
+    // 3방향 스와이프 패널: 왼쪽=상점·영웅, 오른쪽=족보·시너지, 아래=상대 현황
+    this.shop = new UpgradePanel(this, this.loop, {
       onUpgrade: (s: Suit) => this.safe(() => { this.loop.buyUpgrade(s); this.showToast(`${SUIT_SYMBOL[s]} 공격력 Lv${this.loop.upgrades[s]}`); }),
       onSummonHero: (id) => this.safe(() => {
         const r = this.loop.summonHero(id);
         this.showToast(`영웅 소환: ${r.def.name} ${r.grade}급`);
       }),
-      onClose: () => this.swipe.close(),
+      onClose: () => this.nav.close(),
     }, this.data_.config.upgrade.attackPctPerLevel).setDepth(10);
-    this.swipe = new SwipeController(this, this.upgrades, (open) => { if (open) this.upgrades.refresh(this.loop); });
-    // 우측 가장자리 탭 핸들 (모든 페이즈에서 열기 가능)
-    const handle = this.add.rectangle(GAME_WIDTH - 22, 690, 44, 220, COLORS.panel).setStrokeStyle(2, COLORS.panelLine).setInteractive({ useHandCursor: true });
-    handle.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) this.swipe.open(); });
-    this.add.text(GAME_WIDTH - 22, 690, '◀ 업그레이드', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setAngle(-90);
+    this.info = new InfoPanel(this, this.data_.hands, () => this.nav.close()).setDepth(10);
+    this.oppPanel = new OpponentPanel(this, () => this.nav.close()).setDepth(10);
+    this.nav = new SwipeNav(this, { left: this.shop, right: this.info, bottom: this.oppPanel }, (side) => {
+      if (side === 'left') this.shop.refresh(this.loop);
+      if (side === 'right') this.info.refresh(this.loop);
+      if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves);
+    });
+    // 가장자리 핸들 (탭으로도 열기)
+    const mkHandle = (x: number, y: number, w: number, h: number, label: string, angle: number, side: 'left' | 'right' | 'bottom') => {
+      const r = this.add.rectangle(x, y, w, h, COLORS.panel).setStrokeStyle(2, COLORS.panelLine).setInteractive({ useHandCursor: true });
+      r.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) this.nav.open(side); });
+      this.add.text(x, y, label, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setAngle(angle);
+    };
+    mkHandle(22, 690, 44, 220, '상점 · 영웅 ▶', 90, 'left');
+    mkHandle(GAME_WIDTH - 22, 690, 44, 220, '◀ 족보 · 시너지', -90, 'right');
+    mkHandle(GAME_WIDTH / 2, GAME_HEIGHT - 22, 360, 40, '▲ 상대 진행 상황', 0, 'bottom');
 
     // 전투 패널
     this.combatText = this.add.text(GAME_WIDTH / 2, PANEL_Y - 40, '', { fontSize: '36px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
@@ -160,6 +182,7 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const dt = Math.min(delta / 1000, 0.1);
     const cfg = this.data_.battleConfig;
+    this.tickOpponent(dt);
 
     if (this.loop.phase === 'card') {
       const r = this.loop.cardPhase.tick(dt);
@@ -208,6 +231,22 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.track.update(dt);
+  }
+
+  /** 상대 AI 실시간 진행 + 상대 패널/HUD 갱신 (0.5초마다) */
+  private tickOpponent(dt: number): void {
+    this.opponent.tick(dt);
+    this.oppRefreshAcc += dt;
+    if (this.oppRefreshAcc >= 0.5) {
+      this.oppRefreshAcc = 0;
+      const o = this.opponent.loop;
+      this.hud.setOpponent(`상대 W${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : o.phase === 'victory' ? ' 클리어' : ''}`);
+      if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves);
+      if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
+        this.oppDefeatAnnounced = true;
+        this.showToast(`상대 탈락! (웨이브 ${o.wave}) — 웨이브 ${o.wave}를 넘기면 승리`);
+      }
+    }
   }
 
   // ── 페이즈 처리 ──────────────────────────────────────────
@@ -262,8 +301,8 @@ export class GameScene extends Phaser.Scene {
     if (ph === 'combat') this.refreshSkillButton();
     this.track.setField(this.loop, ph === 'manage' ? this.selectedSlot : -1);
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
-    this.upgrades.refresh(this.loop);
-    this.codex.refresh(this.loop);
+    this.shop.refresh(this.loop);
+    this.info.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves);
   }
 
@@ -281,13 +320,22 @@ export class GameScene extends Phaser.Scene {
 
   private showEnd(): void {
     this.ended = true;
-    const win = this.loop.phase === 'victory';
-    this.swipe.close();
+    const cleared = this.loop.phase === 'victory';
+    this.nav.close();
+    // 1:1 판정: 상대가 아직 진행 중이면 끝까지 돌린 뒤 비교
+    this.opponent.fastForward();
+    const duel = resolveDuel(sideOf(this.loop), sideOf(this.opponent.loop), this.data_.config.totalWaves);
+    const win = duel.winner === 'player';
+    const title = duel.winner === 'draw' ? '무승부' : win ? '승리!' : '패배';
+    const color = duel.winner === 'draw' ? '#8fe3ff' : win ? '#f1d17a' : '#e0473f';
+    const reason: Record<string, string> = { wave: '도달 웨이브', life: '남은 라이프', gold: '골드', draw: '완전 동률' };
+    const o = this.opponent.loop;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
-    this.add.text(GAME_WIDTH / 2, 760, win ? '승리!' : '패배', { fontSize: '120px', color: win ? '#f1d17a' : '#e0473f', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
-    this.add.text(GAME_WIDTH / 2, 880, `도달 웨이브 ${this.loop.wave} / ${this.data_.config.totalWaves}   💰 ${Math.floor(this.loop.gold)}`, { fontSize: '40px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 700, title, { fontSize: '120px', color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 820, `나: 웨이브 ${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life} 💰${Math.floor(this.loop.gold)}   vs   상대: 웨이브 ${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life} 💰${Math.floor(o.gold)}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 880, `판정 기준: ${reason[duel.reason]}`, { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
     // 메타 진행 기록 + 젬 지급 (localStorage 저장)
-    const reward = getMeta().recordRun({ wave: win ? this.data_.config.totalWaves : this.loop.wave, victory: win });
+    const reward = getMeta().recordRun({ wave: cleared ? this.data_.config.totalWaves : this.loop.wave, victory: cleared });
     const parts = [`💎 +${reward.gemsGained}`];
     if (reward.newMilestones.length) parts.push(`마일스톤 ${reward.newMilestones.map((w) => `웨이브 ${w}`).join('·')} 최초 달성!`);
     if (reward.newBest) parts.push('최고 기록 갱신!');

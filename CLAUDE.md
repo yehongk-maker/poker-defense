@@ -15,11 +15,13 @@ src/
   scenes/        Boot, Lobby, Game, Meta(메타 업그레이드 화면)  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리),
-                 MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터)
+                 MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터),
+                 bots(봇 전략 공용), Duel(OpponentAI 실시간/fastForward + resolveDuel 승패)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
-                 SynergyCodex(도감 오버레이) + synergyText(JSON→한글 설명, 순수), Button, theme (Phaser)
+                 SynergyCodex(도감, embedded 가능) + synergyText(JSON→한글 설명, 순수), SwipeNav(3방향: left=상점 UpgradePanel,
+                 right=InfoPanel 족보·시너지, bottom=OpponentPanel 상대 현황), Button, theme (Phaser)
   data/          units, hands, waves, synergies, heroes, config .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
@@ -59,6 +61,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화) + 빙고(countBy 'lines', matchBy suit|race, per_line_attack_pct 줄 수 중첩, SynergyResult.bingoLines → TrackView 선 표시). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
 - 완료: 영웅 액티브 스킬 8종 (GameLoop.useHeroSkill → Battle 스킬 API: damageAllEnemies/hitTopHpEnemies/executeHighestHp/freezeEnemies/setSanctuary/slowAllEnemies/addTemporaryUnits/startStorm). 쿨 45초는 전투 시간 기준, 웨이브 넘어 유지. 전투 패널의 ⚡ 버튼.
 - 완료: 메타 업그레이드(교환 +1·타이머 +10초·시작 골드 +100×3)·메타 영웅 젬 해금·젬 마일스톤·localStorage 저장, 로비 → MetaScene.
-- 완료: 시너지 도감 (HUD 📖 도감/시너지 줄 탭 → 4축 탭 오버레이, 현재 카운트·도달 구간 강조). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
+- 완료: 1:1 대결 기본 룰(GDD 3.7): GameScene이 OpponentAI를 매 프레임 tick, 플레이어 종료 시 fastForward 후 resolveDuel. 3방향 스와이프(SwipeNav): 위=상대, 오른쪽=상점·영웅, 왼쪽=족보·시너지.
+- 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
