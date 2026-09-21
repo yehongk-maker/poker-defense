@@ -16,7 +16,7 @@ src/
   systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
-  ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, Button, theme (Phaser)
+  ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출), Button, theme (Phaser)
   data/          units, hands, waves, synergies, heroes, config .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
@@ -45,6 +45,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 봇 기준 하이카드 중앙값 20, 무전략 22, 최선 29.
 - 완료: GameScene 플레이 가능. 카드 선택/교환/진행 → 정비(합성·판매·전투 시작) → 전투(적 순환·타격선·배속) → 승리/패배 화면.
 - 완료: 스와이프 업그레이드 화면(UpgradePanel + SwipeController). 종족 업그레이드 4종, 조커 조각, 영웅 8종 카드(기본 4 소환 가능·메타 4 잠금, 등급 미리보기). 좌스와이프/우측 핸들/정비 패널 버튼으로 열고, 우스와이프/게임 화면 버튼으로 닫음. 구매·소환은 정비 페이즈에서만.
+- 족보 표시/연출: CardHand가 패 위에 현재 족보를 라이브로 표시(evaluateHand 순수함수 재사용). HandFx.RANK_TIER(0~5)로 색·크기·맥동·불꽃·링·흔들림·플래시가 단계적으로 강해짐. 확정 시 트랙 중앙 큰 연출, 교환으로 족보가 오르면 패 위 작은 연출.
 - 입력 규칙: 버튼/카드/슬롯 탭은 pointerup + 이동거리 TAP_SLOP(24px) 이하일 때만 (스와이프와 구분).
 - 개발 편의: dev 빌드에서 `window.__game`으로 Phaser 인스턴스 노출. 브라우저 탭이 숨겨져 rAF가 멈출 때 `__game.step(t, 16.7)`로 수동 진행 가능.
 - 미구현: 영웅 액티브 스킬(데이터만), 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼.

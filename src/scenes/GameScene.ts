@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { loadGameData } from '../data/index.ts';
 import { GameLoop, type GameData } from '../systems/GameLoop.ts';
-import type { Suit } from '../systems/PokerEvaluator.ts';
+import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
+import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
 import { HUD } from '../ui/HUD.ts';
 import { CardHand } from '../ui/CardHand.ts';
 import { TrackView } from '../ui/TrackView.ts';
@@ -29,6 +30,7 @@ export class GameScene extends Phaser.Scene {
   private manage!: ManagePanel;
   private upgrades!: UpgradePanel;
   private swipe!: SwipeController;
+  private fx!: HandFx;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -50,11 +52,22 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = new HUD(this);
     this.track = new TrackView(this);
+    this.fx = new HandFx(this);
     this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
 
     this.hand = new CardHand(this, PANEL_Y - 60, {
       onToggle: (i) => { this.loop.cardPhase.toggleSelect(i); this.refreshHand(); },
-      onExchange: () => { this.loop.cardPhase.exchange(); this.refreshHand(); },
+      onExchange: () => {
+        const before = evaluateHand([...this.loop.cardPhase.hand], () => 0).rank;
+        this.loop.cardPhase.exchange();
+        this.refreshHand();
+        const after = evaluateHand([...this.loop.cardPhase.hand], () => 0).rank;
+        // 교환으로 족보가 올랐으면 패 위에서 작은 연출
+        if (after > before && RANK_TIER[after] >= 1) {
+          const p = this.hand.rankLabelPosition;
+          this.fx.celebrate(after, p.x, p.y, false);
+        }
+      },
       onConfirm: () => this.confirmHand(),
     });
 
@@ -122,6 +135,7 @@ export class GameScene extends Phaser.Scene {
     if (this.loop.phase === 'card') {
       const r = this.loop.cardPhase.tick(dt);
       this.hand.setTimer(r.remaining);
+      this.hand.update(_time);
       if (r.autoConfirmed) this.confirmHand();
       return;
     }
@@ -164,6 +178,8 @@ export class GameScene extends Phaser.Scene {
     if (this.loop.phase !== 'card') return;
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
+    // 족보 확정 연출: 등급이 높을수록 화려하게 (트랙 중앙)
+    if (RANK_TIER[hr.rank] >= 1) this.fx.celebrate(hr.rank, FX_CENTER.x, FX_CENTER.y, true);
     const lines = [`${HAND_NAME[hr.rank]}!`];
     if (res.deployed.length) lines.push('소환: ' + res.deployed.map((d) => `${SUIT_SYMBOL[d.def.suit]}${d.def.name} T${d.def.tier}`).join(', '));
     if (res.overflowSold.length) lines.push(`슬롯 초과 자동 판매 +💰${res.overflowSold.reduce((s, o) => s + o.gold, 0)}`);
@@ -177,7 +193,9 @@ export class GameScene extends Phaser.Scene {
   private refreshHand(): void {
     const p = this.loop.cardPhase;
     if (p.state !== 'choosing') return;
-    this.hand.setHand(p.hand, p.selectedIndices, p.exchangesRemaining);
+    // 라이브 족보: 수트 동수 경합은 표시에 영향 없으므로 고정 rng
+    const result = evaluateHand([...p.hand], () => 0);
+    this.hand.setHand(p.hand, p.selectedIndices, p.exchangesRemaining, result);
     this.hand.setTimer(p.timeRemaining);
   }
 
