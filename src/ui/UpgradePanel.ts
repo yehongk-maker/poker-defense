@@ -134,7 +134,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const title = scene.add.text(left, top, `${SUIT_SYMBOL[h.suit]} ${h.name}`, { fontSize: '34px', color: `#${SUIT_COLOR[h.suit].toString(16).padStart(6, '0')}`, fontFamily: FONT, fontStyle: 'bold' });
     const tag = scene.add.text(w / 2 - 20, top + 6, h.unlock === 'basic' ? '기본' : '메타', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(1, 0);
     const passive = scene.add.text(left, top + 50, `패시브: ${this.passiveText(h)}`, { fontSize: '23px', color: COLORS.text, fontFamily: FONT, wordWrap: { width: w - 40 } });
-    const a = h.active as unknown as { name: string; desc: string; cooldownSec: number };
+    const a = h.active;
     const active = scene.add.text(left, top + 100, `액티브: ${a.name} (쿨 ${a.cooldownSec}초) — ${a.desc}`, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: w - 40 } });
     const status = scene.add.text(left, ht / 2 - 40, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
     const btn = new Button(scene, w / 2 - 110, ht / 2 - 44, '소환', () => this.cb.onSummonHero(h.id), { width: 190, height: 64, fontSize: 26 });

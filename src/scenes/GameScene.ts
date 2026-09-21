@@ -34,6 +34,7 @@ export class GameScene extends Phaser.Scene {
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
+  private skillBtn!: Button;
   private toast!: Phaser.GameObjects.Text;
   private selectedSlot = -1;
   private speed = 1;
@@ -114,7 +115,16 @@ export class GameScene extends Phaser.Scene {
       this.speed = this.speed >= 3 ? 1 : this.speed + 1;
       this.speedBtn.setLabel(`⏩ ${this.speed}×`);
     }, { width: 300, height: 100, fontSize: 34, fill: 0x3b4a66, textColor: COLORS.text });
-    this.combatPanel = this.add.container(0, 0, [this.combatText, this.speedBtn]);
+    // 영웅 액티브 스킬 버튼 (전투 중, 쿨타임 표시)
+    this.skillBtn = new Button(this, GAME_WIDTH / 2 - 250, PANEL_Y + 90, '영웅 없음', () => this.safe(() => {
+      const r = this.loop.useHeroSkill();
+      this.showToast(`${r.name}: ${r.text}`);
+      this.cameras.main.flash(140, 241, 209, 122);
+      const hero = this.loop.hero;
+      if (hero) this.track.pulseCell(hero.unit.slot);
+    }), { width: 420, height: 100, fontSize: 28, fill: 0x5a3b8a, textColor: COLORS.text });
+    this.speedBtn.setX(GAME_WIDTH / 2 + 170);
+    this.combatPanel = this.add.container(0, 0, [this.combatText, this.speedBtn, this.skillBtn]);
 
     this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(20);
 
@@ -166,6 +176,8 @@ export class GameScene extends Phaser.Scene {
       const b = this.loop.battle;
       if (b) {
         this.track.updateEnemies(b.aliveEnemies, cfg.trackLength);
+        this.track.updateTemporaryUnits(b.temporaryUnits);
+        this.refreshSkillButton();
         const t = Math.ceil(b.timeRemaining);
         this.combatText.setText(`웨이브 ${this.loop.wave}   ⏱ ${t}초   남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
           .setColor(t <= 5 ? '#e0473f' : COLORS.text);
@@ -207,6 +219,17 @@ export class GameScene extends Phaser.Scene {
     this.refreshPanels();
   }
 
+  private refreshSkillButton(): void {
+    const hero = this.loop.hero;
+    if (!hero) { this.skillBtn.setLabel('영웅 없음').setEnabled(false); return; }
+    const cd = this.loop.heroSkillCooldown;
+    const b = this.loop.battle;
+    const status = b && b.sanctuaryRemaining > 0 ? ` · 성역 ${Math.ceil(b.sanctuaryRemaining)}s`
+      : b && b.freezeRemaining > 0 ? ` · 방벽 ${Math.ceil(b.freezeRemaining)}s` : '';
+    if (cd > 0) this.skillBtn.setLabel(`${hero.def.active.name}\n⏳ ${Math.ceil(cd)}초${status}`).setEnabled(false);
+    else this.skillBtn.setLabel(`⚡ ${hero.def.active.name}\n${hero.def.active.desc}`).setEnabled(this.loop.heroSkillReady);
+  }
+
   private refreshHand(): void {
     const p = this.loop.cardPhase;
     if (p.state !== 'choosing') return;
@@ -221,6 +244,7 @@ export class GameScene extends Phaser.Scene {
     this.hand.setVisible(ph === 'card');
     this.manage.setVisible(ph === 'manage');
     this.combatPanel.setVisible(ph === 'combat');
+    if (ph === 'combat') this.refreshSkillButton();
     this.track.setField(this.loop, ph === 'manage' ? this.selectedSlot : -1);
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
     this.upgrades.refresh(this.loop);

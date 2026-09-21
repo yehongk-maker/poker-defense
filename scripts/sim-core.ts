@@ -116,7 +116,11 @@ export function playGame(bot: Bot, seed: number): GameLoop {
     }
     g.startCombat();
     const inCombat = () => (g.phase as GamePhase) === 'combat'; // getter 좁힘 회피
-    for (let t = 0; t < 600 && inCombat(); t += 0.1) g.tickCombat(0.1);
+    for (let t = 0; t < 600 && inCombat(); t += 0.1) {
+      // smart: 영웅 액티브는 쿨이 돌면 적이 3기 이상 있을 때 사용
+      if (bot === 'smart' && g.heroSkillReady && g.battle && g.battle.aliveEnemies.length >= 3) g.useHeroSkill();
+      g.tickCombat(0.1);
+    }
     if (inCombat()) break; // 600초 교착 → 중단
   }
   return g;

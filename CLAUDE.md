@@ -39,7 +39,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 밸런스 검증: `npm run sim` (scripts/simulate.ts, 봇 3종 헤드리스). `tests/Balance.test.ts`가 GDD 3.5 목표를 회귀 테스트로 고정.
 - `synergies.json`: 4축 — suits(수트 기수 2/4/6) · classes(종류 2/4) · races(종족 기수+영웅 3/5/7 등) · formation(사거리/조건 자동 판정) + caps(합산 상한). 상위 구간이 하위를 대체. 설계 근거 docs/synergy-design.md.
 - `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅은 종족 카운트에만 포함.
-- `heroes.json`: 영웅 8종. `active`는 데이터만 정의됨(미구현).
+- `heroes.json`: 영웅 8종. `active.id`별 구현은 GameLoop.useHeroSkill의 switch, 수치는 `active.params`.
 - `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM.
 
 ## 진행 상태 (2026-09-20)
@@ -52,5 +52,6 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 개발 편의: dev 빌드에서 `window.__game`으로 Phaser 인스턴스 노출. 브라우저 탭이 숨겨져 rAF가 멈출 때 `__game.step(t, 16.7)`로 수동 진행 가능.
 - 완료: 종족·진형 시너지 1~2단계 (SynergySystem 4축, Battle rangeBonus/timeLimitBonus/enemySpeedPct/waveStartStun/rangeMultOverride, GameLoop waveStartGold/leakGold).
 - 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
-- 미구현: 영웅 액티브 스킬(데이터만), 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
+- 완료: 영웅 액티브 스킬 8종 (GameLoop.useHeroSkill → Battle 스킬 API: damageAllEnemies/hitTopHpEnemies/executeHighestHp/freezeEnemies/setSanctuary/slowAllEnemies/addTemporaryUnits/startStorm). 쿨 45초는 전투 시간 기준, 웨이브 넘어 유지. 전투 패널의 ⚡ 버튼.
+- 미구현: 메타 업그레이드·localStorage·젬 해금, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

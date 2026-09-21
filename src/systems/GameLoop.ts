@@ -41,7 +41,18 @@ export interface HeroDef {
   race: UnitRace;
   combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number };
   passive: Record<string, unknown> & { type: string };
-  active: Record<string, unknown> & { id: string; cooldownSec: number };
+  active: { id: string; name: string; cooldownSec: number; desc: string; params: Record<string, number> };
+}
+
+/** 영웅 액티브 스킬 사용 결과 (토스트/연출용) */
+export interface HeroSkillResult {
+  id: string;
+  name: string;
+  /** 사람이 읽는 요약 (예: "적 5기 피해, 2기 처치") */
+  text: string;
+  affected: number;
+  kills: number;
+  goldEarned: number;
 }
 
 export type HeroGrade = 'S' | 'A' | 'B';
@@ -102,6 +113,7 @@ export class GameLoop {
   private battle_: Battle | null = null;
   private lastSynergy: SynergyResult | null = null;
   private lifeNegationsLeft = 0; // 빛의 치유사: 웨이브당 1회 무효
+  private heroSkillCd = 0;       // 영웅 액티브 남은 쿨타임(초). 전투 중에만 감소, 웨이브를 넘어 유지
   private coverageCache = new Map<number, number[]>(); // range → 슬롯별 트랙 커버리지
 
   constructor(private data: GameData, rng: () => number = Math.random) {
@@ -154,6 +166,12 @@ export class GameLoop {
   /** 진행 중인 전투 (combat 페이즈에서만 non-null) — 씬이 적 위치를 그리는 데 사용 */
   get battle(): Battle | null { return this.battle_; }
   get upgrades(): Readonly<Record<Suit, number>> { return this.upgradeLevels; }
+  /** 영웅 액티브 스킬 남은 쿨타임(초) */
+  get heroSkillCooldown(): number { return this.heroSkillCd; }
+  /** 전투 중이고 영웅이 있고 쿨타임이 끝났으면 true */
+  get heroSkillReady(): boolean {
+    return this._phase === 'combat' && this._hero !== null && this.heroSkillCd <= 0;
+  }
   get canSummonHero(): boolean {
     return this._hero === null &&
       (this.freeHero || this._shards >= this.data.config.hero.shardsRequired);
@@ -356,6 +374,7 @@ export class GameLoop {
     this.assertPhase('combat');
     const ev = this.battle_!.tick(dt);
     this._gold += ev.goldEarned;
+    if (this.heroSkillCd > 0) this.heroSkillCd = Math.max(0, this.heroSkillCd - dt);
     if (ev.leaked > 0) this._gold += ev.leaked * this.lastSynergy!.global.leakGold; // 고블린 5: 이탈 적당 골드 회수
 
     // 라이프 차감 (빛의 치유사 무효 → 태산 수호자 확률 무효 순서)
@@ -389,6 +408,85 @@ export class GameLoop {
       }
     }
     return ev;
+  }
+
+  // ── 영웅 액티브 스킬 (GDD 3.3: 수동, 쿨 45초, 등급 배율 S×1.5/A×1.0/B×0.7) ─────
+  /**
+   * 전투 중 영웅 액티브 사용. 등급 배율은 피해·지속시간·골드에 적용되고, 대상 수(targets/turrets/boltsPerSec)는 고정.
+   * @throws 전투 중이 아니거나 영웅이 없거나 쿨타임 중
+   */
+  useHeroSkill(): HeroSkillResult {
+    this.assertPhase('combat');
+    if (!this._hero) throw new Error('No hero');
+    if (this.heroSkillCd > 0) throw new Error(`Skill on cooldown: ${Math.ceil(this.heroSkillCd)}s`);
+    const b = this.battle_!;
+    const { def, grade, unit } = this._hero;
+    const mult = this.data.config.hero.grades[grade].mult;
+    const p = def.active.params;
+    /** 영웅 기본 1회 피해 (등급 배율은 baseDps에 이미 반영됨) */
+    const heroDmg = unit.def.baseDps * unit.def.dpsFactor * unit.def.attackInterval;
+    const sec = (v: number) => Math.round(v * mult * 10) / 10;
+
+    let out: { affected: number; kills: number; goldEarned: number };
+    let text: string;
+    switch (def.active.id) {
+      case 'earth_slam': { // 트랙 전체 광역 + 기절
+        out = b.damageAllEnemies(unit, heroDmg * p.dmgMult, sec(p.stunSec));
+        text = `적 ${out.affected}기 강타 (${out.kills}기 처치), ${sec(p.stunSec)}초 기절`;
+        break;
+      }
+      case 'execute_strike': { // 최고 HP 적 n체 초대미지
+        out = b.hitTopHpEnemies(unit, p.targets, heroDmg * p.dmgMult);
+        text = `최고 HP ${out.affected}기 처형 검격 (${out.kills}기 처치)`;
+        break;
+      }
+      case 'sanctuary': { // 라이프 피해 무효
+        out = b.setSanctuary(sec(p.durationSec));
+        text = `${sec(p.durationSec)}초간 라이프 피해 무효`;
+        break;
+      }
+      case 'rock_wall': { // 적 정지
+        out = b.freezeEnemies(sec(p.durationSec));
+        text = `${sec(p.durationSec)}초간 적 전체 정지`;
+        break;
+      }
+      case 'golden_bullet': { // 최대 HP 적 즉사 (보스는 %)
+        out = b.executeHighestHp(unit, p.bossDmgPct * mult);
+        text = out.kills > 0 ? '최대 HP 적 즉사!' : `보스에게 최대 HP ${Math.round(p.bossDmgPct * mult)}% 피해`;
+        break;
+      }
+      case 'grand_heist': { // 골드 강탈 + 감속
+        out = b.slowAllEnemies(Math.round(p.slowPct * mult), sec(p.durationSec), Math.round(p.goldPerEnemy * mult));
+        this._gold += 0; // 골드는 다음 tick 이벤트로 합산됨
+        text = `적 ${out.affected}기에게서 💰${out.goldEarned} 강탈, 이속 -${Math.round(p.slowPct * mult)}%`;
+        break;
+      }
+      case 'abyss_summon': { // 유령 포탑
+        const turrets: DeployedUnit[] = [];
+        for (let i = 0; i < p.turrets; i++) {
+          turrets.push({
+            def: {
+              id: `ghost_turret_${i}`, name: '유령 포탑', suit: def.suit, tier: 0, class: 'arcanist', race: 'monster',
+              attackType: 'magic', baseDps: p.turretDps * mult, dpsFactor: 1, attackInterval: 1.0, range: 6,
+              value: 0, effect: null, desc: '심연 소환 임시 포탑',
+            },
+            slot: unit.slot,
+          });
+        }
+        out = b.addTemporaryUnits(turrets, sec(p.durationSec));
+        text = `유령 포탑 ${p.turrets}기 소환 (${sec(p.durationSec)}초)`;
+        break;
+      }
+      case 'thunder_storm': { // 무작위 낙뢰
+        out = b.startStorm(unit, p.boltDmg * mult, p.boltsPerSec, sec(p.durationSec));
+        text = `${sec(p.durationSec)}초간 초당 ${p.boltsPerSec}발 낙뢰`;
+        break;
+      }
+      default:
+        throw new Error(`Unknown hero skill: ${def.active.id}`);
+    }
+    this.heroSkillCd = def.active.cooldownSec;
+    return { id: def.active.id, name: def.active.name, text, ...out };
   }
 
   // ── 내부 ──────────────────────────────────────────────────

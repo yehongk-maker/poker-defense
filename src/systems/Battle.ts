@@ -103,6 +103,16 @@ export interface HitEvent {
   enemyId: number;
   dmg: number;
   killed: boolean;
+  /** 영웅 액티브 스킬에 의한 타격 (연출 구분) */
+  skill?: boolean;
+}
+
+/** 영웅 액티브 스킬 1회 사용 결과 */
+export interface SkillOutcome {
+  /** 영향받은 적 수 */
+  affected: number;
+  kills: number;
+  goldEarned: number;
 }
 
 export interface BattleTickEvents {
@@ -159,6 +169,17 @@ export class Battle {
   private timeUp = false;
   private nextEnemyId = 1;
   readonly geometry: TrackGeometry;
+  // ── 영웅 액티브 스킬 상태 ──
+  /** tick 밖(스킬 사용)에서 발생한 이벤트 — 다음 tick 결과에 합산 */
+  private pending: BattleTickEvents = Battle.emptyEvents();
+  /** 암석 방벽: 이 시각까지 모든 적 정지 (스폰되는 적 포함) */
+  private freezeUntil = 0;
+  /** 성역: 이 시각까지 시간 초과 이탈 라이프 피해 무효 */
+  private sanctuaryUntil = 0;
+  /** 천둥 폭풍: 무작위 낙뢰 */
+  private storm: { until: number; boltDmg: number; rate: number; acc: number; source: DeployedUnit } | null = null;
+  /** 심연 소환: 임시 포탑 */
+  private tempUnits: { unit: DeployedUnit; until: number }[] = [];
   private getGold: () => number;
   private rng: () => number;
   private globalMods: { killGoldBonus: number; killGoldPct: number; bonusGoldChancePct: number; bonusGoldAmount: number };
@@ -212,6 +233,25 @@ export class Battle {
     return this.enemies.filter((e) => e.alive);
   }
 
+  /** 스킬로 소환된 임시 유닛 (UI 표시용) */
+  get temporaryUnits(): readonly DeployedUnit[] {
+    return this.tempUnits.map((t) => t.unit);
+  }
+
+  /** 성역 남은 시간(초) */
+  get sanctuaryRemaining(): number {
+    return Math.max(0, this.sanctuaryUntil - this.elapsed);
+  }
+
+  /** 방벽 남은 시간(초) */
+  get freezeRemaining(): number {
+    return Math.max(0, this.freezeUntil - this.elapsed);
+  }
+
+  private static emptyEvents(): BattleTickEvents {
+    return { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, timeUp: false, leaked: 0, cleared: false };
+  }
+
   get allSpawned(): boolean {
     return this.spawnQueue.length === 0;
   }
@@ -242,8 +282,15 @@ export class Battle {
 
   tick(dt: number): BattleTickEvents {
     this.elapsed += dt;
-    const ev: BattleTickEvents = { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, timeUp: false, leaked: 0, cleared: false };
+    const ev: BattleTickEvents = Battle.emptyEvents();
     if (this.timeUp) { ev.cleared = true; return ev; }
+    // 0) 스킬 사용으로 쌓인 이벤트 합산
+    if (this.pending.hits.length > 0 || this.pending.kills > 0 || this.pending.goldEarned > 0) {
+      ev.hits.push(...this.pending.hits);
+      ev.kills += this.pending.kills;
+      ev.goldEarned += this.pending.goldEarned;
+      this.pending = Battle.emptyEvents();
+    }
 
     // 1) 스폰
     while (this.spawnQueue.length > 0 && this.spawnQueue[0].at <= this.elapsed) {
@@ -257,7 +304,7 @@ export class Battle {
       if (t.regenPctPerSec > 0) {
         e.hp = Math.min(e.maxHp, e.hp + e.maxHp * t.regenPctPerSec * dt);
       }
-      if (this.elapsed < e.stunUntil) continue; // 기절: 이동 정지
+      if (this.elapsed < e.stunUntil || this.elapsed < this.freezeUntil) continue; // 기절/방벽: 이동 정지
       const slow = this.elapsed < e.slowUntil ? e.slowPct / 100 : 0;
       const speed = this.config.baseEnemySpeed * t.speedMult * (1 - slow) * (1 + this.battleMods.enemySpeedPct / 100);
       e.pos += speed * dt;
@@ -267,8 +314,25 @@ export class Battle {
       }
     }
 
-    // 3) 유닛 공격: 자기 사거리 안의 최전방 적만
-    for (const u of this.units) {
+    // 2.5) 천둥 폭풍: 무작위 적에게 낙뢰
+    if (this.storm) {
+      if (this.elapsed >= this.storm.until) this.storm = null;
+      else {
+        this.storm.acc += this.storm.rate * dt;
+        while (this.storm.acc >= 1) {
+          this.storm.acc -= 1;
+          const alive = this.aliveEnemies;
+          if (alive.length === 0) break;
+          const target = alive[Math.min(alive.length - 1, Math.floor(this.rng() * alive.length))];
+          this.hit(this.storm.source, target, this.storm.boltDmg, ev, true);
+        }
+      }
+    }
+    // 2.6) 임시 포탑 만료
+    this.tempUnits = this.tempUnits.filter((t) => this.elapsed < t.until);
+
+    // 3) 유닛 공격: 자기 사거리 안의 최전방 적만 (임시 포탑 포함)
+    for (const u of [...this.units, ...this.tempUnits.map((t) => t.unit)]) {
       u._cooldown = (u._cooldown ?? 0) - dt;
       const interval = u.def.attackInterval / (1 + (u.attackSpeedPctBonus ?? 0) / 100);
       while (u._cooldown! <= 0) {
@@ -284,11 +348,12 @@ export class Battle {
     if (this.elapsed >= this.timeLimit) {
       this.timeUp = true;
       ev.timeUp = true;
+      const sanctuary = this.elapsed < this.sanctuaryUntil; // 성역: 라이프 피해 무효
       for (const e of this.enemies) {
         if (!e.alive) continue;
         e.alive = false;
         ev.leaked++;
-        ev.lifeLost += e.isBoss ? this.config.bossLifePerLeak : this.config.lifePerLeak;
+        if (!sanctuary) ev.lifeLost += e.isBoss ? this.config.bossLifePerLeak : this.config.lifePerLeak;
       }
     }
 
@@ -401,11 +466,11 @@ export class Battle {
     return dmg;
   }
 
-  private hit(u: DeployedUnit, e: Enemy, dmg: number, ev: BattleTickEvents): void {
+  private hit(u: DeployedUnit, e: Enemy, dmg: number, ev: BattleTickEvents, skill = false): void {
     if (!e.alive) return;
     e.hp -= dmg;
     const killed = e.hp <= 0;
-    ev.hits.push({ unit: u, enemyId: e.id, dmg, killed });
+    ev.hits.push({ unit: u, enemyId: e.id, dmg, killed, skill });
     if (killed) {
       e.alive = false;
       ev.kills++;
@@ -420,6 +485,76 @@ export class Battle {
       }
       ev.goldEarned += gold;
     }
+  }
+
+  // ── 영웅 액티브 스킬 API (GameLoop.useHeroSkill이 호출) ──────────────
+
+  /** 대지 강타: 생존 적 전체에 dmg + 기절 */
+  damageAllEnemies(source: DeployedUnit, dmg: number, stunSec = 0): SkillOutcome {
+    return this.skillHits(source, this.aliveEnemies, () => dmg, stunSec);
+  }
+
+  /** 처형 검격: 현재 HP가 높은 순 n기에 dmg */
+  hitTopHpEnemies(source: DeployedUnit, n: number, dmg: number): SkillOutcome {
+    const targets = [...this.aliveEnemies].sort((a, b) => b.hp - a.hp).slice(0, n);
+    return this.skillHits(source, targets, () => dmg);
+  }
+
+  /** 황금 탄환: 최대 HP가 가장 큰 적 즉사 (보스는 최대 HP의 bossPct%) */
+  executeHighestHp(source: DeployedUnit, bossPct: number): SkillOutcome {
+    const alive = this.aliveEnemies;
+    if (alive.length === 0) return { affected: 0, kills: 0, goldEarned: 0 };
+    const target = alive.reduce((a, b) => (b.maxHp > a.maxHp ? b : a));
+    return this.skillHits(source, [target], (e) => (e.isBoss ? e.maxHp * bossPct / 100 : e.hp + 1));
+  }
+
+  /** 암석 방벽: sec 동안 모든 적 정지 (이후 스폰 포함) */
+  freezeEnemies(sec: number): SkillOutcome {
+    this.freezeUntil = Math.max(this.freezeUntil, this.elapsed + sec);
+    return { affected: this.aliveEnemies.length, kills: 0, goldEarned: 0 };
+  }
+
+  /** 성역: sec 동안 시간 초과 이탈 라이프 피해 무효 */
+  setSanctuary(sec: number): SkillOutcome {
+    this.sanctuaryUntil = Math.max(this.sanctuaryUntil, this.elapsed + sec);
+    return { affected: 0, kills: 0, goldEarned: 0 };
+  }
+
+  /** 대약탈: 생존 적 전체 감속 + 적당 골드 강탈 */
+  slowAllEnemies(pct: number, sec: number, goldPerEnemy: number): SkillOutcome {
+    const alive = this.aliveEnemies;
+    for (const e of alive) {
+      e.slowPct = Math.max(e.slowPct, pct);
+      e.slowUntil = Math.max(e.slowUntil, this.elapsed + sec);
+    }
+    const gold = alive.length * goldPerEnemy;
+    this.pending.goldEarned += gold;
+    return { affected: alive.length, kills: 0, goldEarned: gold };
+  }
+
+  /** 심연 소환: sec 동안 유지되는 임시 유닛(유령 포탑) 추가 */
+  addTemporaryUnits(units: DeployedUnit[], sec: number): SkillOutcome {
+    for (const u of units) {
+      u._cooldown = 0;
+      this.tempUnits.push({ unit: u, until: this.elapsed + sec });
+    }
+    return { affected: units.length, kills: 0, goldEarned: 0 };
+  }
+
+  /** 천둥 폭풍: sec 동안 초당 rate발 낙뢰(boltDmg)를 무작위 적에게 */
+  startStorm(source: DeployedUnit, boltDmg: number, boltsPerSec: number, sec: number): SkillOutcome {
+    this.storm = { until: this.elapsed + sec, boltDmg, rate: boltsPerSec, acc: 0, source };
+    return { affected: this.aliveEnemies.length, kills: 0, goldEarned: 0 };
+  }
+
+  private skillHits(source: DeployedUnit, targets: readonly Enemy[], dmgOf: (e: Enemy) => number, stunSec = 0): SkillOutcome {
+    const before = { kills: this.pending.kills, gold: this.pending.goldEarned };
+    for (const e of targets) {
+      if (!e.alive) continue;
+      this.hit(source, e, dmgOf(e), this.pending, true);
+      if (stunSec > 0) e.stunUntil = Math.max(e.stunUntil, this.elapsed + stunSec);
+    }
+    return { affected: targets.length, kills: this.pending.kills - before.kills, goldEarned: this.pending.goldEarned - before.gold };
   }
 
   /** target 기준 원형 트랙 거리 radius 이내의 다른 생존 적 */

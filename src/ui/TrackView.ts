@@ -27,6 +27,7 @@ export class TrackView {
   private fxGfx: Phaser.GameObjects.Graphics;
   private rangeGfx: Phaser.GameObjects.Graphics;
   private onCellTap: ((slot: number) => void) | null = null;
+  private tempSprites: Phaser.GameObjects.Container[] = [];
 
   constructor(private scene: Phaser.Scene) {
     const g = scene.add.graphics();
@@ -128,9 +129,34 @@ export class TrackView {
     }
   }
 
+  /** 스킬로 소환된 임시 유닛(유령 포탑) 표시 — 영웅 칸 주위에 작은 반투명 원 */
+  updateTemporaryUnits(units: readonly DeployedUnit[]): void {
+    if (units.length === this.tempSprites.length) return;
+    for (const s of this.tempSprites) s.destroy();
+    this.tempSprites = [];
+    units.forEach((u, i) => {
+      const { x, y } = this.cellCenter(u.slot);
+      const ang = (Math.PI * 2 * i) / Math.max(1, units.length) - Math.PI / 2;
+      const c = this.scene.add.container(x + Math.cos(ang) * 58, y + Math.sin(ang) * 58);
+      c.add(this.scene.add.circle(0, 0, 16, SUIT_COLOR[u.def.suit], 0.55).setStrokeStyle(2, 0xf1d17a));
+      c.add(this.scene.add.text(0, 0, '👻', { fontSize: '18px' }).setOrigin(0.5));
+      this.tempSprites.push(c);
+    });
+  }
+
+  /** 스킬 사용 연출: 칸에서 퍼지는 링 */
+  pulseCell(slot: number): void {
+    const { x, y } = this.cellCenter(slot);
+    const ring = this.scene.add.circle(x, y, 30).setStrokeStyle(6, 0xf1d17a).setDepth(5);
+    ring.setFillStyle(0xf1d17a, 0);
+    this.scene.tweens.add({ targets: ring, scale: 9, alpha: 0, duration: 600, ease: 'Cubic.easeOut', onComplete: () => ring.destroy() });
+  }
+
   clearEnemies(): void {
     for (const s of this.enemySprites.values()) s.destroy();
     this.enemySprites.clear();
+    for (const s of this.tempSprites) s.destroy();
+    this.tempSprites = [];
     this.fx = [];
     this.fxGfx.clear();
   }
@@ -144,7 +170,7 @@ export class TrackView {
       const from = this.cellCenter(h.unit.slot);
       const to = e ? this.trackPoint(e.pos / trackLength) : this.enemySprites.get(h.enemyId) ?? null;
       if (!to) continue;
-      this.fx.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, color: SUIT_COLOR[h.unit.def.suit], ttl: h.killed ? 0.25 : 0.12 });
+      this.fx.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, color: h.skill ? 0xf1d17a : SUIT_COLOR[h.unit.def.suit], ttl: h.skill ? 0.3 : h.killed ? 0.25 : 0.12 });
     }
   }
 
