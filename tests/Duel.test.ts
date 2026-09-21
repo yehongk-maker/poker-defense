@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { OpponentAI, resolveDuel, reachScore, sideOf } from '../src/systems/Duel.ts';
+import { OpponentAI, resolveDuel, raceStatus, reachScore, sideOf } from '../src/systems/Duel.ts';
 import { GameLoop, type GameData } from '../src/systems/GameLoop.ts';
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
@@ -55,6 +55,18 @@ describe('resolveDuel', () => {
     expect(resolveDuel(side('victory', 40, 5, 900), side('victory', 40, 5, 300), 40)).toMatchObject({ winner: 'player', reason: 'gold' });
     expect(resolveDuel(side('victory', 40, 5, 300), side('victory', 40, 5, 300), 40).winner).toBe('draw');
   });
+  it('raceStatus: 40을 먼저 깬 쪽 즉시 승리, 한쪽 탈락 후 앞서면 승리, 아니면 null', () => {
+    expect(raceStatus(side('victory', 40), side('combat', 33), 40)).toMatchObject({ winner: 'player', reason: 'first_clear' });
+    expect(raceStatus(side('card', 38), side('victory', 40), 40)).toMatchObject({ winner: 'opponent', reason: 'first_clear' });
+    expect(raceStatus(side('victory', 40, 3), side('victory', 40, 5), 40)).toMatchObject({ winner: 'opponent', reason: 'life' });
+    expect(raceStatus(side('combat', 12), side('combat', 15), 40)).toBeNull(); // 진행 중
+    expect(raceStatus(side('card', 12), side('defeat', 12), 40)).toBeNull(); // 상대 탈락했지만 아직 같은 라운드
+    expect(raceStatus(side('card', 13), side('defeat', 12), 40)).toMatchObject({ winner: 'player', reason: 'opponent_out' });
+    expect(raceStatus(side('defeat', 10), side('combat', 11), 40)).toMatchObject({ winner: 'opponent', reason: 'opponent_out' });
+    expect(raceStatus(side('defeat', 10), side('combat', 10), 40)).toBeNull(); // 내가 탈락, 상대는 같은 라운드 진행 중 → 미정
+    expect(raceStatus(side('defeat', 10, 0, 50), side('defeat', 10, 0, 40), 40)).toMatchObject({ winner: 'player', reason: 'gold' });
+  });
+
   it('sideOf: GameLoop 상태를 판정 입력으로', () => {
     const g = new GameLoop(data(), rng(1));
     expect(sideOf(g)).toEqual({ phase: 'card', wave: 1, life: 10, gold: 100 });

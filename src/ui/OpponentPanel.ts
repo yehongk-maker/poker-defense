@@ -26,7 +26,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 2, GAME_WIDTH, 4, COLORS.panelLine));
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
     this.add(scene.add.text(40, 70, '상대 진행 상황', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.add(scene.add.text(40, 130, '1:1 대결 · 같은 웨이브를 각자 진행 · 더 멀리 간 쪽이 승리 (같으면 라이프 → 골드)', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
+    this.add(scene.add.text(40, 130, '실시간 레이스 · 마지막 라운드(40)를 먼저 깨는 쪽이 승리 · 빨리 확정·시작할수록 앞선다', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
     this.add(new Button(scene, GAME_WIDTH - 150, 90, '▼ 닫기', () => onClose(), { width: 220, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
 
     this.status = scene.add.text(GAME_WIDTH / 2, 260, '', { fontSize: '40px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
@@ -54,7 +54,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     const g = opp.loop;
     const phase: Record<string, string> = { card: '카드 선택 중', manage: '정비 중', combat: '전투 중', victory: '40웨이브 클리어!', defeat: '탈락' };
     const hand = opp.lastHandRank !== null ? `   최근 족보: ${HAND_NAME[opp.lastHandRank]}` : '';
-    this.status.setText(`웨이브 ${g.wave}/${totalWaves}   ♥ ${g.life}   💰 ${Math.floor(g.gold)}   · ${phase[g.phase] ?? g.phase}${hand}`);
+    this.status.setText(`라운드 ${g.wave}/${totalWaves}   ♥ ${g.life}   💰 ${Math.floor(g.gold)}   · ${phase[g.phase] ?? g.phase}${hand}`);
     const syn = g.activeSynergies.map((s) => (s.kind === 'suit' ? `${SUIT_SYMBOL[s.key as Suit]}${s.reached}` : s.reached === 1 ? s.name : `${s.name}${s.reached}`)).join('  ');
     const hero = g.hero ? `   영웅: ${g.hero.def.name} (${g.hero.grade})` : '';
     this.syn.setText(`유닛 ${g.units.length}/25   시너지: ${syn || '없음'}${hero}`);
@@ -66,7 +66,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
       c.setFillStyle(u ? SUIT_COLOR[u.suit] : COLORS.cell);
       this.cellText[i].setText(u ? (u.hero ? '★' : `${u.tier}`) : '');
     });
-    const lead = g.wave === player.wave ? '같은 웨이브' : g.wave > player.wave ? `상대가 ${g.wave - player.wave}웨이브 앞섬` : `내가 ${player.wave - g.wave}웨이브 앞섬`;
-    this.compare.setText(`나: 웨이브 ${player.wave} ♥${player.life}   vs   상대: 웨이브 ${g.wave} ♥${g.life}\n${lead}`);
+    const lead = g.wave === player.wave ? '같은 라운드' : g.wave > player.wave ? `상대가 ${g.wave - player.wave}라운드 앞섬` : `내가 ${player.wave - g.wave}라운드 앞섬`;
+    this.compare.setText(`나: 라운드 ${player.wave} ♥${player.life}   vs   상대: 라운드 ${g.wave} ♥${g.life}\n${lead}`);
   }
 }

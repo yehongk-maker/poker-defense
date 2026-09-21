@@ -30,8 +30,8 @@ export class OpponentAI {
 
   constructor(data: GameData, private rng: () => number = Math.random, opts: OpponentOptions = {}) {
     this.loop = new GameLoop(data, rng);
-    this.thinkSec = opts.thinkSec ?? [2.5, 6];
-    this.manageSec = opts.manageSec ?? [1, 2.5];
+    this.thinkSec = opts.thinkSec ?? [1.5, 4];
+    this.manageSec = opts.manageSec ?? [0.8, 1.8];
   }
 
   get finished(): boolean {
@@ -97,10 +97,12 @@ export interface DuelSide {
   gold: number;
 }
 
+export type DuelReason = 'first_clear' | 'opponent_out' | 'wave' | 'life' | 'gold' | 'draw';
+
 export interface DuelResult {
   winner: DuelWinner;
   /** 판정 근거 */
-  reason: 'wave' | 'life' | 'gold' | 'draw';
+  reason: DuelReason;
   player: DuelSide;
   opponent: DuelSide;
 }
@@ -117,6 +119,24 @@ export function resolveDuel(player: DuelSide, opponent: DuelSide, totalWaves: nu
   if (player.life !== opponent.life) return { winner: player.life > opponent.life ? 'player' : 'opponent', reason: 'life', ...base };
   if (Math.floor(player.gold) !== Math.floor(opponent.gold)) return { winner: player.gold > opponent.gold ? 'player' : 'opponent', reason: 'gold', ...base };
   return { winner: 'draw', reason: 'draw', ...base };
+}
+
+/**
+ * 레이스 진행 중 매 프레임 호출: 이미 승패가 났으면 결과, 아니면 null.
+ *  - 40 클리어를 먼저 한 쪽 즉시 승리 (같은 순간이면 라이프 → 골드)
+ *  - 한쪽이 탈락했고 다른 쪽이 그보다 앞선 라운드에 있으면 앞선 쪽 승리
+ */
+export function raceStatus(player: DuelSide, opponent: DuelSide, totalWaves: number): DuelResult | null {
+  const base = { player, opponent };
+  const pV = player.phase === 'victory', oV = opponent.phase === 'victory';
+  if (pV && oV) return resolveDuel(player, opponent, totalWaves);
+  if (pV) return { winner: 'player', reason: 'first_clear', ...base };
+  if (oV) return { winner: 'opponent', reason: 'first_clear', ...base };
+  const pD = player.phase === 'defeat', oD = opponent.phase === 'defeat';
+  if (oD && !pD && player.wave > opponent.wave) return { winner: 'player', reason: 'opponent_out', ...base };
+  if (pD && !oD && opponent.wave > player.wave) return { winner: 'opponent', reason: 'opponent_out', ...base };
+  if (pD && oD) return resolveDuel(player, opponent, totalWaves);
+  return null;
 }
 
 export const sideOf = (g: GameLoop): DuelSide => ({ phase: g.phase, wave: g.wave, life: g.life, gold: g.gold });

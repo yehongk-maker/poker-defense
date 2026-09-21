@@ -11,15 +11,18 @@ export class HUD {
   private phaseText: Phaser.GameObjects.Text;
   private codexBtn: Phaser.GameObjects.Text;
   private oppText: Phaser.GameObjects.Text;
+  private roundText: Phaser.GameObjects.Text;
 
   constructor(private scene: Phaser.Scene, onOpenCodex?: () => void) {
     scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel);
-    this.main = scene.add.text(40, 58, '', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.phaseText = scene.add.text(GAME_WIDTH - 40, 70, '', { fontSize: '34px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
+    this.main = scene.add.text(40, 58, '', { fontSize: '44px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
+    // 현재 라운드 (상단 중앙, 크게)
+    this.roundText = scene.add.text(GAME_WIDTH / 2, 58, '', { fontSize: '52px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5);
+    this.phaseText = scene.add.text(GAME_WIDTH - 40, 72, '', { fontSize: '30px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
     this.sub = scene.add.text(40, 128, '', { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
     // 시너지 도감 열기 (시너지 줄 탭 또는 버튼)
     this.codexBtn = scene.add.text(GAME_WIDTH - 40, 128, '📖 도감', { fontSize: '28px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(1, 0.5);
-    this.oppText = scene.add.text(GAME_WIDTH - 40, 20, '', { fontSize: '24px', color: '#e0a0a0', fontFamily: FONT }).setOrigin(1, 0.5);
+    this.oppText = scene.add.text(GAME_WIDTH - 40, 22, '', { fontSize: '26px', color: '#e0a0a0', fontFamily: FONT }).setOrigin(1, 0.5);
     if (onOpenCodex) {
       this.codexBtn.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) onOpenCodex(); });
       this.sub.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) onOpenCodex(); });
@@ -32,7 +35,8 @@ export class HUD {
   }
 
   refresh(loop: GameLoop, totalWaves: number): void {
-    this.main.setText(`웨이브 ${loop.wave}/${totalWaves}    ♥ ${loop.life}    💰 ${Math.floor(loop.gold)}`);
+    this.main.setText(`♥ ${loop.life}   💰 ${Math.floor(loop.gold)}`);
+    this.roundText.setText(`라운드 ${loop.wave} / ${totalWaves}`);
     const phase: Record<string, string> = { card: '카드 선택', manage: '정비', combat: '전투 중', victory: '승리!', defatt: '', defeat: '패배' };
     this.phaseText.setText(phase[loop.phase] ?? loop.phase);
 

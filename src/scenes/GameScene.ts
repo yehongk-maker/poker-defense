@@ -13,7 +13,7 @@ import { UpgradePanel } from '../ui/UpgradePanel.ts';
 import { SwipeNav } from '../ui/SwipeNav.ts';
 import { InfoPanel } from '../ui/InfoPanel.ts';
 import { OpponentPanel } from '../ui/OpponentPanel.ts';
-import { OpponentAI, resolveDuel, sideOf } from '../systems/Duel.ts';
+import { OpponentAI, raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
 
@@ -182,10 +182,13 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const dt = Math.min(delta / 1000, 0.1);
     const cfg = this.data_.battleConfig;
-    this.tickOpponent(dt);
+    // 실시간 레이스: 배속(⏩)은 양쪽에 같은 시간 배율로 적용
+    this.tickOpponent(dt * this.speed);
+    const race = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), this.data_.config.totalWaves);
+    if (race) { this.showEnd(race); return; }
 
     if (this.loop.phase === 'card') {
-      const r = this.loop.cardPhase.tick(dt);
+      const r = this.loop.cardPhase.tick(dt * this.speed);
       this.hand.setTimer(r.remaining);
       this.hand.update(_time);
       if (r.autoConfirmed) this.confirmHand();
@@ -210,7 +213,7 @@ export class GameScene extends Phaser.Scene {
         this.track.updateTemporaryUnits(b.temporaryUnits);
         this.refreshSkillButton();
         const t = Math.ceil(b.timeRemaining);
-        this.combatText.setText(`웨이브 ${this.loop.wave}   ⏱ ${t}초   남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
+        this.combatText.setText(`라운드 ${this.loop.wave}   ⏱ ${t}초   남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
           .setColor(t <= 5 ? '#e0473f' : COLORS.text);
       }
       this.track.update(dt * steps);
@@ -220,13 +223,13 @@ export class GameScene extends Phaser.Scene {
         // 클리어 → 카드 / 패배 / 승리
         this.track.clearEnemies();
         if (this.loop.phase === 'card') {
-          this.showToast(leakMsg ?? `웨이브 ${this.loop.wave - 1} 클리어!`);
+          this.showToast(leakMsg ?? `라운드 ${this.loop.wave - 1} 클리어! 바로 다음 라운드`);
           this.refreshHand();
         } else if (leakMsg) {
           this.showToast(leakMsg);
         }
         this.refreshPanels();
-        if (this.loop.phase === 'victory' || this.loop.phase === 'defeat') this.showEnd();
+        if (this.loop.phase === 'victory' || this.loop.phase === 'defeat') this.finishRace();
       }
       return;
     }
@@ -240,11 +243,13 @@ export class GameScene extends Phaser.Scene {
     if (this.oppRefreshAcc >= 0.5) {
       this.oppRefreshAcc = 0;
       const o = this.opponent.loop;
-      this.hud.setOpponent(`상대 W${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : o.phase === 'victory' ? ' 클리어' : ''}`);
+      const diff = this.loop.wave - o.wave;
+      const lead = diff > 0 ? `내가 ${diff} 앞섬` : diff < 0 ? `상대가 ${-diff} 앞섬` : '동률';
+      this.hud.setOpponent(`상대 라운드 ${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''} · ${lead}`);
       if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves);
       if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
         this.oppDefeatAnnounced = true;
-        this.showToast(`상대 탈락! (웨이브 ${o.wave}) — 웨이브 ${o.wave}를 넘기면 승리`);
+        this.showToast(`상대 탈락! (라운드 ${o.wave}) — 라운드 ${o.wave + 1}에 들어가면 승리`);
       }
     }
   }
@@ -318,21 +323,30 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: this.toast, alpha: 0, delay: 1400, duration: 400 });
   }
 
-  private showEnd(): void {
+  /** 플레이어 판 종료(승리/패배) 시: 레이스 판정이 아직 안 났으면 상대를 끝까지 돌려 비교 */
+  private finishRace(): void {
+    const total = this.data_.config.totalWaves;
+    let r = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), total);
+    if (!r) {
+      this.opponent.fastForward();
+      r = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), total) ?? resolveDuel(sideOf(this.loop), sideOf(this.opponent.loop), total);
+    }
+    this.showEnd(r);
+  }
+
+  private showEnd(duel: DuelResult): void {
+    if (this.ended) return;
     this.ended = true;
     const cleared = this.loop.phase === 'victory';
     this.nav.close();
-    // 1:1 판정: 상대가 아직 진행 중이면 끝까지 돌린 뒤 비교
-    this.opponent.fastForward();
-    const duel = resolveDuel(sideOf(this.loop), sideOf(this.opponent.loop), this.data_.config.totalWaves);
     const win = duel.winner === 'player';
     const title = duel.winner === 'draw' ? '무승부' : win ? '승리!' : '패배';
     const color = duel.winner === 'draw' ? '#8fe3ff' : win ? '#f1d17a' : '#e0473f';
-    const reason: Record<string, string> = { wave: '도달 웨이브', life: '남은 라이프', gold: '골드', draw: '완전 동률' };
+    const reason: Record<string, string> = { first_clear: '마지막 라운드 먼저 클리어', opponent_out: '상대 탈락 후 라운드 앞섬', wave: '도달 라운드', life: '남은 라이프', gold: '골드', draw: '완전 동률' };
     const o = this.opponent.loop;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
     this.add.text(GAME_WIDTH / 2, 700, title, { fontSize: '120px', color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
-    this.add.text(GAME_WIDTH / 2, 820, `나: 웨이브 ${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life} 💰${Math.floor(this.loop.gold)}   vs   상대: 웨이브 ${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life} 💰${Math.floor(o.gold)}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 820, `나: 라운드 ${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life} 💰${Math.floor(this.loop.gold)}   vs   상대: 라운드 ${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life} 💰${Math.floor(o.gold)}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
     this.add.text(GAME_WIDTH / 2, 880, `판정 기준: ${reason[duel.reason]}`, { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
     // 메타 진행 기록 + 젬 지급 (localStorage 저장)
     const reward = getMeta().recordRun({ wave: cleared ? this.data_.config.totalWaves : this.loop.wave, victory: cleared });
