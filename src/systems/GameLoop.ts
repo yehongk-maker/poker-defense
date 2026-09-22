@@ -39,7 +39,7 @@ export interface HeroDef {
   unlock: 'basic' | 'meta';
   /** 종족 시너지 카운트 +1 (docs/synergy-design.md) */
   race: UnitRace;
-  combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number };
+  combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number; targets?: 'ground' | 'air' | 'both' };
   passive: Record<string, unknown> & { type: string };
   active: { id: string; name: string; cooldownSec: number; desc: string; params: Record<string, number> };
 }
@@ -342,7 +342,7 @@ export class GameLoop {
     // 영웅을 전투 유닛으로 구성 (시너지 카운트 제외 — GDD 3.3)
     const heroUnitDef: UnitDef = {
       id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6, cards: 'high',
-      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType, targets: 'both', // 영웅은 지상/공중 모두
+      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType, targets: def.combat.targets ?? 'both', // 근접 영웅은 지상만, 대공 영웅은 공중 특화
       baseDps: def.combat.baseDps * mult, dpsFactor: 1.0,
       attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
@@ -367,6 +367,8 @@ export class GameLoop {
     if (this._hero?.def.passive.type === 'kill_gold_pct') {
       mods.killGoldPct = this._hero.def.passive.pct as number;
     }
+    const airKillGoldMult = this._hero?.def.passive.type === 'air_kill_gold_mult' ? (this._hero.def.passive.mult as number) : 1;
+    const airSpeedPct = this._hero?.def.passive.type === 'air_slow_pct' ? -(this._hero.def.passive.pct as number) : 0;
     this._gold += g.waveStartGold; // 고블린: 웨이브 시작 골드
 
     const combatUnits = this._hero ? [...this._units, this._hero.unit] : [...this._units];
@@ -375,8 +377,9 @@ export class GameLoop {
     this.battle_ = new Battle(waveDef, this.data.enemyTypes, combatUnits, this.data.battleConfig, {
       getGold: () => this._gold,
       rng: this.rng,
-      globalMods: mods,
+      globalMods: { ...mods, airKillGoldMult },
       battleMods: {
+        airSpeedPct,
         timeLimitBonus: g.timeLimitPlus,
         enemySpeedPct: g.enemySpeedPct,
         waveStartStunSec: g.waveStartStunSec,
@@ -499,6 +502,27 @@ export class GameLoop {
         text = `${sec(p.durationSec)}초간 초당 ${p.boltsPerSec}발 낙뢰`;
         break;
       }
+      // ── 대공 영웅 ──
+      case 'flak_barrage': { // 공중 적 전체 피해 + 추락(정지)
+        out = b.damageAllEnemies(unit, heroDmg * p.dmgMult, sec(p.stunSec), 'air');
+        text = out.affected > 0 ? `공중 적 ${out.affected}기 탄막 (${out.kills}기 격추), ${sec(p.stunSec)}초 추락` : '공중 적이 없습니다';
+        break;
+      }
+      case 'light_of_falling': { // 공중 적 전체 정지 (스폰 포함)
+        out = b.freezeAirEnemies(sec(p.durationSec));
+        text = `${sec(p.durationSec)}초간 공중 적 정지`;
+        break;
+      }
+      case 'bombard_support': { // 공중 상위 HP n체 초대미지
+        out = b.hitTopHpEnemies(unit, p.targets, heroDmg * p.dmgMult, 'air');
+        text = out.affected > 0 ? `공중 ${out.affected}기 포격 (${out.kills}기 격추)` : '공중 적이 없습니다';
+        break;
+      }
+      case 'void_gale': { // 공중 적에게만 낙뢰
+        out = b.startStorm(unit, p.boltDmg * mult, p.boltsPerSec, sec(p.durationSec), 'air');
+        text = `${sec(p.durationSec)}초간 공중 적에게 초당 ${p.boltsPerSec}발 낙뢰`;
+        break;
+      }
       default:
         throw new Error(`Unknown hero skill: ${def.active.id}`);
     }
@@ -545,7 +569,13 @@ export class GameLoop {
             u.chainTargetsBonus = (u.chainTargetsBonus ?? 0) + (hp.plus as number);
           }
           break;
-        // class_count / kill_gold_pct / life_save_chance_pct는 각각
+        case 'air_attack_pct': { // 대공 영웅: 공중 적 피해 +% (global 또는 특정 수트), 영웅 자신 포함
+          const targets = hp.scope === 'suit' ? this._units.filter((u) => u.def.suit === hp.suit) : [...this._units];
+          for (const u of targets) u.airAttackPctBonus = (u.airAttackPctBonus ?? 0) + (hp.pct as number);
+          this._hero.unit.airAttackPctBonus = (this._hero.unit.airAttackPctBonus ?? 0) + (hp.pct as number);
+          break;
+        }
+        // class_count / kill_gold_pct / life_save_chance_pct / air_kill_gold_mult / air_slow_pct는 각각
         // recalcSynergy 상단 / startCombat / tickCombat에서 처리
       }
     }

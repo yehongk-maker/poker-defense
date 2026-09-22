@@ -190,6 +190,7 @@ export class SynergySystem {
       u.debuffDurationPctBonus = 0;
       u.extraSlowPct = 0;
       u.rangeBonus = 0;
+      u.airAttackPctBonus = 0;
     }
     const global: GlobalSynergyMods = {
       waveGoldPct: 0, lifePerWave: 0, killGoldBonus: 0, bonusGoldChancePct: 0, bonusGoldAmount: 0,

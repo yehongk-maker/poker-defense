@@ -89,6 +89,8 @@ export interface DeployedUnit {
   chainTargetsBonus?: number;
   /** 사거리 +N 셀 (휴먼 7 / 전열 6 시너지) */
   rangeBonus?: number;
+  /** 공중 적에게 피해 +% (대공 영웅 패시브) */
+  airAttackPctBonus?: number;
   /** 내부 상태: 남은 쿨타임 */
   _cooldown?: number;
 }
@@ -158,9 +160,13 @@ interface BattleOptions {
     /** 처치 시 확률 보너스 골드 (♦6 시너지) */
     bonusGoldChancePct?: number;
     bonusGoldAmount?: number;
+    /** 공중 적 처치 골드 배율 (비공정 선장 패시브) */
+    airKillGoldMult?: number;
   };
   /** 전투 규칙 시너지 (SynergySystem.global에서 전달) */
   battleMods?: {
+    /** 공중 적 이동 속도 % (천상 파수꾼 패시브: -15) */
+    airSpeedPct?: number;
     /** 제한 시간 +초 (정령) */
     timeLimitBonus?: number;
     /** 적 이동 속도 % (몬스터 4: -8) */
@@ -190,13 +196,15 @@ export class Battle {
   /** 성역: 이 시각까지 시간 초과 이탈 하트 피해 무효 */
   private sanctuaryUntil = 0;
   /** 천둥 폭풍: 무작위 낙뢰 */
-  private storm: { until: number; boltDmg: number; rate: number; acc: number; source: DeployedUnit } | null = null;
+  private storm: { until: number; boltDmg: number; rate: number; acc: number; source: DeployedUnit; only?: Movement } | null = null;
   /** 심연 소환: 임시 포탑 */
   private tempUnits: { unit: DeployedUnit; until: number }[] = [];
   private getGold: () => number;
   private rng: () => number;
-  private globalMods: { killGoldBonus: number; killGoldPct: number; bonusGoldChancePct: number; bonusGoldAmount: number };
-  private battleMods: { timeLimitBonus: number; enemySpeedPct: number; waveStartStunSec: number };
+  private globalMods: { killGoldBonus: number; killGoldPct: number; bonusGoldChancePct: number; bonusGoldAmount: number; airKillGoldMult: number };
+  private battleMods: { timeLimitBonus: number; enemySpeedPct: number; waveStartStunSec: number; airSpeedPct: number };
+  /** 추락의 빛: 이 시각까지 공중 적 정지 (스폰 포함) */
+  private freezeAirUntil = 0;
   private rangeMult: Record<string, number>;
 
   constructor(
@@ -218,11 +226,13 @@ export class Battle {
       killGoldPct: options.globalMods?.killGoldPct ?? 0,
       bonusGoldChancePct: options.globalMods?.bonusGoldChancePct ?? 0,
       bonusGoldAmount: options.globalMods?.bonusGoldAmount ?? 0,
+      airKillGoldMult: options.globalMods?.airKillGoldMult ?? 1,
     };
     this.battleMods = {
       timeLimitBonus: options.battleMods?.timeLimitBonus ?? 0,
       enemySpeedPct: options.battleMods?.enemySpeedPct ?? 0,
       waveStartStunSec: options.battleMods?.waveStartStunSec ?? 0,
+      airSpeedPct: options.battleMods?.airSpeedPct ?? 0,
     };
     this.rangeMult = { ...config.rangeDamageMult, ...(options.battleMods?.rangeMultOverride ?? {}) };
 
@@ -318,8 +328,10 @@ export class Battle {
         e.hp = Math.min(e.maxHp, e.hp + e.maxHp * t.regenPctPerSec * dt);
       }
       if (this.elapsed < e.stunUntil || this.elapsed < this.freezeUntil) continue; // 기절/방벽: 이동 정지
+      if (e.movement === 'air' && this.elapsed < this.freezeAirUntil) continue; // 추락의 빛: 공중 정지
       const slow = this.elapsed < e.slowUntil ? e.slowPct / 100 : 0;
-      const speed = this.config.baseEnemySpeed * t.speedMult * (1 - slow) * (1 + this.battleMods.enemySpeedPct / 100);
+      const airPct = e.movement === 'air' ? this.battleMods.airSpeedPct : 0;
+      const speed = this.config.baseEnemySpeed * t.speedMult * (1 - slow) * (1 + this.battleMods.enemySpeedPct / 100) * (1 + airPct / 100);
       e.pos += speed * dt;
       while (e.pos >= this.config.trackLength) {
         e.pos -= this.config.trackLength;
@@ -334,7 +346,8 @@ export class Battle {
         this.storm.acc += this.storm.rate * dt;
         while (this.storm.acc >= 1) {
           this.storm.acc -= 1;
-          const alive = this.aliveEnemies;
+          const only = this.storm.only;
+          const alive = this.aliveEnemies.filter((e) => !only || e.movement === only);
           if (alive.length === 0) break;
           const target = alive[Math.min(alive.length - 1, Math.floor(this.rng() * alive.length))];
           this.hit(this.storm.source, target, this.storm.boltDmg, ev, true);
@@ -475,6 +488,7 @@ export class Battle {
 
     if (e.isBoss && eff?.type === 'bonus_vs_boss') dmg *= 1 + (eff.pct as number) / 100;
     if (e.movement === 'air' && eff?.type === 'bonus_vs_air') dmg *= 1 + (eff.pct as number) / 100;
+    if (e.movement === 'air') dmg *= 1 + (u.airAttackPctBonus ?? 0) / 100; // 대공 영웅 패시브
     if (eff?.type === 'gold_scaling_damage') {
       dmg += this.getGold() * ((eff.pctOfGold as number) / 100);
     }
@@ -501,6 +515,7 @@ export class Battle {
       if (eff?.type === 'gold_on_kill') gold += eff.amount as number;
       gold += this.globalMods.killGoldBonus;
       gold *= 1 + this.globalMods.killGoldPct / 100;
+      if (e.movement === 'air') gold *= this.globalMods.airKillGoldMult;
       if (this.globalMods.bonusGoldChancePct > 0 && this.rng() * 100 < this.globalMods.bonusGoldChancePct) {
         gold += this.globalMods.bonusGoldAmount;
       }
@@ -510,15 +525,27 @@ export class Battle {
 
   // ── 영웅 액티브 스킬 API (GameLoop.useHeroSkill이 호출) ──────────────
 
-  /** 대지 강타: 생존 적 전체에 dmg + 기절 */
-  damageAllEnemies(source: DeployedUnit, dmg: number, stunSec = 0): SkillOutcome {
-    return this.skillHits(source, this.aliveEnemies, () => dmg, stunSec);
+  /** 대지 강타 / 대공 탄막: 생존 적 전체(또는 movement 필터)에 dmg + 기절 */
+  damageAllEnemies(source: DeployedUnit, dmg: number, stunSec = 0, only?: Movement): SkillOutcome {
+    const targets = this.aliveEnemies.filter((e) => !only || e.movement === only);
+    return this.skillHits(source, targets, () => dmg, stunSec);
   }
 
-  /** 처형 검격: 현재 HP가 높은 순 n기에 dmg */
-  hitTopHpEnemies(source: DeployedUnit, n: number, dmg: number): SkillOutcome {
-    const targets = [...this.aliveEnemies].sort((a, b) => b.hp - a.hp).slice(0, n);
+  /** 처형 검격 / 포격 지원: 현재 HP가 높은 순 n기(또는 movement 필터)에 dmg */
+  hitTopHpEnemies(source: DeployedUnit, n: number, dmg: number, only?: Movement): SkillOutcome {
+    const targets = [...this.aliveEnemies].filter((e) => !only || e.movement === only).sort((a, b) => b.hp - a.hp).slice(0, n);
     return this.skillHits(source, targets, () => dmg);
+  }
+
+  /** 추락의 빛: sec 동안 공중 적 전체 정지 (이후 스폰되는 공중 적 포함) */
+  freezeAirEnemies(sec: number): SkillOutcome {
+    this.freezeAirUntil = Math.max(this.freezeAirUntil, this.elapsed + sec);
+    return { affected: this.aliveEnemies.filter((e) => e.movement === 'air').length, kills: 0, goldEarned: 0 };
+  }
+
+  /** 공중 정지 남은 시간(초) */
+  get freezeAirRemaining(): number {
+    return Math.max(0, this.freezeAirUntil - this.elapsed);
   }
 
   /** 황금 탄환: 최대 HP가 가장 큰 적 즉사 (보스는 최대 HP의 bossPct%) */
@@ -562,10 +589,10 @@ export class Battle {
     return { affected: units.length, kills: 0, goldEarned: 0 };
   }
 
-  /** 천둥 폭풍: sec 동안 초당 rate발 낙뢰(boltDmg)를 무작위 적에게 */
-  startStorm(source: DeployedUnit, boltDmg: number, boltsPerSec: number, sec: number): SkillOutcome {
-    this.storm = { until: this.elapsed + sec, boltDmg, rate: boltsPerSec, acc: 0, source };
-    return { affected: this.aliveEnemies.length, kills: 0, goldEarned: 0 };
+  /** 천둥 폭풍 / 공허 돌풍: sec 동안 초당 rate발 낙뢰(boltDmg)를 무작위 적(또는 movement 필터)에게 */
+  startStorm(source: DeployedUnit, boltDmg: number, boltsPerSec: number, sec: number, only?: Movement): SkillOutcome {
+    this.storm = { until: this.elapsed + sec, boltDmg, rate: boltsPerSec, acc: 0, source, only };
+    return { affected: this.aliveEnemies.filter((e) => !only || e.movement === only).length, kills: 0, goldEarned: 0 };
   }
 
   private skillHits(source: DeployedUnit, targets: readonly Enemy[], dmgOf: (e: Enemy) => number, stunSec = 0): SkillOutcome {

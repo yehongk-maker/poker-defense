@@ -16,11 +16,11 @@ const wavesJson = load('waves.json');
 const mk = (store = new MemoryStore()) => new MetaProgress(cfg, store, heroes);
 
 describe('초기 상태와 설정', () => {
-  it('젬 0, 업그레이드 0단계, 기본 영웅 4종만 해금', () => {
+  it('다이아 0, 업그레이드 0단계, 기본 영웅(basic)만 해금', () => {
     const m = mk();
     expect(m.gems).toBe(0);
     expect(m.level('exchange_plus1')).toBe(0);
-    expect(m.unlockedHeroIds.length).toBe(4);
+    expect(m.unlockedHeroIds.length).toBe(6); // 기본 4 + 대공 기본 2
     expect(m.unlockedHeroIds.every((id) => heroes.find((h) => h.id === id)!.unlock === 'basic')).toBe(true);
   });
   it('config.meta: 업그레이드 3종 + 영웅 해금 비용 + 젬 보상 정의', () => {
@@ -53,7 +53,7 @@ describe('구매와 해금', () => {
     m.unlockHero('steel_annihilator');
     expect(m.gems).toBe(0);
     expect(m.isHeroUnlocked('steel_annihilator')).toBe(true);
-    expect(m.unlockedHeroIds.length).toBe(5);
+    expect(m.unlockedHeroIds.length).toBe(7);
     expect(() => m.unlockHero('steel_annihilator')).toThrow(/already/);
     expect(() => m.unlockHero('black_archduke')).toThrow(/basic/);
     expect(() => m.unlockHero('tomb_king')).toThrow(/Not enough/);
@@ -128,13 +128,13 @@ describe('GameData 반영', () => {
     expect(g.cardPhase.exchangeLimit).toBe(2);
     expect(g.cardPhase.timerSeconds).toBe(40);
     expect(g.unlockedHeroes.map((h) => h.id)).toContain('storm_tyrant');
-    expect(g.unlockedHeroes.length).toBe(5);
+    expect(g.unlockedHeroes.length).toBe(7);
   });
   it('업그레이드 없으면 기본값 그대로', () => {
     const g = new GameLoop(mk().applyTo(base()), () => 0.5);
     expect(g.gold).toBe(100);
     expect(g.cardPhase.exchangeLimit).toBe(1);
     expect(g.cardPhase.timerSeconds).toBe(30);
-    expect(g.unlockedHeroes.length).toBe(4);
+    expect(g.unlockedHeroes.length).toBe(6);
   });
 });

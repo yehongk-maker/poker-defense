@@ -128,6 +128,65 @@ describe('Battle 스킬 API', () => {
   });
 });
 
+describe('대공 영웅 — 지상/공중 구분', () => {
+  const airWave = (over: Partial<WaveDef> = {}): WaveDef => ({ wave: 8, boss: false, hp: 100, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'cave_bat', count: 3 }, { type: 'skeleton', count: 2 }], ...over });
+
+  it('damageAllEnemies(only air)는 공중만, hitTopHpEnemies(only air)도 공중만', () => {
+    const b = new Battle(airWave(), enemyTypes, [], config);
+    b.tick(0.1);
+    const r = b.damageAllEnemies(hero, 30, 1, 'air');
+    expect(r.affected).toBe(3);
+    for (const e of b.aliveEnemies) expect(e.hp).toBe(e.movement === 'air' ? 100 * enemyTypes.cave_bat.hpMult - 30 : 100);
+    const r2 = b.hitTopHpEnemies(hero, 5, 10, 'air');
+    expect(r2.affected).toBe(3);
+  });
+
+  it('freezeAirEnemies: 공중만 정지, 지상은 이동', () => {
+    const b = new Battle(airWave({ spawnInterval: 0.5 }), enemyTypes, [], config);
+    b.tick(0.1);
+    b.freezeAirEnemies(3);
+    expect(b.freezeAirRemaining).toBeCloseTo(3);
+    const before = new Map(b.aliveEnemies.map((e) => [e.id, e.pos]));
+    run(b, 2.5);
+    for (const e of b.aliveEnemies) {
+      if (e.movement === 'air') expect(e.pos).toBe(before.get(e.id) ?? 0); // 스폰된 공중 적도 제자리
+      else expect(e.pos).toBeGreaterThan(before.get(e.id) ?? -1);
+    }
+  });
+
+  it('startStorm(only air): 낙뢰는 공중에게만', () => {
+    const b = new Battle(airWave({ hp: 1e9 }), enemyTypes, [], config, { rng: () => 0.5 });
+    b.tick(0.1);
+    b.startStorm(hero, 200, 4, 3, 'air');
+    run(b, 3.2);
+    // 고정 rng(0.5)라 공중 중 한 기에 집중되지만, 지상은 절대 맞지 않는다
+    expect(b.aliveEnemies.some((e) => e.movement === 'air' && e.hp < e.maxHp)).toBe(true);
+    for (const e of b.aliveEnemies) if (e.movement === 'ground') expect(e.hp).toBe(e.maxHp);
+  });
+
+  it('airAttackPctBonus는 공중 피해만 올리고, airSpeedPct는 공중만 느리게, airKillGoldMult는 공중 처치 골드만 배율', () => {
+    const def = { ...hero.def, range: 6 };
+    const plain = new Battle(airWave({ hp: 1e9 }), enemyTypes, [{ def, slot: 12 }], config);
+    const boosted = new Battle(airWave({ hp: 1e9 }), enemyTypes, [{ def, slot: 12, airAttackPctBonus: 100 }], config);
+    run(plain, 3); run(boosted, 3);
+    const dmg = (b: Battle, mv: string) => b.aliveEnemies.filter((e) => e.movement === mv).reduce((s, e) => s + (e.maxHp - e.hp), 0);
+    expect(dmg(boosted, 'air')).toBeGreaterThan(dmg(plain, 'air'));
+    expect(dmg(boosted, 'ground')).toBeCloseTo(dmg(plain, 'ground'), 3);
+
+    const slow = new Battle(airWave(), enemyTypes, [], config, { battleMods: { airSpeedPct: -50 } });
+    const norm = new Battle(airWave(), enemyTypes, [], config);
+    run(slow, 2); run(norm, 2);
+    const pos = (b: Battle, mv: string) => Math.max(...b.aliveEnemies.filter((e) => e.movement === mv).map((e) => e.pos));
+    expect(pos(slow, 'air')).toBeCloseTo(pos(norm, 'air') * 0.5, 1);
+    expect(pos(slow, 'ground')).toBeCloseTo(pos(norm, 'ground'), 3);
+
+    const g = new Battle(airWave({ hp: 5 }), enemyTypes, [{ def, slot: 12 }], config, { globalMods: { airKillGoldMult: 3 } });
+    const sum = run(g, 20);
+    expect(sum.kills).toBe(5);
+    expect(sum.gold).toBe(3 * config.baseKillGold * 3 + 2 * config.baseKillGold); // 공중 3기 ×3, 지상 2기 ×1
+  });
+});
+
 describe('GameLoop.useHeroSkill', () => {
   const baseData = (): GameData => ({
     units, hands: load('hands.json'), synergies: load('synergies.json'), heroes: heroesJson.heroes,
@@ -169,7 +228,21 @@ describe('GameLoop.useHeroSkill', () => {
     expect(g.heroSkillCooldown).toBeGreaterThan(0);
   });
 
-  it('8종 전부 오류 없이 실행되고 결과 텍스트를 돌려준다', () => {
+  it('대공 영웅: 근접 영웅 유닛은 지상만, 천상 파수꾼은 공중만, 대공포는 모두 공격', () => {
+    expect(withHero('black_archduke').hero!.unit.def.targets).toBe('ground');
+    expect(withHero('sky_warden').hero!.unit.def.targets).toBe('air');
+    expect(withHero('iron_flak').hero!.unit.def.targets).toBe('both');
+  });
+
+  it('대공 패시브: 강철 대공포는 전체 유닛 공중 피해 +20%, 공허 매사냥꾼은 ♣만 +35%', () => {
+    const g1 = withHero('iron_flak');
+    for (const u of g1.units) expect(u.airAttackPctBonus).toBe(20);
+    expect(g1.hero!.unit.airAttackPctBonus).toBe(20);
+    const g2 = withHero('void_falconer');
+    for (const u of g2.units) expect(u.airAttackPctBonus).toBe(u.def.suit === 'C' ? 35 : 0);
+  });
+
+  it('12종 전부 오류 없이 실행되고 결과 텍스트를 돌려준다', () => {
     for (const h of heroesJson.heroes as { id: string; active: { id: string } }[]) {
       const g = withHero(h.id);
       const r = g.useHeroSkill();

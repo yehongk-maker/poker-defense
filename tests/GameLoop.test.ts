@@ -143,10 +143,11 @@ describe('영웅 시스템', () => {
     }
   });
 
-  it('기본 해금은 basic 4종만', () => {
+  it('기본 해금은 basic 영웅만', () => {
+    const heroesBasicCount = load('heroes.json').heroes.filter((h: { unlock: string }) => h.unlock === 'basic').length;
     const g = withShards(11);
     const ids = g.unlockedHeroes.map((h) => h.id);
-    expect(ids.length).toBe(4);
+    expect(ids.length).toBe(heroesBasicCount);
     expect(ids.includes('steel_annihilator')).toBe(false);
   });
 

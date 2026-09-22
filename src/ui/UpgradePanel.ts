@@ -64,13 +64,19 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     this.add([this.shardText, this.gradeText]);
 
     // 3) 영웅 선택
-    this.add(this.section(scene, 660, '영웅 선택 (판당 1기)', '일찍 소환할수록 강함: 남은 웨이브 20+ = S(×1.5) · 10+ = A(×1.0) · 그 외 B(×0.7)'));
-    const cw = 500, ch = 250, gapX = 40, gapY = 16;
-    const cx0 = (GAME_WIDTH - (2 * cw + gapX)) / 2 + cw / 2;
+    this.add(this.section(scene, 660, '영웅 선택 (판당 1기 · 수트별 기본/메타/대공)', '일찍 소환할수록 강함: 남은 웨이브 20+ = S(×1.5) · 10+ = A · 그 외 B(×0.7). 근접 영웅은 지상만, 대공 영웅은 공중 특화'));
+    // 12종 = 3열(기본/메타/대공 순 아님: 정의 순) × 4행
+    const cols = 3, cw = 328, ch = 262, gapX = 12, gapY = 12;
+    const cx0 = (GAME_WIDTH - (cols * cw + (cols - 1) * gapX)) / 2 + cw / 2;
     const cy0 = 730 + ch / 2;
-    loop.allHeroes.forEach((h, i) => {
-      const x = cx0 + (i % 2) * (cw + gapX);
-      const y = cy0 + Math.floor(i / 2) * (ch + gapY);
+    // 수트별로 묶어 한 행에 ♠♥♦♣ 순이 되도록 정렬: 행 = 기본/메타/대공 순서
+    const order = [...loop.allHeroes].sort((a, b) => {
+      const si = ['S', 'H', 'D', 'C'];
+      return si.indexOf(a.suit) - si.indexOf(b.suit) || loop.allHeroes.indexOf(a) - loop.allHeroes.indexOf(b);
+    });
+    order.forEach((h, i) => {
+      const x = cx0 + (i % cols) * (cw + gapX);
+      const y = cy0 + Math.floor(i / cols) * (ch + gapY);
       this.add(this.heroCard(scene, h, x, y, cw, ch));
     });
 
@@ -131,13 +137,15 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const bg = scene.add.rectangle(0, 0, w, ht, COLORS.panel).setStrokeStyle(3, SUIT_COLOR[h.suit]);
     const left = -w / 2 + 20;
     const top = -ht / 2 + 18;
-    const title = scene.add.text(left, top, `${SUIT_SYMBOL[h.suit]} ${h.name}`, { fontSize: '34px', color: `#${SUIT_COLOR[h.suit].toString(16).padStart(6, '0')}`, fontFamily: FONT, fontStyle: 'bold' });
-    const tag = scene.add.text(w / 2 - 20, top + 6, h.unlock === 'basic' ? '기본' : '메타', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(1, 0);
-    const passive = scene.add.text(left, top + 50, `패시브: ${this.passiveText(h)}`, { fontSize: '23px', color: COLORS.text, fontFamily: FONT, wordWrap: { width: w - 40 } });
+    const title = scene.add.text(left, top, `${SUIT_SYMBOL[h.suit]} ${h.name}`, { fontSize: '26px', color: `#${SUIT_COLOR[h.suit].toString(16).padStart(6, '0')}`, fontFamily: FONT, fontStyle: 'bold' });
+    const tg = h.combat.targets ?? 'both';
+    const tgText = tg === 'ground' ? '지상' : tg === 'air' ? '공중만' : '지상·공중';
+    const tag = scene.add.text(w / 2 - 14, top + 4, `${h.unlock === 'basic' ? '기본' : '메타'} · ${tgText}`, { fontSize: '17px', color: tg === 'air' ? '#6fb7ff' : tg === 'ground' ? '#c9a06a' : COLORS.textMuted, fontFamily: FONT }).setOrigin(1, 0);
+    const passive = scene.add.text(left, top + 38, `패시브: ${this.passiveText(h)}`, { fontSize: '18px', color: COLORS.text, fontFamily: FONT, wordWrap: { width: w - 30 } });
     const a = h.active;
-    const active = scene.add.text(left, top + 100, `액티브: ${a.name} (쿨 ${a.cooldownSec}초) — ${a.desc}`, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: w - 40 } });
-    const status = scene.add.text(left, ht / 2 - 40, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
-    const btn = new Button(scene, w / 2 - 110, ht / 2 - 44, '소환', () => this.cb.onSummonHero(h.id), { width: 190, height: 64, fontSize: 26 });
+    const active = scene.add.text(left, top + 96, `액티브: ${a.name} (${a.cooldownSec}s) — ${a.desc}`, { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: w - 30 } });
+    const status = scene.add.text(left, ht / 2 - 32, '', { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
+    const btn = new Button(scene, w / 2 - 82, ht / 2 - 36, '소환', () => this.cb.onSummonHero(h.id), { width: 140, height: 54, fontSize: 21 });
     c.add([bg, title, tag, passive, active, status, btn]);
     this.heroCards.push({ def: h, bg, status, btn });
     return c;
@@ -154,6 +162,9 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       case 'kill_gold_pct': return `처치 골드 +${pct}%`;
       case 'suit_aoe_radius_pct': return `${SUIT_SYMBOL[p.suit as Suit]} 유닛 광역 범위 +${pct}%`;
       case 'chain_targets_plus': return `뇌전 연쇄 대상 +${p.plus}`;
+      case 'air_attack_pct': return p.scope === 'suit' ? `${SUIT_SYMBOL[p.suit as Suit]} 유닛 공중 피해 +${pct}%` : `전체 유닛 공중 피해 +${pct}%`;
+      case 'air_slow_pct': return `공중 적 이속 -${pct}%`;
+      case 'air_kill_gold_mult': return `공중 적 처치 골드 ×${p.mult}`;
       default: return String(p.type);
     }
   }
