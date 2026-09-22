@@ -32,7 +32,7 @@ export function groupCondition(kind: SynergyKind, key: string, def: SynergyGroup
     case 'race': return `${RACE_NAME[key] ?? key} 유닛 기수 + 영웅`;
     case 'formation':
       switch (def.countBy) {
-        case 'range': return `사거리 ${def.range} 유닛 기수 (영웅 포함)`;
+        case 'range': return def.rangeMin !== undefined ? `사거리 ${def.rangeMin} 이상 유닛 기수 (영웅 포함)` : `사거리 ${def.range} 유닛 기수 (영웅 포함)`;
         case 'condition': return Object.entries(def.condition ?? {}).map(([k, n]) => `${FORMATION_REF[k] ?? k} ${n}기 이상`).join(' + ');
         case 'slots': return `모서리 ${def.slots?.length ?? 4}칸이 전부${def.requireRange ? ` 사거리 ${def.requireRange}` : ''} 유닛`;
         case 'block2x2SameSuit': return '같은 수트 4기가 2×2 블록 (블록마다 카운트)';

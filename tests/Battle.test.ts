@@ -57,7 +57,7 @@ function run(b: Battle, seconds: number) {
   return sum;
 }
 
-const wave1: WaveDef = { wave: 1, boss: false, hp: 24, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
+const wave1: WaveDef = { wave: 1, boss: false, hp: 24, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'skeleton', count: 5 }] };
 
 describe('waves.json 데이터 무결성 — GDD 3.5', () => {
   it('40웨이브, 보스는 10/20/30/40', () => {
@@ -86,11 +86,29 @@ describe('waves.json 데이터 무결성 — GDD 3.5', () => {
     expect(w1 <= 6).toBe(true);
   });
 
-  it('적 타입 5종 모두 등장', () => {
+  it('적 몬스터 로스터 13종: 지상/공중/보스가 모두 등장하고 movement 정의됨', () => {
     const used = new Set(waves.flatMap((w) => w.groups.map((g) => g.type)));
-    for (const t of ['normal', 'fast', 'armored', 'regen', 'boss']) {
+    for (const t of ['skeleton', 'wild_hound', 'bone_knight', 'ghoul', 'fallen_spearman', 'cave_bat', 'gargoyle', 'wraith', 'fallen_imp', 'bone_golem', 'fallen_seraphim', 'skeleton_lord', 'specter_dragon']) {
       expect(used.has(t)).toBe(true);
     }
+    for (const t of used) expect(['ground', 'air']).toContain(enemyTypes[t].movement);
+  });
+
+  it('공중 적은 6웨이브부터 등장 (대공 준비 시간), 공중 웨이브가 충분히 자주', () => {
+    for (const w of waves) {
+      const hasAir = w.groups.some((g) => enemyTypes[g.type].movement === 'air');
+      if (w.wave < 6) expect(hasAir).toBe(false);
+    }
+    const airWaves = waves.filter((w) => w.groups.some((g) => enemyTypes[g.type].movement === 'air'));
+    expect(airWaves.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('보스 4종: 지상/공중 교대 (10지상 20공중 30지상 40공중), boss 플래그', () => {
+    expect(enemyTypes[waves[9].groups[0].type].movement).toBe('ground');
+    expect(enemyTypes[waves[19].groups[0].type].movement).toBe('air');
+    expect(enemyTypes[waves[29].groups[0].type].movement).toBe('ground');
+    expect(enemyTypes[waves[39].groups[0].type].movement).toBe('air');
+    for (const i of [9, 19, 29, 39]) expect(enemyTypes[waves[i].groups[0].type].boss).toBe(true);
   });
 });
 
@@ -111,13 +129,13 @@ describe('제한 시간 → 남은 적 이탈 → 라이프 차감', () => {
   });
 
   it('보스 이탈은 bossLifePerLeak만큼 차감', () => {
-    const w: WaveDef = { wave: 10, boss: true, hp: 1e9, spawnInterval: 0, timeLimit: 5, groups: [{ type: 'boss', count: 1 }] };
+    const w: WaveDef = { wave: 10, boss: true, hp: 1e9, spawnInterval: 0, timeLimit: 5, groups: [{ type: 'bone_golem', count: 1 }] };
     const sum = run(new Battle(w, enemyTypes, [], config), 10);
     expect(sum.lifeLost).toBe(config.bossLifePerLeak);
   });
 
   it('fast 타입은 1.6배 빨리 한 바퀴 (10초 → 6.25초)', () => {
-    const w: WaveDef = { ...wave1, groups: [{ type: 'fast', count: 1 }] };
+    const w: WaveDef = { ...wave1, groups: [{ type: 'wild_hound', count: 1 }] };
     const b = new Battle(w, enemyTypes, [], config);
     run(b, 6.5);
     expect(b.aliveEnemies[0].laps).toBe(1);
@@ -130,7 +148,7 @@ describe('제한 시간 → 남은 적 이탈 → 라이프 차감', () => {
 describe('사거리와 배치 — 슬롯에서 사거리 안의 적만 공격', () => {
   it('근접(사거리 2)은 가장자리 칸에서만 트랙에 닿고, 중앙 칸에서는 아무것도 못 때린다', () => {
     const def = unit('spear_striker');
-    const w: WaveDef = { ...wave1, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { ...wave1, groups: [{ type: 'skeleton', count: 3 }] };
     const edge = run(new Battle(w, enemyTypes, [{ def, slot: 0 }], config), 30);
     const center = run(new Battle(w, enemyTypes, [{ def, slot: 12 }], config), 30);
     expect(edge.kills).toBeGreaterThan(0);
@@ -148,6 +166,8 @@ describe('사거리와 배치 — 슬롯에서 사거리 안의 적만 공격', 
     const m = config.rangeDamageMult;
     expect(m['2']).toBeGreaterThan(m['3']);
     expect(m['3']).toBeGreaterThan(m['4']);
+    expect(m['4']).toBeGreaterThan(m['5']);
+    expect(m['5']).toBeGreaterThan(m['6']);
   });
 
   it('잘못된 슬롯은 throw', () => {
@@ -168,7 +188,7 @@ describe('유닛 공격과 처치', () => {
   it('공격력 보너스(attackPctBonus)만큼 더 빨리 잡는다', () => {
     const weak: DeployedUnit[] = deploy('spear_striker');
     const buffed: DeployedUnit[] = [{ ...deploy('spear_striker')[0], attackPctBonus: 100 }];
-    const w: WaveDef = { ...wave1, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { ...wave1, groups: [{ type: 'skeleton', count: 3 }] };
     const t1 = run(new Battle(w, enemyTypes, weak, config), 60);
     const t2 = run(new Battle(w, enemyTypes, buffed, config), 60);
     expect(t2.kills >= t1.kills).toBe(true);
@@ -177,7 +197,7 @@ describe('유닛 공격과 처치', () => {
 });
 
 describe('적 타입 상성 — GDD "적 웨이브 타입이 각 역할을 카운터"', () => {
-  const armoredWave: WaveDef = { wave: 8, boss: false, hp: 300, spawnInterval: 0.5, timeLimit: 120, groups: [{ type: 'armored', count: 1 }] };
+  const armoredWave: WaveDef = { wave: 8, boss: false, hp: 300, spawnInterval: 0.5, timeLimit: 120, groups: [{ type: 'bone_knight', count: 1 }] };
 
   it('중갑: 물리 공격은 50% 감소, 마법은 관통', () => {
     // 물리(창격병 dps 8) vs 마법(임프 dps 8) — 같은 dps로 중갑 1기 공격
@@ -203,7 +223,7 @@ describe('적 타입 상성 — GDD "적 웨이브 타입이 각 역할을 카�
   });
 
   it('regen 타입은 회복한다 (약한 유닛으론 오래 걸림)', () => {
-    const regenWave: WaveDef = { wave: 12, boss: false, hp: 100, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'regen', count: 1 }] };
+    const regenWave: WaveDef = { wave: 12, boss: false, hp: 100, spawnInterval: 0.5, timeLimit: 30, groups: [{ type: 'ghoul', count: 1 }] };
     const b = new Battle(regenWave, enemyTypes, [], config);
     b.tick(0.1); // 스폰
     const e = b.aliveEnemies[0];
@@ -241,7 +261,7 @@ describe('보스', () => {
 
 describe('CC 효과', () => {
   it('slow_curse(해골 주술사): 감속으로 이동 거리가 줄어든다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 1 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'skeleton', count: 1 }] };
     const free = new Battle(w, enemyTypes, [], config);
     const slowed = new Battle(w, enemyTypes, deploy('skull_shaman'), config);
     run(free, 10.5);
@@ -251,7 +271,7 @@ describe('CC 효과', () => {
   });
 
   it('aoe_stun(강철 거신): 기절 동안 이동 정지', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, timeLimit: 30, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, timeLimit: 30, groups: [{ type: 'skeleton', count: 3 }] };
     const free = new Battle(w, enemyTypes, [], config);
     const stunned = new Battle(w, enemyTypes, deploy('steel_colossus'), config);
     run(free, 10.5);
@@ -264,7 +284,7 @@ describe('CC 효과', () => {
 
 describe('다중 타겟', () => {
   it('chain_lightning(뇌전 군주): 한 공격이 최대 3체를 때린다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'skeleton', count: 5 }] };
     const b = new Battle(w, enemyTypes, deploy('thunder_lord'), config);
     run(b, 5);
     const damaged = b.aliveEnemies.filter((e) => e.hp < e.maxHp).length;
@@ -272,7 +292,7 @@ describe('다중 타겟', () => {
   });
 
   it('splash(화염 술사): 뭉친 적들이 같이 맞는다', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'normal', count: 5 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'skeleton', count: 5 }] };
     const b = new Battle(w, enemyTypes, deploy('flame_caster'), config);
     run(b, 5);
     const damaged = b.aliveEnemies.filter((e) => e.hp < e.maxHp).length;
@@ -282,7 +302,7 @@ describe('다중 타겟', () => {
 
 describe('경제 효과', () => {
   it('gold_on_kill(광부): 처치당 골드 +1', () => {
-    const w: WaveDef = { ...wave1, hp: 5, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { ...wave1, hp: 5, groups: [{ type: 'skeleton', count: 3 }] };
     const b = new Battle(w, enemyTypes, deploy('miner'), config);
     const sum = run(b, 30);
     expect(sum.cleared).toBe(true);
@@ -290,7 +310,7 @@ describe('경제 효과', () => {
   });
 
   it('kill_gold_multiplier(보석 사수): 처치 골드 ×2', () => {
-    const w: WaveDef = { ...wave1, hp: 5, groups: [{ type: 'normal', count: 3 }] };
+    const w: WaveDef = { ...wave1, hp: 5, groups: [{ type: 'skeleton', count: 3 }] };
     const b = new Battle(w, enemyTypes, deploy('gem_shooter'), config);
     const sum = run(b, 30);
     expect(sum.goldEarned).toBe(3 * config.baseKillGold * 2);
@@ -305,7 +325,7 @@ describe('경제 효과', () => {
   });
 
   it('gold_scaling_damage(황금 비룡): 보유 골드만큼 데미지 증가', () => {
-    const w: WaveDef = { wave: 5, boss: false, hp: 1e6, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 1 }] };
+    const w: WaveDef = { wave: 5, boss: false, hp: 1e6, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'skeleton', count: 1 }] };
     const poor = new Battle(w, enemyTypes, deploy('golden_wyrm'), config, { getGold: () => 0 });
     const rich = new Battle(w, enemyTypes, deploy('golden_wyrm'), config, { getGold: () => 10000 });
     run(poor, 5); run(rich, 5);
@@ -330,5 +350,74 @@ describe('통합: 실제 웨이브 진행 시뮬레이션', () => {
     expect(sum.timeUp).toBe(true);
     expect(sum.leaked > 0).toBe(true);
     expect(sum.lifeLost > 0).toBe(true);
+  });
+});
+
+describe('지상/공중 분리 — targets 시스템', () => {
+  const batWave: WaveDef = { wave: 8, boss: false, hp: 50, spawnInterval: 0.3, timeLimit: 30, groups: [{ type: 'cave_bat', count: 3 }] };
+  const skeletonWave: WaveDef = { wave: 8, boss: false, hp: 50, spawnInterval: 0.3, timeLimit: 30, groups: [{ type: 'skeleton', count: 3 }] };
+
+  it('지상 전용 유닛(창격병·흑철 기사)은 공중 적을 전혀 공격하지 못한다', () => {
+    const b = new Battle(batWave, enemyTypes, deploy('spear_striker', 'blacksteel_knight'), config);
+    const sum = run(b, 15);
+    expect(sum.kills).toBe(0);
+    for (const e of b.aliveEnemies) expect(e.hp).toBe(e.maxHp); // 데미지 0
+  });
+
+  it('대공 가능 유닛(사슬 궁수)은 공중 적을 잡는다', () => {
+    const b = new Battle(batWave, enemyTypes, deploy('chain_archer', 'chain_archer', 'chain_archer'), config);
+    const sum = run(b, 30);
+    expect(sum.kills).toBe(3);
+  });
+
+  it('공중 전용 유닛(공허 감시자)은 지상 적을 공격하지 못한다', () => {
+    const b = new Battle(skeletonWave, enemyTypes, deploy('void_watcher'), config);
+    const sum = run(b, 15);
+    expect(sum.kills).toBe(0);
+    for (const e of b.aliveEnemies) expect(e.hp).toBe(e.maxHp);
+  });
+
+  it('공허 감시자(대공 특화 +120%)는 같은 티어 범용 유닛보다 공중을 훨씬 빨리 깎는다', () => {
+    const tough: WaveDef = { wave: 8, boss: false, hp: 5000, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'gargoyle', count: 1 }] };
+    const mk = (id: string) => { const b = new Battle(tough, enemyTypes, [{ def: unit(id), slot: 12 }], config); run(b, 10); return b.aliveEnemies[0].hp; };
+    expect(mk('void_watcher')).toBeLessThan(mk('skull_shaman'));
+  });
+
+  it('혼성 웨이브: 지상 전용 부대는 지상만 처치하고 공중은 통과시킨다 (시간 초과 이탈)', () => {
+    const mixed: WaveDef = { wave: 8, boss: false, hp: 30, spawnInterval: 0.3, timeLimit: 20, groups: [{ type: 'skeleton', count: 3 }, { type: 'cave_bat', count: 3 }] };
+    const b = new Battle(mixed, enemyTypes, deploy('blacksteel_knight', 'spear_striker'), config);
+    const sum = run(b, 25);
+    expect(sum.kills).toBe(3); // 해골만
+    expect(sum.leaked).toBe(3); // 박쥐는 이탈
+  });
+
+  it('스플래시/체인도 공격 불가 대상은 튀지 않는다', () => {
+    const mixed: WaveDef = { wave: 8, boss: false, hp: 1e9, spawnInterval: 0.1, timeLimit: 30, groups: [{ type: 'skeleton', count: 2 }, { type: 'cave_bat', count: 2 }] };
+    // golden_cannon: 지상 전용 광역 — 공중은 스플래시로도 안 맞아야 함
+    const b = new Battle(mixed, enemyTypes, [{ def: unit('golden_cannon'), slot: 12 }], config);
+    run(b, 8);
+    for (const e of b.aliveEnemies) {
+      if (e.movement === 'air') expect(e.hp).toBe(e.maxHp);
+      else expect(e.hp).toBeLessThan(e.maxHp);
+    }
+  });
+
+  it('bonus_vs_air(공성 발리스타)는 공중에게만 보너스', () => {
+    const air: WaveDef = { wave: 8, boss: false, hp: 5000, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'gargoyle', count: 1 }] };
+    const ground: WaveDef = { wave: 8, boss: false, hp: 5000, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'bone_knight', count: 1 }] };
+    const bAir = new Battle(air, enemyTypes, [{ def: unit('siege_ballista'), slot: 12 }], config);
+    const bGround = new Battle(ground, enemyTypes, [{ def: unit('siege_ballista'), slot: 12 }], config);
+    run(bAir, 10); run(bGround, 10);
+    const dmgAir = 5000 * enemyTypes.gargoyle.hpMult - bAir.aliveEnemies[0].hp;
+    const dmgGround = 5000 * enemyTypes.bone_knight.hpMult - bGround.aliveEnemies[0].hp;
+    expect(dmgAir).toBeGreaterThan(dmgGround);
+  });
+
+  it('공중 보스(타락 세라핌): 지상 전용 부대는 손도 못 댄다', () => {
+    const bossWave = waves.find((w) => w.wave === 20)!;
+    const b = new Battle(bossWave, enemyTypes, deploy('blacksteel_knight', 'steel_colossus', 'crusher_rider'), config);
+    const sum = run(b, 30);
+    expect(sum.kills).toBe(0);
+    expect(b.aliveEnemies[0].hp).toBe(b.aliveEnemies[0].maxHp);
   });
 });

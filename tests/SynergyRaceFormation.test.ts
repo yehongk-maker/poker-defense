@@ -273,7 +273,7 @@ describe('빙고 (4단계) — 같은 수트로 한 줄 완성', () => {
 });
 
 describe('Battle이 전투 규칙 시너지를 소비한다', () => {
-  const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, timeLimit: 10, groups: [{ type: 'normal', count: 3 }] };
+  const w: WaveDef = { wave: 5, boss: false, hp: 1e9, spawnInterval: 0.2, timeLimit: 10, groups: [{ type: 'skeleton', count: 3 }] };
   const run = (b: Battle, sec: number) => { for (let t = 0; t < sec; t += 0.1) b.tick(0.1); };
 
   it('timeLimitBonus: 제한 시간이 늘어난다', () => {
@@ -310,7 +310,7 @@ describe('Battle이 전투 규칙 시너지를 소비한다', () => {
   });
   it('rangeMultOverride: 사거리 4 배율 0.75 → 0.9', () => {
     const def = unit('coin_thrower'); // ranged 4
-    const w2: WaveDef = { ...w, hp: 1e9, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 1 }] };
+    const w2: WaveDef = { ...w, hp: 1e9, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'skeleton', count: 1 }] };
     const a = new Battle(w2, enemyTypes, [{ def, slot: 12 }], config);
     const b = new Battle(w2, enemyTypes, [{ def, slot: 12 }], config, { battleMods: { rangeMultOverride: { '4': 0.9 } } });
     run(a, 10); run(b, 10);

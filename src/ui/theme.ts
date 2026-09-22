@@ -29,12 +29,12 @@ export const SUIT_NAME: Record<Suit, string> = { S: '강철', H: '성소', D: '�
 export const SUIT_CARD_COLOR: Record<Suit, string> = { S: '#1b1f2a', H: '#c9303a', D: '#c9303a', C: '#1b1f2a' };
 
 export const ENEMY_COLOR: Record<string, number> = {
-  normal: 0x8a93a3,
-  fast: 0x4fd1e0,
-  armored: 0xb08050,
-  regen: 0x5fcf7a,
-  boss: 0xe0473f,
+  skeleton: 0x8a93a3, wild_hound: 0x4fd1e0, bone_knight: 0xb08050, ghoul: 0x5fcf7a, fallen_spearman: 0x9aa5b8,
+  cave_bat: 0x6fb7ff, gargoyle: 0xc99a6a, wraith: 0x9be0c8, fallen_imp: 0xb48cf0,
+  bone_golem: 0xe0473f, fallen_seraphim: 0xff8fb0, skeleton_lord: 0xe0473f, specter_dragon: 0xff6fcf,
 };
+/** 유닛 공격 대상 배지 */
+export const TARGET_LABEL: Record<string, string> = { ground: '지상', air: '공중', both: '' };
 
 export const RANK_LABEL: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
 export const rankLabel = (r: number): string => RANK_LABEL[r] ?? String(r);

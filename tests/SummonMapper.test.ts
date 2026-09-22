@@ -19,12 +19,22 @@ const mapper = () => new SummonMapper(units, hands, () => 0.1);
 const outcomeOf = (codes: string) => mapper().map(evaluateHand(parseHand(codes), () => 0.1));
 
 describe('units.json 데이터 무결성 — GDD 3.2.1', () => {
-  it('수트 4종 × 티어 5단계 = 정확히 20종', () => {
-    expect(units.length).toBe(20);
+  it('수트 4종 × 티어 5단계 × 변형 2(low/high) = 정확히 40종', () => {
+    expect(units.length).toBe(40);
     for (const s of ['S', 'H', 'D', 'C'] as const) {
       for (let t = 1; t <= 5; t++) {
-        expect(units.filter((u) => u.suit === s && u.tier === t).length).toBe(1);
+        for (const b of ['low', 'high'] as const) {
+          expect(units.filter((u) => u.suit === s && u.tier === t && u.cards === b).length).toBe(1);
+        }
       }
+    }
+  });
+
+  it('지상/공중 분리: 모든 수트에 대공 가능(both/air) 유닛과 지상 전용 유닛이 공존', () => {
+    for (const s of ['S', 'H', 'D', 'C'] as const) {
+      const su = units.filter((u) => u.suit === s);
+      expect(su.some((u) => u.targets === 'both' || u.targets === 'air')).toBe(true);
+      expect(su.some((u) => u.targets === 'ground')).toBe(true);
     }
   });
 
@@ -46,7 +56,7 @@ describe('units.json 데이터 무결성 — GDD 3.2.1', () => {
   });
 
   it('id 중복 없음', () => {
-    expect(new Set(units.map((u) => u.id)).size).toBe(20);
+    expect(new Set(units.map((u) => u.id)).size).toBe(40);
   });
 });
 
@@ -64,7 +74,7 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
     expect(o.units[0].unitId).toBe(o.units[1].unitId); // 같은 수트 → 같은 유닛
   });
 
-  it('투페어 → T2(높은 페어 수트) + T1(낮은 페어 수트)', () => {
+  it('투페어 → T2(높은 페어 수트·변형) + T1(낮은 페어 수트·변형)', () => {
     // 높은 페어 K♠K♠ 불가 → K♠K♥? 페어 내 수트 다르면 rng. 명확한 케이스로:
     // 높은 페어 = K♦K♦ 불가하므로 같은 수트 페어는 불가능(중복카드). 다른 수트지만
     // rng()=0.1 < 0.5 → 첫 카드 수트 선택으로 결정적.
@@ -72,7 +82,7 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
     expect(o.units.map((u) => u.tier)).toEqual([2, 1]);
     expect(o.units[0].suit).toBe('D'); // 높은 페어(K)의 첫 카드 수트
     expect(o.units[1].suit).toBe('S'); // 낮은 페어(5)의 첫 카드 수트
-    expect(o.units[0].unitId).toBe('coin_thrower'); // ♦T2
+    expect(o.units[0].unitId).toBe('firework_merchant'); // ♦T2 high (K) // ♦T2
     expect(o.units[1].unitId).toBe('spear_striker'); // ♠T1
   });
 
@@ -90,7 +100,7 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
   it('플러시 → T3 1기 + 조커 조각 1 (수트 = 플러시 수트)', () => {
     const o = outcomeOf('AH 9H 7H 5H 2H');
     expect(o.units.map((u) => u.tier)).toEqual([3]);
-    expect(o.units[0].unitId).toBe('light_healer'); // ♥T3
+    expect(o.units[0].unitId).toBe('inquisitor'); // ♥T3 high (A 포함) // ♥T3
     expect(o.jokerShards).toBe(1);
   });
 
@@ -109,8 +119,17 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
   it('스트레이트 플러시 → T5 1기 + 조각 2', () => {
     const o = outcomeOf('9C 8C 7C 6C 5C');
     expect(o.units.map((u) => u.tier)).toEqual([5]);
-    expect(o.units[0].unitId).toBe('abyss_dragon'); // ♣T5
+    expect(o.units[0].unitId).toBe('void_lord'); // ♣T5 high (9 포함) // ♣T5
     expect(o.jokerShards).toBe(2);
+  });
+
+  it('변형 규칙: 최고 숫자 8 이하 = low, 9 이상 = high (킥커는 무시)', () => {
+    const straight = outcomeOf('6S 5H 4D 3C 2S'); // 최고 6 → low, 다수 수트 S
+    expect(straight.units[0].unitId).toBe('crusher_rider'); // ♠T3 low
+    const quads = outcomeOf('7S 7H 7D 7C KS'); // 구성 카드는 7×4 (K는 킥커) → low
+    expect(units.find((u) => u.id === quads.units[0].unitId)!.cards).toBe('low');
+    const high = outcomeOf('AS 9H 7D 5C 2S'); // 하이카드 A → high
+    expect(high.units[0].unitId).toBe('chain_archer'); // ♠T1 high
   });
 
   it('로열 스트레이트 플러시 → 유닛 없이 영웅 즉시 소환', () => {

@@ -1,6 +1,6 @@
 /**
  * GameLoop — 한 판(40웨이브)의 전체 상태머신.
- * 카드 페이즈 → 소환 → 전투 → 정산을 묶고 경제/라이프/조각/영웅/합성/판매/업그레이드를 관리한다.
+ * 카드 페이즈 → 소환 → 전투 → 정산을 묶고 경제/하트/영웅 토큰/영웅/합성/판매/업그레이드를 관리한다.
  *
  * 상태 흐름:
  *   card --confirmHand()--> manage(정비: 판매/합성/업그레이드/영웅) --startCombat()--> combat
@@ -208,7 +208,7 @@ export class GameLoop {
 
     const res: DeployResult = { deployed: [], overflowSold: [], shardsGained: outcome.jokerShards, freeHeroSummon: false };
     for (const s of outcome.units) {
-      const def = this.mapper.unitFor(s.suit, s.tier);
+      const def = this.mapper.unitById(s.unitId);
       const slot = this.autoSlot(def.range);
       if (slot === null) {
         const gold = Math.floor(def.value * this.data.config.sellRatio);
@@ -290,7 +290,7 @@ export class GameLoop {
     const def = this._units[idxs[0]].def;
     if (def.tier >= 5) throw new Error('T5 units cannot merge');
     for (const i of idxs.slice(0, 3).reverse()) this._units.splice(i, 1);
-    const mergedDef = this.mapper.unitFor(def.suit, def.tier + 1);
+    const mergedDef = this.mapper.unitFor(def.suit, def.tier + 1, def.cards); // 변형(low/high) 유지
     const merged: DeployedUnit = { def: mergedDef, slot: this.autoSlot(mergedDef.range)!, placed: false }; // 합성 결과도 1회 배치 가능
     this._units.push(merged);
     this.recalcSynergy();
@@ -341,8 +341,8 @@ export class GameLoop {
 
     // 영웅을 전투 유닛으로 구성 (시너지 카운트 제외 — GDD 3.3)
     const heroUnitDef: UnitDef = {
-      id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6,
-      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType,
+      id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6, cards: 'high',
+      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType, targets: 'both', // 영웅은 지상/공중 모두
       baseDps: def.combat.baseDps * mult, dpsFactor: 1.0,
       attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
@@ -483,8 +483,8 @@ export class GameLoop {
         for (let i = 0; i < p.turrets; i++) {
           turrets.push({
             def: {
-              id: `ghost_turret_${i}`, name: '유령 포탑', suit: def.suit, tier: 0, class: 'arcanist', race: 'monster',
-              attackType: 'magic', baseDps: p.turretDps * mult, dpsFactor: 1, attackInterval: 1.0, range: 6,
+              id: `ghost_turret_${i}`, name: '유령 포탑', suit: def.suit, tier: 0, cards: 'high', class: 'arcanist', race: 'monster',
+              attackType: 'magic', targets: 'both', baseDps: p.turretDps * mult, dpsFactor: 1, attackInterval: 1.0, range: 6,
               value: 0, effect: null, desc: '심연 소환 임시 포탑',
             },
             slot: unit.slot,

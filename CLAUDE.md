@@ -44,9 +44,10 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 코드 식별자(shards/gems/life)는 그대로 두고 표시 문자열만 통일한다.
 
 ## 데이터 스키마 요약
-- `units.json`: 수트(S/H/D/C)×티어(1~5) 20종. `baseDps×dpsFactor×attackInterval` = 1회 데미지. `effect.type`으로 특수 효과.
+- `units.json`: 수트(S/H/D/C)×티어(1~5)×변형(cards: low/high) 40종. `targets`(ground/air/both)로 지상/공중 공격 가능 여부. `baseDps×dpsFactor×attackInterval` = 1회 데미지. `effect.type`으로 특수 효과(bonus_vs_air 포함).
 - `hands.json`: 족보 → `summonTiers[]`, `jokerShards`, `heroSummon`.
-- `waves.json`: 40웨이브. `npm run waves`(scripts/generate-waves.mjs)로 생성. 공식은 파일의 `formula` 필드(hp = 20×1.16^wave, 마릿수 4+0.5w). 웨이브별 `timeLimit`(30s, 보스 45s). `config`: gridSize(5), lifePerLeak/bossLifePerLeak(1/3), rangeDamageMult(사거리 2/3/4 → ×1.35/1.0/0.75).
+- `waves.json`: 40웨이브, 적 13종(`enemyTypes`: name, movement ground/air, boss 플래그). 공중은 6웨이브부터, 보스 지상/공중 교대. `npm run waves`(scripts/generate-waves.mjs)로 생성. 공식은 파일의 `formula` 필드(hp = 20×1.17^wave, 마릿수 4+0.5w). 웨이브별 `timeLimit`(30s, 보스 45s). `config`: gridSize(5), lifePerLeak/bossLifePerLeak(1/3), rangeDamageMult(사거리 2/3/4/5/6 → ×1.35/1.0/0.75/0.65/0.55).
+- 지상/공중(GDD 3.2): `Battle.canAttack` — 유닛 targets와 적 movement가 맞아야 공격(스플래시·체인 포함). SummonMapper는 `unitFor(suit, tier, band)`, 변형은 `bandOfRank`(9 이상 high).
 - 전투 룰(GDD 3.5~3.6): 적은 제한 시간 동안 트랙을 돌고, 시간 종료 시 남은 적당 라이프 차감. 유닛은 슬롯에서 사거리(셀) 안의 적만 공격 → 배치가 핵심. `DeployedUnit.slot` 필수, 자동 배치는 `GameLoop.autoSlot`(커버리지 최대 빈 칸). 이동은 `moveUnit` — `placed=false`(소환 직후)인 유닛만 빈 칸으로 1회, 이후/전투 시작 후 고정, 판매만 가능.
 - 밸런스 검증: `npm run sim` (scripts/simulate.ts, 봇 3종 헤드리스). `tests/Balance.test.ts`가 GDD 3.5 목표를 회귀 테스트로 고정.
 - `synergies.json`: 4축 — suits(수트 기수 2/4/6) · classes(종류 2/4) · races(종족 기수+영웅 3/5/7 등) · formation(사거리/조건 자동 판정) + caps(합산 상한). 상위 구간이 하위를 대체. 설계 근거 docs/synergy-design.md.
@@ -57,7 +58,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 
 ## 진행 상태 (2026-09-20)
 - 완료: Phase 0 셋업, Phase 1~2 로직 전부(systems/ + 테스트 121개).
-- 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 2026-09-21 제한 시간·사거리 룰 + 종족·진형 시너지 적용 후 hpGrowth 1.16으로 재조정, 봇 기준 하이카드 중앙값 22, 무전략 24, 최선 31 (목표 범위 안).
+- 완료: 시뮬레이터(`npm run sim`) + 1차 밸런스(웨이브 HP 1.15^w, 마릿수 4+0.5w). 2026-09-21 제한 시간·사거리 룰 + 종족·진형 시너지 적용 후 hpGrowth 1.16, 2026-09-22 유닛 40종·지상/공중 적용 후 1.17로 재조정. 봇 기준 하이카드 중앙값 23, 무전략 24, 최선 31 (목표 범위 안).
 - 완료: GameScene 플레이 가능. 카드 선택/교환/진행 → 정비(배치 이동·합성·판매·전투 시작) → 전투(제한 시간 타이머·적 순환·타격선·배속·시간 초과 토스트) → 승리/패배 화면. TrackView는 선택 유닛의 사거리 원과 빈 칸 커버리지 힌트를 표시.
 - 완료: 스와이프 업그레이드 화면(UpgradePanel + SwipeController). 종족 업그레이드 4종, 조커 조각, 영웅 8종 카드(기본 4 소환 가능·메타 4 잠금, 등급 미리보기). 좌스와이프/우측 핸들/정비 패널 버튼으로 열고, 우스와이프/게임 화면 버튼으로 닫음. 구매·소환은 정비 페이즈에서만.
 - 카드 교환(v1.4): CardPhase.exchangeCard(i) — 카드당 exchangeLimit회(기본 1, 메타 2), 5장 전부 가능. 선택/일괄 교환 API는 제거됨. CardHand는 배분 시 뒷면→순차 오픈, 교환 시 해당 카드만 뒤집기(애니메이션 중 입력 잠금).
@@ -68,6 +69,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 시너지 3단계(모서리 수비·밀집 방진·인접 오라 실체화) + 빙고(countBy 'lines', matchBy suit|race, per_line_attack_pct 줄 수 중첩, SynergyResult.bingoLines → TrackView 선 표시). 오라는 `effect.area`(adjacent/adjacent4/global) 기준, 자기 제외.
 - 완료: 영웅 액티브 스킬 8종 (GameLoop.useHeroSkill → Battle 스킬 API: damageAllEnemies/hitTopHpEnemies/executeHighestHp/freezeEnemies/setSanctuary/slowAllEnemies/addTemporaryUnits/startStorm). 쿨 45초는 전투 시간 기준, 웨이브 넘어 유지. 전투 패널의 ⚡ 버튼.
 - 완료: 메타 업그레이드(교환 +1·타이머 +10초·시작 골드 +100×3)·메타 영웅 젬 해금·젬 마일스톤·localStorage 저장, 로비 → MetaScene.
+- 완료: 유닛 40종(low/high 변형)·지상/공중 분리·적 13종 로스터 (GDD v1.6, 2026-09-22).
 - 완료: 1:1 실시간 레이스(GDD 3.7): GameScene이 OpponentAI를 매 프레임 tick(배속 공통), 매 프레임 raceStatus로 즉시 판정(40 먼저 클리어·탈락 후 앞섬), 플레이어 종료 시 finishRace(fastForward → resolveDuel). HUD 상단 중앙 '라운드 N/40', 우상단 상대 라운드. 3방향 스와이프(SwipeNav): 위=상대, 오른쪽=상점·영웅, 왼쪽=족보·시너지.
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.

@@ -19,11 +19,11 @@ const config: BattleConfig = wavesJson.config;
 const enemyTypes: Record<string, EnemyTypeDef> = wavesJson.enemyTypes;
 
 const hero: DeployedUnit = {
-  def: { id: 'hero_test', name: '테스트 영웅', suit: 'S', tier: 6, class: 'transcendent', race: 'human', attackType: 'melee',
+  def: { id: 'hero_test', name: '테스트 영웅', suit: 'S', tier: 6, cards: 'high', class: 'transcendent', race: 'human', attackType: 'melee', targets: 'both',
     baseDps: 100, dpsFactor: 1, attackInterval: 1, range: 2, value: 0, effect: null, desc: '' },
   slot: 0,
 };
-const wave = (over: Partial<WaveDef> = {}): WaveDef => ({ wave: 5, boss: false, hp: 100, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'normal', count: 5 }], ...over });
+const wave = (over: Partial<WaveDef> = {}): WaveDef => ({ wave: 5, boss: false, hp: 100, spawnInterval: 0, timeLimit: 30, groups: [{ type: 'skeleton', count: 5 }], ...over });
 const run = (b: Battle, sec: number) => { const sum = { kills: 0, gold: 0, life: 0, hits: 0, skillHits: 0 }; for (let t = 0; t < sec; t += 0.1) { const ev = b.tick(0.1); sum.kills += ev.kills; sum.gold += ev.goldEarned; sum.life += ev.lifeLost; sum.hits += ev.hits.length; sum.skillHits += ev.hits.filter((h) => h.skill).length; } return sum; };
 
 describe('Battle 스킬 API', () => {
@@ -59,12 +59,12 @@ describe('Battle 스킬 API', () => {
   });
 
   it('executeHighestHp: 최대 HP 적 즉사, 보스는 %', () => {
-    const b = new Battle(wave({ groups: [{ type: 'normal', count: 2 }, { type: 'regen', count: 1 }] }), enemyTypes, [], config);
+    const b = new Battle(wave({ groups: [{ type: 'skeleton', count: 2 }, { type: 'ghoul', count: 1 }] }), enemyTypes, [], config);
     b.tick(0.1);
     const r = b.executeHighestHp(hero, 20);
     expect(r.kills).toBe(1);
-    expect(b.aliveEnemies.every((e) => e.type === 'normal')).toBe(true); // regen(hp 1.1배)이 죽음
-    const boss = new Battle(wave({ boss: true, hp: 1000, groups: [{ type: 'boss', count: 1 }] }), enemyTypes, [], config);
+    expect(b.aliveEnemies.every((e) => e.type === 'skeleton')).toBe(true); // ghoul(hp 1.1배)이 죽음
+    const boss = new Battle(wave({ boss: true, hp: 1000, groups: [{ type: 'bone_golem', count: 1 }] }), enemyTypes, [], config);
     boss.tick(0.1);
     const rb = boss.executeHighestHp(hero, 20);
     expect(rb.kills).toBe(0);

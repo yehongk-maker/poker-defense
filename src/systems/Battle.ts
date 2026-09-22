@@ -4,7 +4,8 @@
  * GDD 3.5 (개정) 근거:
  *  - 적은 외곽 순환 트랙을 제한 시간(timeLimit) 동안 계속 돈다. 시간 안에 못 잡은 적 1기당 하트 차감
  *    (lifePerLeak, 보스는 bossLifePerLeak). 바퀴 수는 라이프에 영향 없음.
- *  - 적 타입: normal / fast(이속↑) / armored(물리저항, 마법은 관통) / regen(초당 회복) / boss
+ *  - 적 13종 (waves.json enemyTypes): 이속/물리저항/회복/보스 + movement(지상·공중)
+ *  - 지상/공중 분리: 유닛 targets(ground/air/both)와 적 movement가 맞아야 공격 가능. 스플래시·체인도 불가 대상엔 안 튐
  *  - 유닛은 자기 슬롯에서 사거리(range, 셀 단위) 안의 적만 공격 (최전방 우선) → 배치가 중요
  *  - 사거리별 공격 배율 rangeDamageMult: 근접(짧은 사거리)일수록 강하다. 시너지로 사거리 +N(rangeBonus)·배율 덮어쓰기·제한 시간 +초·적 이속·시작 기절 주입
  *  - 공격 쿨타임 = attackInterval / 공속 배율
@@ -16,11 +17,17 @@
 import { type UnitDef } from './SummonMapper.ts';
 import { inRange, type TrackGeometry } from './Geometry.ts';
 
+export type Movement = 'ground' | 'air';
+
 export interface EnemyTypeDef {
+  name?: string;
+  /** ground | air — targets가 맞지 않는 유닛은 공격 불가 (스플래시·체인도 안 튐) */
+  movement: Movement;
   speedMult: number;
   physicalResist: number;
   regenPctPerSec: number;
   hpMult: number;
+  boss?: boolean;
 }
 
 export interface WaveGroup {
@@ -89,6 +96,7 @@ export interface DeployedUnit {
 export interface Enemy {
   id: number;
   type: string;
+  movement: Movement;
   hp: number;
   maxHp: number;
   /** 트랙 위 위치 (0 ~ trackLength) */
@@ -366,12 +374,18 @@ export class Battle {
     return ev;
   }
 
-  /** 유닛 사거리 안의 최전방 적 (누적 이동거리 최대) */
+  /** 유닛이 해당 적을 공격할 수 있는가 (지상/공중 분리) */
+  private canAttack(u: DeployedUnit, e: Enemy): boolean {
+    const t = u.def.targets ?? 'both';
+    return t === 'both' || t === e.movement;
+  }
+
+  /** 유닛 사거리 안의, 공격 가능한 최전방 적 (누적 이동거리 최대) */
   private frontmostInRange(u: DeployedUnit): Enemy | null {
     let best: Enemy | null = null;
     let bestDist = -1;
     for (const e of this.enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || !this.canAttack(u, e)) continue;
       if (!inRange(this.geometry, u.slot, u.def.range + (u.rangeBonus ?? 0), e.pos)) continue;
       const d = e.laps * this.config.trackLength + e.pos;
       if (d > bestDist) { bestDist = d; best = e; }
@@ -390,6 +404,7 @@ export class Battle {
     this.enemies.push({
       id: this.nextEnemyId++,
       type,
+      movement: t.movement ?? 'ground',
       hp,
       maxHp: hp,
       pos: 0,
@@ -399,7 +414,7 @@ export class Battle {
       // 몬스터 6 시너지: 웨이브 시작 직후 스폰된 적은 waveStartStunSec까지 기절
       stunUntil: this.elapsed < this.battleMods.waveStartStunSec ? this.battleMods.waveStartStunSec : 0,
       alive: true,
-      isBoss: type === 'boss',
+      isBoss: !!t.boss,
     });
   }
 
@@ -410,7 +425,7 @@ export class Battle {
     // 다중 타겟 효과
     if (eff?.type === 'chain_lightning') {
       const extra = (eff.targets as number) - 1 + (u.chainTargetsBonus ?? 0);
-      const targets = this.nearestTo(target, extra);
+      const targets = this.nearestTo(u, target, extra);
       this.hit(u, target, dmg, ev);
       let falloff = 1;
       for (const e of targets) {
@@ -422,7 +437,7 @@ export class Battle {
     if (eff && ['splash', 'small_aoe', 'breath_aoe', 'aoe_stun'].includes(eff.type as string)) {
       const radius = (eff.radius as number) * AOE_UNIT * (1 + (u.aoeRadiusPctBonus ?? 0) / 100);
       this.hit(u, target, dmg, ev);
-      for (const e of this.inRadius(target, radius)) {
+      for (const e of this.inRadius(u, target, radius)) {
         this.hit(u, e, this.damageOf(u, e), ev);
         if (eff.type === 'aoe_stun') {
           e.stunUntil = Math.max(e.stunUntil, this.elapsed + (eff.stunSec as number));
@@ -459,6 +474,7 @@ export class Battle {
     if (isSingleTarget) dmg *= 1 + (u.singleTargetPctBonus ?? 0) / 100;
 
     if (e.isBoss && eff?.type === 'bonus_vs_boss') dmg *= 1 + (eff.pct as number) / 100;
+    if (e.movement === 'air' && eff?.type === 'bonus_vs_air') dmg *= 1 + (eff.pct as number) / 100;
     if (eff?.type === 'gold_scaling_damage') {
       dmg += this.getGold() * ((eff.pctOfGold as number) / 100);
     }
@@ -562,21 +578,21 @@ export class Battle {
     return { affected: targets.length, kills: this.pending.kills - before.kills, goldEarned: this.pending.goldEarned - before.gold };
   }
 
-  /** target 기준 원형 트랙 거리 radius 이내의 다른 생존 적 */
-  private inRadius(target: Enemy, radius: number): Enemy[] {
+  /** target 기준 원형 트랙 거리 radius 이내, 공격자가 때릴 수 있는 다른 생존 적 */
+  private inRadius(u: DeployedUnit, target: Enemy, radius: number): Enemy[] {
     const L = this.config.trackLength;
     return this.enemies.filter((e) => {
-      if (!e.alive || e === target) return false;
+      if (!e.alive || e === target || !this.canAttack(u, e)) return false;
       const d = Math.abs(e.pos - target.pos);
       return Math.min(d, L - d) <= radius;
     });
   }
 
-  /** target에서 가까운 순으로 n기 (체인 라이트닝) */
-  private nearestTo(target: Enemy, n: number): Enemy[] {
+  /** target에서 가까운 순으로 n기, 공격자가 때릴 수 있는 적만 (체인 라이트닝) */
+  private nearestTo(u: DeployedUnit, target: Enemy, n: number): Enemy[] {
     const L = this.config.trackLength;
     return this.enemies
-      .filter((e) => e.alive && e !== target)
+      .filter((e) => e.alive && e !== target && this.canAttack(u, e))
       .map((e) => {
         const d = Math.abs(e.pos - target.pos);
         return { e, d: Math.min(d, L - d) };

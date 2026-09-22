@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { DeployedUnit, Enemy, HitEvent } from '../systems/Battle.ts';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import { auraSlots } from '../systems/SynergySystem.ts';
-import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP } from './theme.ts';
+import { COLORS, ENEMY_COLOR, FONT, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, TARGET_LABEL } from './theme.ts';
 
 /**
  * 순환 트랙 + 유닛 슬롯(5×5) + 적 + 타격 연출.
@@ -87,6 +87,9 @@ export class TrackView {
       const name = this.scene.add.text(0, CELL / 2 - 22, `${SUIT_SYMBOL[u.def.suit]}${u.def.name}`, { fontSize: '20px', color: isHero ? '#f1d17a' : COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
       const range = this.scene.add.text(CELL / 2 - 10, -CELL / 2 + 8, `⌖${u.def.range}`, { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0);
       c.add([shape, badge, name, range]);
+      // 공격 대상 배지: 지상만/공중만 (모두면 없음)
+      const tl = TARGET_LABEL[u.def.targets] ?? '';
+      if (tl) c.add(this.scene.add.text(CELL / 2 - 10, -CELL / 2 + 32, tl, { fontSize: '17px', color: u.def.targets === 'air' ? '#6fb7ff' : '#c9a06a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(1, 0));
       if (!u.placed) {
         // 미확정(소환 직후, 1회 이동 가능): 반투명 + 금색 테두리 + "배치" 표시. 배치하지 않아도 전투 시작 시 이 자리로 확정된다
         c.setAlpha(0.55);
@@ -143,14 +146,20 @@ export class TrackView {
       let s = this.enemySprites.get(e.id);
       const r = e.isBoss ? 40 : 18;
       if (!s) {
-        const body = this.scene.add.circle(0, 0, r, ENEMY_COLOR[e.type] ?? 0xffffff).setStrokeStyle(2, 0x0b0e14);
+        const color = ENEMY_COLOR[e.type] ?? 0xffffff;
+        // 공중 적: 다이아 모양 + 날개 링, 지상 적: 원
+        const body = e.movement === 'air'
+          ? this.scene.add.star(0, 0, 4, r * 0.55, r, color).setStrokeStyle(2, 0x0b0e14)
+          : this.scene.add.circle(0, 0, r, color).setStrokeStyle(2, 0x0b0e14);
         const bar = this.scene.add.rectangle(0, -r - 10, r * 2, 5, 0x5fcf7a).setOrigin(0.5);
-        s = this.scene.add.container(0, 0, [body, bar]);
+        const parts: Phaser.GameObjects.GameObject[] = [body, bar];
+        if (e.movement === 'air') parts.unshift(this.scene.add.circle(0, 0, r + 6).setStrokeStyle(2, 0x6fb7ff, 0.8));
+        s = this.scene.add.container(0, 0, parts);
         this.enemySprites.set(e.id, s);
       }
       const { x, y } = this.trackPoint(e.pos / trackLength);
       s.setPosition(x, y);
-      const bar = s.list[1] as Phaser.GameObjects.Rectangle;
+      const bar = s.list[s.list.length - 1] as Phaser.GameObjects.Rectangle;
       bar.width = Math.max(0, (e.hp / e.maxHp) * r * 2);
       bar.setFillStyle(e.hp / e.maxHp > 0.5 ? 0x5fcf7a : e.hp / e.maxHp > 0.25 ? 0xe8c34a : 0xe0473f);
     }

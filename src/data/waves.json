@@ -1,8 +1,8 @@
 {
-  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.16^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30), 제한시간 30s(보스 45s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 라이프, rangeDamageMult 사거리(셀)별 공격 배율. 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
+  "comment": "GDD 3.5 웨이브 테이블. hp = 20×1.17^wave (보스는 ×hpMult), 마릿수 = 4 + 0.5×wave (최대 30), 제한시간 30s(보스 45s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 하트, rangeDamageMult 사거리(셀)별 공격 배율. enemyTypes.movement: air 적은 targets=ground 유닛이 공격 불가(스플래시·체인도 안 튐). 공중 6웨이브부터, 보스 지상/공중 교대. 생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.",
   "formula": {
     "hpBase": 20,
-    "hpGrowth": 1.16,
+    "hpGrowth": 1.17,
     "countBase": 4,
     "countPerWave": 0.5,
     "countMax": 30
@@ -20,39 +20,119 @@
     "rangeDamageMult": {
       "2": 1.35,
       "3": 1,
-      "4": 0.75
+      "4": 0.75,
+      "5": 0.65,
+      "6": 0.55
     }
   },
   "enemyTypes": {
-    "normal": {
+    "skeleton": {
+      "name": "해골 병사",
+      "movement": "ground",
       "speedMult": 1,
       "physicalResist": 0,
       "regenPctPerSec": 0,
       "hpMult": 1
     },
-    "fast": {
+    "wild_hound": {
+      "name": "들개 무리",
+      "movement": "ground",
       "speedMult": 1.6,
       "physicalResist": 0,
       "regenPctPerSec": 0,
       "hpMult": 0.75
     },
-    "armored": {
+    "bone_knight": {
+      "name": "해골 중갑기사",
+      "movement": "ground",
       "speedMult": 0.85,
       "physicalResist": 0.5,
       "regenPctPerSec": 0,
       "hpMult": 1
     },
-    "regen": {
+    "ghoul": {
+      "name": "구울",
+      "movement": "ground",
       "speedMult": 1,
       "physicalResist": 0,
       "regenPctPerSec": 0.02,
       "hpMult": 1.1
     },
-    "boss": {
+    "fallen_spearman": {
+      "name": "타락한 창격병",
+      "movement": "ground",
+      "speedMult": 1.3,
+      "physicalResist": 0.2,
+      "regenPctPerSec": 0,
+      "hpMult": 0.9
+    },
+    "cave_bat": {
+      "name": "동굴 박쥐 떼",
+      "movement": "air",
+      "speedMult": 1.7,
+      "physicalResist": 0,
+      "regenPctPerSec": 0,
+      "hpMult": 0.6
+    },
+    "gargoyle": {
+      "name": "가고일",
+      "movement": "air",
+      "speedMult": 0.9,
+      "physicalResist": 0.4,
+      "regenPctPerSec": 0,
+      "hpMult": 1
+    },
+    "wraith": {
+      "name": "원혼",
+      "movement": "air",
+      "speedMult": 1,
+      "physicalResist": 0,
+      "regenPctPerSec": 0.02,
+      "hpMult": 0.9
+    },
+    "fallen_imp": {
+      "name": "타락한 임프",
+      "movement": "air",
+      "speedMult": 1.2,
+      "physicalResist": 0,
+      "regenPctPerSec": 0,
+      "hpMult": 0.8
+    },
+    "bone_golem": {
+      "name": "본 골렘",
+      "movement": "ground",
       "speedMult": 0.7,
       "physicalResist": 0.3,
       "regenPctPerSec": 0,
-      "hpMult": 25
+      "hpMult": 25,
+      "boss": true
+    },
+    "fallen_seraphim": {
+      "name": "타락 세라핌",
+      "movement": "air",
+      "speedMult": 0.8,
+      "physicalResist": 0,
+      "regenPctPerSec": 0.01,
+      "hpMult": 22,
+      "boss": true
+    },
+    "skeleton_lord": {
+      "name": "해골 군주",
+      "movement": "ground",
+      "speedMult": 0.65,
+      "physicalResist": 0.4,
+      "regenPctPerSec": 0,
+      "hpMult": 28.000000000000004,
+      "boss": true
+    },
+    "specter_dragon": {
+      "name": "망령 드래곤",
+      "movement": "air",
+      "speedMult": 0.75,
+      "physicalResist": 0.2,
+      "regenPctPerSec": 0.01,
+      "hpMult": 30,
+      "boss": true
     }
   },
   "waves": [
@@ -64,7 +144,7 @@
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -77,7 +157,7 @@
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -85,12 +165,12 @@
     {
       "wave": 3,
       "boss": false,
-      "hp": 31,
+      "hp": 32,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -98,12 +178,12 @@
     {
       "wave": 4,
       "boss": false,
-      "hp": 36,
+      "hp": 37,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -111,16 +191,16 @@
     {
       "wave": 5,
       "boss": false,
-      "hp": 42,
+      "hp": 44,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "wild_hound",
           "count": 5
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 2
         }
       ]
@@ -128,42 +208,50 @@
     {
       "wave": 6,
       "boss": false,
-      "hp": 49,
+      "hp": 51,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
-          "count": 7
+          "type": "cave_bat",
+          "count": 5
+        },
+        {
+          "type": "skeleton",
+          "count": 2
         }
       ]
     },
     {
       "wave": 7,
       "boss": false,
-      "hp": 57,
+      "hp": 60,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "normal",
-          "count": 8
+          "type": "bone_knight",
+          "count": 6
+        },
+        {
+          "type": "skeleton",
+          "count": 2
         }
       ]
     },
     {
       "wave": 8,
       "boss": false,
-      "hp": 66,
+      "hp": 70,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "gargoyle",
           "count": 6
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 2
         }
       ]
@@ -171,16 +259,16 @@
     {
       "wave": 9,
       "boss": false,
-      "hp": 76,
+      "hp": 82,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "ghoul",
           "count": 6
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 3
         }
       ]
@@ -188,12 +276,12 @@
     {
       "wave": 10,
       "boss": true,
-      "hp": 88,
+      "hp": 96,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
         {
-          "type": "boss",
+          "type": "bone_golem",
           "count": 1
         }
       ]
@@ -201,50 +289,42 @@
     {
       "wave": 11,
       "boss": false,
-      "hp": 102,
+      "hp": 112,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
-          "count": 7
-        },
-        {
-          "type": "normal",
-          "count": 3
+          "type": "skeleton",
+          "count": 10
         }
       ]
     },
     {
       "wave": 12,
       "boss": false,
-      "hp": 119,
+      "hp": 132,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
-          "count": 7
-        },
-        {
-          "type": "normal",
-          "count": 3
+          "type": "skeleton",
+          "count": 10
         }
       ]
     },
     {
       "wave": 13,
       "boss": false,
-      "hp": 138,
+      "hp": 154,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "wild_hound",
           "count": 8
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 3
         }
       ]
@@ -252,16 +332,16 @@
     {
       "wave": 14,
       "boss": false,
-      "hp": 160,
+      "hp": 180,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "cave_bat",
           "count": 8
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 3
         }
       ]
@@ -269,16 +349,16 @@
     {
       "wave": 15,
       "boss": false,
-      "hp": 185,
+      "hp": 211,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "bone_knight",
           "count": 8
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -286,16 +366,16 @@
     {
       "wave": 16,
       "boss": false,
-      "hp": 215,
+      "hp": 247,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "gargoyle",
           "count": 8
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -303,16 +383,16 @@
     {
       "wave": 17,
       "boss": false,
-      "hp": 249,
+      "hp": 289,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "ghoul",
           "count": 9
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -320,16 +400,16 @@
     {
       "wave": 18,
       "boss": false,
-      "hp": 289,
+      "hp": 338,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "wraith",
           "count": 9
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -337,16 +417,16 @@
     {
       "wave": 19,
       "boss": false,
-      "hp": 336,
+      "hp": 395,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "fallen_imp",
           "count": 10
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -354,12 +434,12 @@
     {
       "wave": 20,
       "boss": true,
-      "hp": 389,
+      "hp": 462,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
         {
-          "type": "boss",
+          "type": "fallen_seraphim",
           "count": 1
         }
       ]
@@ -367,16 +447,16 @@
     {
       "wave": 21,
       "boss": false,
-      "hp": 451,
+      "hp": 541,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "wild_hound",
           "count": 11
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -384,16 +464,16 @@
     {
       "wave": 22,
       "boss": false,
-      "hp": 524,
+      "hp": 633,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "cave_bat",
           "count": 11
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 4
         }
       ]
@@ -401,16 +481,16 @@
     {
       "wave": 23,
       "boss": false,
-      "hp": 608,
+      "hp": 740,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "bone_knight",
           "count": 11
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -418,16 +498,16 @@
     {
       "wave": 24,
       "boss": false,
-      "hp": 705,
+      "hp": 866,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "gargoyle",
           "count": 11
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -435,16 +515,16 @@
     {
       "wave": 25,
       "boss": false,
-      "hp": 817,
+      "hp": 1013,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "ghoul",
           "count": 12
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -452,16 +532,16 @@
     {
       "wave": 26,
       "boss": false,
-      "hp": 948,
+      "hp": 1185,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "wraith",
           "count": 12
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -469,16 +549,16 @@
     {
       "wave": 27,
       "boss": false,
-      "hp": 1100,
+      "hp": 1387,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "fallen_imp",
           "count": 13
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -486,16 +566,16 @@
     {
       "wave": 28,
       "boss": false,
-      "hp": 1276,
+      "hp": 1623,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "fallen_spearman",
           "count": 13
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 5
         }
       ]
@@ -503,16 +583,16 @@
     {
       "wave": 29,
       "boss": false,
-      "hp": 1480,
+      "hp": 1899,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "wild_hound",
           "count": 13
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -520,12 +600,12 @@
     {
       "wave": 30,
       "boss": true,
-      "hp": 1717,
+      "hp": 2221,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
         {
-          "type": "boss",
+          "type": "skeleton_lord",
           "count": 1
         }
       ]
@@ -533,16 +613,16 @@
     {
       "wave": 31,
       "boss": false,
-      "hp": 1992,
+      "hp": 2599,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "bone_knight",
           "count": 14
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -550,16 +630,16 @@
     {
       "wave": 32,
       "boss": false,
-      "hp": 2310,
+      "hp": 3041,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "gargoyle",
           "count": 14
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -567,16 +647,16 @@
     {
       "wave": 33,
       "boss": false,
-      "hp": 2680,
+      "hp": 3558,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "ghoul",
           "count": 15
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -584,16 +664,16 @@
     {
       "wave": 34,
       "boss": false,
-      "hp": 3109,
+      "hp": 4162,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "wraith",
           "count": 15
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 6
         }
       ]
@@ -601,16 +681,16 @@
     {
       "wave": 35,
       "boss": false,
-      "hp": 3606,
+      "hp": 4870,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "fallen_imp",
           "count": 15
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 7
         }
       ]
@@ -618,16 +698,16 @@
     {
       "wave": 36,
       "boss": false,
-      "hp": 4183,
+      "hp": 5698,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "fallen_spearman",
           "count": 15
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 7
         }
       ]
@@ -635,16 +715,16 @@
     {
       "wave": 37,
       "boss": false,
-      "hp": 4853,
+      "hp": 6667,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "regen",
+          "type": "wild_hound",
           "count": 16
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 7
         }
       ]
@@ -652,16 +732,16 @@
     {
       "wave": 38,
       "boss": false,
-      "hp": 5629,
+      "hp": 7800,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "fast",
+          "type": "cave_bat",
           "count": 16
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 7
         }
       ]
@@ -669,16 +749,16 @@
     {
       "wave": 39,
       "boss": false,
-      "hp": 6530,
+      "hp": 9126,
       "spawnInterval": 0.8,
       "timeLimit": 30,
       "groups": [
         {
-          "type": "armored",
+          "type": "bone_knight",
           "count": 17
         },
         {
-          "type": "normal",
+          "type": "skeleton",
           "count": 7
         }
       ]
@@ -686,12 +766,12 @@
     {
       "wave": 40,
       "boss": true,
-      "hp": 7574,
+      "hp": 10677,
       "spawnInterval": 0,
       "timeLimit": 45,
       "groups": [
         {
-          "type": "boss",
+          "type": "specter_dragon",
           "count": 1
         }
       ]

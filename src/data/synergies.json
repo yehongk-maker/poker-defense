@@ -480,7 +480,6 @@
     "ranged": {
       "name": "후열",
       "countBy": "range",
-      "range": 4,
       "thresholds": [
         3,
         6
@@ -506,7 +505,8 @@
             "scope": "battle"
           }
         ]
-      ]
+      ],
+      "rangeMin": 4
     },
     "mid": {
       "name": "중열",

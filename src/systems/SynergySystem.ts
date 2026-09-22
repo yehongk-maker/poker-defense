@@ -57,6 +57,8 @@ export interface SynergyGroupDef {
    *  'lines' = 가로·세로·대각 한 줄이 전부 같은 matchBy(suit|race) 유닛으로 찬 줄 수 (빙고)
    */
   countBy?: 'range' | 'condition' | 'slots' | 'block2x2SameSuit' | 'lines';
+  /** range 전용: 이 값 이상이면 포함 (range 대신 사용, 예: 후열 = 사거리 4 이상) */
+  rangeMin?: number;
   /** lines 전용: 줄을 이루는 기준 (기본 suit) */
   matchBy?: 'suit' | 'race';
   range?: number;
@@ -238,7 +240,7 @@ export class SynergySystem {
     const formationCounts = new Map<string, number>();
     for (const [key, def] of Object.entries(formation)) {
       if (def.countBy === 'range') {
-        const members = all.filter((u) => u.def.range === def.range);
+        const members = all.filter((u) => (def.rangeMin !== undefined ? u.def.range >= def.rangeMin : u.def.range === def.range));
         formationCounts.set(key, members.length);
         collect('formation', key, def, members.length, members);
       }
