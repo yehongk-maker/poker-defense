@@ -1,6 +1,6 @@
 # 포커디펜스 (Poker Defense) — 프로젝트 헌법
 
-기획서: `GDD.md` (v1.3). 이 문서와 충돌하면 GDD가 우선하되, 코드 규칙은 이 문서를 따른다.
+기획서: `GDD.md` (v1.7). 이 문서와 충돌하면 GDD가 우선하되, 코드 규칙은 이 문서를 따른다.
 
 ## 스택
 - Phaser 3 + TypeScript + Vite. 모바일 세로 1080×1920, Scale FIT (`src/config.ts`).
@@ -16,13 +16,15 @@ src/
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   systems/       PokerEvaluator, CardPhase, SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리),
                  MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터),
-                 bots(봇 전략 공용), Duel(OpponentAI 실시간/fastForward + resolveDuel 승패)
+                 bots(봇 전략 공용), Duel(OpponentAI 실시간/fastForward + resolveDuel 승패),
+                 Betting(1:1 판돈 걸기: 앤티/체크·레이즈/콜·폴드/판정/이월 + AI 성향, GameLoop이 BetWallet)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
                  SynergyCodex(도감, embedded 가능) + synergyText(JSON→한글 설명, 순수), SwipeNav(3방향: left=상점 UpgradePanel,
-                 right=InfoPanel 족보·시너지, bottom=OpponentPanel 상대 현황), SynergyChips(화면 왼쪽 활성 시너지 칩), Button, theme (Phaser)
-  data/          units, hands, waves, synergies, heroes, config .json
+                 right=InfoPanel 족보·시너지, bottom=OpponentPanel 상대 현황), SynergyChips(화면 왼쪽 활성 시너지 칩),
+                 BetBar(맨 아래 판돈 바: 체크/레이즈 → 콜/폴드), Button, theme (Phaser)
+  data/          units, hands, waves, synergies, heroes, config, duel(판돈 룰·AI 성향) .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 ```
@@ -54,6 +56,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅(`ApplyOptions.hero`)은 수트·클래스 축만 제외, 나머지(종족·진형·빙고·global·오라·상한·업그레이드)에 포함. caps 공격 120/공속 70.
 - `heroes.json`: 영웅 12종(수트별 기본/메타/대공). `combat.targets`(ground/air/both)로 지상/공중 구분 — 근접 영웅은 ground. 대공 패시브 air_attack_pct(global|suit)/air_slow_pct/air_kill_gold_mult, 대공 액티브 flak_barrage/light_of_falling/bombard_support/void_gale(Battle 스킬 API의 movement 필터). `active.id`별 구현은 GameLoop.useHeroSkill의 switch, 수치는 `active.params`.
 - `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM + `meta`(영구 업그레이드 3종·영웅 해금 비용·젬 보상·저장 키).
+- `duel.json` (GDD 3.9): ante(base+perWave×라운드)/raise(base+perWave, roundTo, max)/shortfall(goldPerLife)/comeback/ai. `BettingSystem.sync(side, loop)`를 매 프레임 호출하면 카드 페이즈 진입 시 `enter`(앤티 납부), `loop.lastRound`(RoundReport: 잃은 하트·클리어 시간·족보)로 보고, 양쪽 보고 시 판정. 응답(콜/폴드)은 그 라운드에 `entered`된 쪽만. GameLoop의 `addGold/spendGold/loseLife`가 지갑 API.
 - 메타 저장: localStorage 키 `poker-defense.meta.v1`, JSON {version, gems, upgrades, unlockedHeroes, claimedMilestones, stats}. GameScene은 `getMeta().applyTo(loadGameData())`로 시작하고, 판 종료 시 `recordRun`으로 젬 지급·저장.
 
 ## 진행 상태 (2026-09-20)
@@ -71,6 +74,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 메타 업그레이드(교환 +1·타이머 +10초·시작 골드 +100×3)·메타 영웅 젬 해금·젬 마일스톤·localStorage 저장, 로비 → MetaScene.
 - 완료: 유닛 40종(low/high 변형)·지상/공중 분리·적 13종 로스터 (GDD v1.6, 2026-09-22).
 - 완료: 1:1 실시간 레이스(GDD 3.7): GameScene이 OpponentAI를 매 프레임 tick(배속 공통), 매 프레임 raceStatus로 즉시 판정(40 먼저 클리어·탈락 후 앞섬), 플레이어 종료 시 finishRace(fastForward → resolveDuel). HUD 상단 중앙 '라운드 N/40', 우상단 상대 라운드. 3방향 스와이프(SwipeNav): 위=상대, 오른쪽=상점·영웅, 왼쪽=족보·시너지.
+- 완료: 1:1 판돈 걸기(GDD 3.9, 2026-09-25): Betting 순수 시스템 + BetBar + OpponentAI 베팅 성향 + 상대 패널 원장 + 결과 화면 합계. 앤티는 각자 라운드 진입 시(앞선 쪽 때문에 먼저 빠지지 않음), 레이즈 응답은 그 라운드 진입 후.
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

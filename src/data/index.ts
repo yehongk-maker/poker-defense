@@ -5,7 +5,14 @@ import synergiesJson from './synergies.json';
 import heroesJson from './heroes.json';
 import wavesJson from './waves.json';
 import configJson from './config.json';
+import duelJson from './duel.json';
 import type { GameData } from '../systems/GameLoop.ts';
+import type { DuelConfig } from '../systems/Betting.ts';
+
+/** 1:1 판돈 걸기 설정 (duel.json) */
+export function loadDuelConfig(): DuelConfig {
+  return duelJson as unknown as DuelConfig;
+}
 
 export function loadGameData(): GameData {
   return {

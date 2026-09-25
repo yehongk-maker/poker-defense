@@ -8,13 +8,19 @@
  *    도달 웨이브(승리=41) → 라이프 → 골드 순으로 비교. 전부 같으면 무승부.
  */
 import { GameLoop, type GameData } from './GameLoop.ts';
-import { smartCardPhase, smartManage, smartCombatTick } from './bots.ts';
+import { smartCardPhase, smartExchange, smartManage, smartCombatTick } from './bots.ts';
+import { aiOpening, aiResponse, type BettingSystem, type DuelConfig } from './Betting.ts';
+import { evaluateHand } from './PokerEvaluator.ts';
 
 export interface OpponentOptions {
   /** 카드 페이즈 생각 시간(초) 범위 */
   thinkSec?: [number, number];
   /** 정비 시간(초) 범위 */
   manageSec?: [number, number];
+  /** 판돈 걸기 (있으면 카드 확정 시 체크/레이즈, 상대 레이즈엔 잠시 뒤 콜/폴드) */
+  betting?: { system: BettingSystem; config: DuelConfig };
+  /** 미리 만든 GameLoop을 쓴다 (베팅 지갑과 같은 인스턴스를 공유할 때) */
+  loop?: GameLoop;
 }
 
 /** 상대 AI: GameLoop 하나를 실시간으로 굴린다 */
@@ -27,11 +33,15 @@ export class OpponentAI {
   private manageSec: [number, number];
   /** 마지막 확정 족보명 (UI 표시용) */
   lastHandRank: number | null = null;
+  private betting: OpponentOptions['betting'];
+  private respondTimer = 0;
+  private respondWait = 0;
 
   constructor(data: GameData, private rng: () => number = Math.random, opts: OpponentOptions = {}) {
-    this.loop = new GameLoop(data, rng);
+    this.loop = opts.loop ?? new GameLoop(data, rng);
     this.thinkSec = opts.thinkSec ?? [1.5, 4];
     this.manageSec = opts.manageSec ?? [0.8, 1.8];
+    this.betting = opts.betting;
   }
 
   get finished(): boolean {
@@ -42,6 +52,7 @@ export class OpponentAI {
   tick(dt: number): void {
     const g = this.loop;
     if (this.finished) return;
+    this.tickBetResponse(dt);
     if (g.phase !== this.lastPhase) {
       this.lastPhase = g.phase;
       this.timer = 0;
@@ -52,7 +63,8 @@ export class OpponentAI {
         const r = g.cardPhase.tick(dt);
         this.timer += dt;
         if (r.autoConfirmed || this.timer >= this.wait) {
-          if (r.autoConfirmed) g.confirmHand();
+          if (r.autoConfirmed) { this.betOpening('check'); g.confirmHand(); }
+          else if (this.betting) { smartExchange(g); this.betOpening(null); g.confirmHand(); }
           else smartCardPhase(g);
           this.lastHandRank = g.cardPhase.handResult?.rank ?? null;
         }
@@ -85,6 +97,37 @@ export class OpponentAI {
 
   private pick([a, b]: [number, number]): number {
     return a + (b - a) * this.rng();
+  }
+
+  // ── 판돈 걸기 ──
+  /** 카드 확정 직전: 체크/레이즈 (forced가 있으면 그것, 없으면 성향대로) */
+  private betOpening(forced: 'check' | null): void {
+    if (!this.betting) return;
+    const { system, config } = this.betting;
+    const g = this.loop;
+    system.enter('opponent', g.wave);
+    const opts = system.options('opponent', g.wave);
+    if (opts.length === 0 || opts.includes('call') || opts.includes('fold')) return; // 응답은 tickBetResponse가
+    const rank = evaluateHand([...g.cardPhase.hand], () => 0).rank;
+    const choice = forced ?? aiOpening(config, rank, g.gold, g.wave, system.raiseAmount(g.wave), this.rng);
+    system.act('opponent', g.wave, opts.includes(choice) ? choice : 'check');
+  }
+
+  /** 플레이어 레이즈에 잠시 생각한 뒤 콜/폴드 */
+  private tickBetResponse(dt: number): void {
+    if (!this.betting) return;
+    const { system, config } = this.betting;
+    const pending = system.pendingResponse('opponent');
+    if (!pending) { this.respondTimer = 0; this.respondWait = 0; return; }
+    if (this.respondWait === 0) this.respondWait = this.pick(config.ai.respondSec);
+    this.respondTimer += dt;
+    if (this.respondTimer < this.respondWait) return;
+    const g = this.loop;
+    const rank = g.wave === pending.wave && g.phase === 'card' ? evaluateHand([...g.cardPhase.hand], () => 0).rank : (this.lastHandRank ?? 0);
+    const opts = system.options('opponent', pending.wave);
+    const choice = aiResponse(config, rank, g.gold, pending.wave, pending.raise!.amount, this.rng);
+    system.act('opponent', pending.wave, opts.includes(choice) ? choice : 'fold');
+    this.respondTimer = 0; this.respondWait = 0;
   }
 }
 

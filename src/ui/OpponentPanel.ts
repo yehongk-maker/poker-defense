@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import type { OpponentAI } from '../systems/Duel.ts';
+import type { BettingSystem } from '../systems/Betting.ts';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { Button } from './Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_COLOR, SUIT_SYMBOL } from './theme.ts';
@@ -18,6 +19,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
   private cells: Phaser.GameObjects.Rectangle[] = [];
   private cellText: Phaser.GameObjects.Text[] = [];
   private compare: Phaser.GameObjects.Text;
+  private ledger: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, onClose: () => void) {
     super(scene, 0, GAME_HEIGHT);
@@ -26,13 +28,14 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 2, GAME_WIDTH, 4, COLORS.panelLine));
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
     this.add(scene.add.text(40, 70, '상대 진행 상황', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.add(scene.add.text(40, 130, '실시간 레이스 · 마지막 라운드(40)를 먼저 깨는 쪽이 승리 · 빨리 확정·시작할수록 앞선다', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
+    this.add(scene.add.text(40, 130, '실시간 레이스 · 40라운드 먼저 클리어 = 승리 · 라운드마다 판돈은 더 잘 막은 쪽이', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: GAME_WIDTH - 330 } }).setOrigin(0, 0.5));
     this.add(new Button(scene, GAME_WIDTH - 150, 90, '▼ 닫기', () => onClose(), { width: 220, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
 
     this.status = scene.add.text(GAME_WIDTH / 2, 260, '', { fontSize: '40px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
     this.syn = scene.add.text(GAME_WIDTH / 2, 330, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5);
     this.compare = scene.add.text(GAME_WIDTH / 2, 1100, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.add([this.status, this.syn, this.compare]);
+    this.ledger = scene.add.text(GAME_WIDTH / 2, 1230, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5, 0);
+    this.add([this.status, this.syn, this.compare, this.ledger]);
 
     // 미니 필드
     const gx = (GAME_WIDTH - GRID_N * CELL) / 2;
@@ -50,7 +53,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     scene.add.existing(this);
   }
 
-  refresh(opp: OpponentAI, player: GameLoop, totalWaves: number): void {
+  refresh(opp: OpponentAI, player: GameLoop, totalWaves: number, betting?: BettingSystem): void {
     const g = opp.loop;
     const phase: Record<string, string> = { card: '카드 선택 중', manage: '정비 중', combat: '전투 중', victory: '40웨이브 클리어!', defeat: '탈락' };
     const hand = opp.lastHandRank !== null ? `   최근 족보: ${HAND_NAME[opp.lastHandRank]}` : '';
@@ -68,5 +71,9 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     });
     const lead = g.wave === player.wave ? '같은 라운드' : g.wave > player.wave ? `상대가 ${g.wave - player.wave}라운드 앞섬` : `내가 ${player.wave - g.wave}라운드 앞섬`;
     this.compare.setText(`나: 라운드 ${player.wave} ♥${player.life}   vs   상대: 라운드 ${g.wave} ♥${g.life}\n${lead}`);
+    if (betting) {
+      const recent = betting.history.slice(-6).map((r) => `R${r.wave} ${r.winner === 'player' ? '나 +' : r.winner === 'opponent' ? '상대 +' : '이월 '}💰${r.pot}`).join('  ·  ');
+      this.ledger.setText(`판돈 획득 합계: 나 💰${betting.won.player} / 상대 💰${betting.won.opponent}${betting.carry ? `   (이월 💰${betting.carry})` : ''}\n${recent || '아직 판정된 라운드 없음'}`);
+    }
   }
 }

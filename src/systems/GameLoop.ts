@@ -85,6 +85,18 @@ export interface GameData {
   unlockedHeroes?: string[];
 }
 
+/** 한 라운드(웨이브)의 방어 성적 — 베팅 판정(Betting) 등 외부 비교용 */
+export interface RoundReport {
+  wave: number;
+  /** 이 라운드에 확정한 족보 등급 */
+  handRank: number;
+  /** 이 라운드 전투에서 잃은 하트 */
+  lifeLost: number;
+  /** 전투 시작부터 종료(클리어/탈락)까지 걸린 전투 시간(초) */
+  clearSec: number;
+  cleared: boolean;
+}
+
 export interface DeployResult {
   deployed: DeployedUnit[];
   /** 슬롯 초과로 자동 판매된 유닛과 환급 골드 */
@@ -115,6 +127,9 @@ export class GameLoop {
   private lifeNegationsLeft = 0; // 빛의 치유사: 웨이브당 1회 무효
   private heroSkillCd = 0;       // 영웅 액티브 남은 쿨타임(초). 전투 중에만 감소, 웨이브를 넘어 유지
   private coverageCache = new Map<number, number[]>(); // range → 슬롯별 트랙 커버리지
+  private roundHandRank = 0;
+  private roundLifeLost = 0;
+  private _lastRound: RoundReport | null = null;
 
   constructor(private data: GameData, rng: () => number = Math.random) {
     this.rng = rng;
@@ -135,6 +150,28 @@ export class GameLoop {
   get wave(): number { return this._wave; }
   get gold(): number { return this._gold; }
   get life(): number { return this._life; }
+  /** 가장 최근에 끝난 라운드의 성적 (전투가 끝날 때마다 갱신) */
+  get lastRound(): RoundReport | null { return this._lastRound; }
+
+  // ── 외부 시스템(베팅 등)용 골드·하트 조작 ─────────────────
+  addGold(n: number): void {
+    if (n < 0) throw new Error('addGold: negative');
+    this._gold += n;
+  }
+  spendGold(n: number): void {
+    if (n < 0) throw new Error('spendGold: negative');
+    if (this._gold < n) throw new Error(`Not enough gold: need ${n}, have ${Math.floor(this._gold)}`);
+    this._gold -= n;
+  }
+  /** 하트 차감 (앤티 대납 등). 0이 되면 즉시 탈락. 이미 끝난 판에는 무효 */
+  loseLife(n: number): void {
+    if (n <= 0 || this._phase === 'victory' || this._phase === 'defeat') return;
+    this._life = Math.max(0, this._life - n);
+    if (this._life === 0) {
+      this._phase = 'defeat';
+      this.battle_ = null;
+    }
+  }
   get shards(): number { return this._shards; }
   get units(): readonly DeployedUnit[] { return this._units; }
   get geometry(): TrackGeometry { return { trackLength: this.data.battleConfig.trackLength, gridSize: this.data.battleConfig.gridSize }; }
@@ -204,6 +241,7 @@ export class GameLoop {
     this.assertPhase('card');
     const result: HandResult =
       this.cardPhase.state === 'done' ? this.cardPhase.handResult! : this.cardPhase.confirm();
+    this.roundHandRank = result.rank;
     const outcome = this.mapper.map(result);
 
     const res: DeployResult = { deployed: [], overflowSold: [], shardsGained: outcome.jokerShards, freeHeroSummon: false };
@@ -386,6 +424,7 @@ export class GameLoop {
         rangeMultOverride: g.rangeMultOverride,
       },
     });
+    this.roundLifeLost = 0;
     this._phase = 'combat';
   }
 
@@ -407,14 +446,17 @@ export class GameLoop {
       loss -= saved;
     }
     this._life -= loss;
+    this.roundLifeLost += loss;
 
     if (this._life <= 0) {
       this._life = 0;
       this._phase = 'defeat';
+      this._lastRound = { wave: this._wave, handRank: this.roundHandRank, lifeLost: this.roundLifeLost, clearSec: this.battle_!.time, cleared: false };
       return ev;
     }
 
     if (ev.cleared) {
+      this._lastRound = { wave: this._wave, handRank: this.roundHandRank, lifeLost: this.roundLifeLost, clearSec: this.battle_!.time, cleared: true };
       const g = this.lastSynergy!.global;
       this._gold += this.battle_!.clearGold(g.waveGoldPct);
       this._life = Math.min(this.data.config.startLife, this._life + g.lifePerWave);

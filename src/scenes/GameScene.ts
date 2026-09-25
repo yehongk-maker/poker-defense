@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
-import { loadGameData } from '../data/index.ts';
+import { loadGameData, loadDuelConfig } from '../data/index.ts';
 import { getMeta } from '../meta.ts';
 import { GameLoop, type GameData } from '../systems/GameLoop.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
@@ -15,6 +15,8 @@ import { InfoPanel } from '../ui/InfoPanel.ts';
 import { OpponentPanel } from '../ui/OpponentPanel.ts';
 import { SynergyChips } from '../ui/SynergyChips.ts';
 import { OpponentAI, raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
+import { BettingSystem, REASON_TEXT, type BetAction } from '../systems/Betting.ts';
+import { BetBar, BET_BAR_H } from '../ui/BetBar.ts';
 import { Button } from '../ui/Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
 
@@ -43,6 +45,8 @@ export class GameScene extends Phaser.Scene {
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
+  private betting!: BettingSystem;
+  private betBar!: BetBar;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -63,10 +67,16 @@ export class GameScene extends Phaser.Scene {
     this.speed = 1;
     this.ended = false;
 
-    // 1:1 대결 상대 (메타 업그레이드 없는 기본 설정, smart 봇)
-    this.opponent = new OpponentAI(loadGameData());
+    // 1:1 대결 상대 (메타 업그레이드 없는 기본 설정, smart 봇) + 판돈 걸기
+    const oppData = loadGameData();
+    const duelCfg = loadDuelConfig();
+    const oppLoop = new GameLoop(oppData);
+    this.betting = new BettingSystem(duelCfg, { player: this.loop, opponent: oppLoop });
+    this.opponent = new OpponentAI(oppData, Math.random, { betting: { system: this.betting, config: duelCfg }, loop: oppLoop });
     this.oppDefeatAnnounced = false;
     this.oppRefreshAcc = 0;
+    this.betting.sync('player', this.loop);
+    this.betting.sync('opponent', oppLoop);
 
     this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.track = new TrackView(this);
@@ -127,7 +137,7 @@ export class GameScene extends Phaser.Scene {
     this.nav = new SwipeNav(this, { left: this.shop, right: this.info, bottom: this.oppPanel }, (side) => {
       if (side === 'left') this.shop.refresh(this.loop);
       if (side === 'right') this.info.refresh(this.loop);
-      if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves);
+      if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
     });
     // 가장자리 핸들 (탭으로도 열기)
     const mkHandle = (x: number, y: number, w: number, h: number, label: string, angle: number, side: 'left' | 'right' | 'bottom') => {
@@ -139,6 +149,9 @@ export class GameScene extends Phaser.Scene {
     mkHandle(22, 1500, 44, 220, '상점 · 영웅 ▶', 90, 'left');
     mkHandle(GAME_WIDTH - 22, 1500, 44, 220, '◀ 족보 · 시너지', -90, 'right');
     mkHandle(GAME_WIDTH / 2, GAME_HEIGHT - 22, 360, 40, '▲ 상대 진행 상황', 0, 'bottom');
+
+    // 판돈 걸기 바 (맨 아래, 핸들 바로 위)
+    this.betBar = new BetBar(this, GAME_HEIGHT - 44 - BET_BAR_H / 2, (a) => this.bet(a));
 
     // 전투 패널
     this.combatText = this.add.text(GAME_WIDTH / 2, PANEL_Y - 40, '', { fontSize: '36px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
@@ -188,6 +201,7 @@ export class GameScene extends Phaser.Scene {
     const cfg = this.data_.battleConfig;
     // 실시간 레이스: 배속(⏩)은 양쪽에 같은 시간 배율로 적용
     this.tickOpponent(dt * this.speed);
+    this.syncBetting();
     const race = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), this.data_.config.totalWaves);
     if (race) { this.showEnd(race); return; }
 
@@ -250,7 +264,7 @@ export class GameScene extends Phaser.Scene {
       const diff = this.loop.wave - o.wave;
       const lead = diff > 0 ? `내가 ${diff} 앞섬` : diff < 0 ? `상대가 ${-diff} 앞섬` : '동률';
       this.hud.setOpponent(`상대 라운드 ${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''} · ${lead}`);
-      if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves);
+      if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
       if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
         this.oppDefeatAnnounced = true;
         this.showToast(`상대 탈락! (라운드 ${o.wave}) — 라운드 ${o.wave + 1}에 들어가면 승리`);
@@ -261,6 +275,8 @@ export class GameScene extends Phaser.Scene {
   // ── 페이즈 처리 ──────────────────────────────────────────
   private confirmHand(): void {
     if (this.loop.phase !== 'card') return;
+    // 판돈: 아무것도 안 골랐으면 체크
+    if (this.betting.options('player', this.loop.wave).includes('check')) this.betting.act('player', this.loop.wave, 'check');
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
     // 족보 확정 연출: 등급이 높을수록 화려하게 (트랙 중앙)
@@ -273,6 +289,29 @@ export class GameScene extends Phaser.Scene {
     this.manage.setSummary(lines.join('\n'));
     this.selectedSlot = -1;
     this.refreshPanels();
+  }
+
+  // ── 판돈 걸기 ──
+  private bet(a: BetAction): void {
+    const v = this.betting.view('player', this.loop.wave);
+    this.safe(() => {
+      this.betting.act('player', v.wave, a);
+      const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
+      this.showToast(msg[a]);
+    });
+  }
+
+  /** 양쪽 GameLoop 상태를 판돈 시스템에 반영하고, 새 판정이 나면 알린다 */
+  private syncBetting(): void {
+    const results = [...this.betting.sync('player', this.loop), ...this.betting.sync('opponent', this.opponent.loop)];
+    for (const r of results) {
+      if (r.winner === 'player') { this.showToast(`💰 라운드 ${r.wave} 판돈 💰${r.pot} 획득! (${REASON_TEXT[r.reason]})`); this.cameras.main.flash(120, 241, 209, 122); }
+      else if (r.winner === 'opponent') this.showToast(`라운드 ${r.wave} 판돈 💰${r.pot}은 상대에게 (${r.reason === 'fold' ? '내가 폴드' : r.reason === 'life' ? '상대가 하트를 덜 잃음' : r.reason === 'time' ? '상대가 더 빨리 클리어' : r.reason === 'hand' ? '상대 족보가 더 높음' : '내가 탈락'})`);
+      else this.showToast(`라운드 ${r.wave} 동률 — 판돈 💰${r.pot} 다음 라운드로 이월`);
+      this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
+    }
+    // 상대 선택이 바뀌었을 수 있으니 바는 매 프레임 갱신 (텍스트 setText는 같은 값이면 비용 없음)
+    this.betBar.refresh(this.betting.view('player', this.loop.wave), this.loop.phase);
   }
 
   private refreshSkillButton(): void {
@@ -357,7 +396,7 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
     this.add.text(GAME_WIDTH / 2, 700, title, { fontSize: '120px', color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
     this.add.text(GAME_WIDTH / 2, 820, `나: 라운드 ${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life} 💰${Math.floor(this.loop.gold)}   vs   상대: 라운드 ${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life} 💰${Math.floor(o.gold)}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
-    this.add.text(GAME_WIDTH / 2, 880, `판정 기준: ${reason[duel.reason]}`, { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
+    this.add.text(GAME_WIDTH / 2, 880, `판정 기준: ${reason[duel.reason]}   ·   판돈 획득 합계  나 💰${this.betting.won.player} / 상대 💰${this.betting.won.opponent}`, { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
     // 메타 진행 기록 + 젬 지급 (localStorage 저장)
     const reward = getMeta().recordRun({ wave: cleared ? this.data_.config.totalWaves : this.loop.wave, victory: cleared });
     const parts = [`💎 +${reward.gemsGained}`];
