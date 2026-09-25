@@ -55,7 +55,8 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - `synergies.json`: 4축 — suits(수트 기수 2/4/6) · classes(종류 2/4) · races(종족 기수+영웅 3/5/7 등) · formation(사거리/조건 자동 판정) + caps(합산 상한). 상위 구간이 하위를 대체. 설계 근거 docs/synergy-design.md.
 - `units.json`/`heroes.json`의 `race`(human/goblin/monster/spirit)는 종족 축 태그. 영웅(`ApplyOptions.hero`)은 수트·클래스 축만 제외, 나머지(종족·진형·빙고·global·오라·상한·업그레이드)에 포함. caps 공격 120/공속 70.
 - `heroes.json`: 영웅 12종(수트별 기본/메타/대공). `combat.targets`(ground/air/both)로 지상/공중 구분 — 근접 영웅은 ground. 대공 패시브 air_attack_pct(global|suit)/air_slow_pct/air_kill_gold_mult, 대공 액티브 flak_barrage/light_of_falling/bombard_support/void_gale(Battle 스킬 API의 movement 필터). `active.id`별 구현은 GameLoop.useHeroSkill의 switch, 수치는 `active.params`.
-- `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM + `meta`(영구 업그레이드 3종·영웅 해금 비용·젬 보상·저장 키).
+- `config.json`: 라이프/골드/슬롯/업그레이드/영웅 등급/BM + `meta`(영구 업그레이드 3종·영웅 해금 비용·`exchangeTicket`(카드 교환권: cost/initial/max)·젬 보상·저장 키).
+- 카드 교환권(GDD 3.4): `MetaProgress.tickets/buyTicket/useTicket`(저장 필드 `tickets`, 구 저장은 initial로 채움) + `CardPhase.exchangeWithTicket(i)`(기본 횟수 무시, `ticketsUsed`). 씬은 `canExchange`가 false이고 교환권이 있으면 `useTicket` 후 `exchangeWithTicket`. CardHand는 `ExchangeStatus`(left/used/total/tickets/ticketsUsed)로 카운터·배지·힌트 표시.
 - `duel.json` (GDD 3.9): ante(base+perWave×라운드)/raise(base+perWave, roundTo, max)/shortfall(goldPerLife)/comeback/ai. `BettingSystem.sync(side, loop)`를 매 프레임 호출하면 카드 페이즈 진입 시 `enter`(앤티 납부), `loop.lastRound`(RoundReport: 잃은 하트·클리어 시간·족보)로 보고, 양쪽 보고 시 판정. 응답(콜/폴드)은 그 라운드에 `entered`된 쪽만. GameLoop의 `addGold/spendGold/loseLife`가 지갑 API.
 - 메타 저장: localStorage 키 `poker-defense.meta.v1`, JSON {version, gems, upgrades, unlockedHeroes, claimedMilestones, stats}. GameScene은 `getMeta().applyTo(loadGameData())`로 시작하고, 판 종료 시 `recordRun`으로 젬 지급·저장.
 
@@ -75,6 +76,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 유닛 40종(low/high 변형)·지상/공중 분리·적 13종 로스터 (GDD v1.6, 2026-09-22).
 - 완료: 1:1 실시간 레이스(GDD 3.7): GameScene이 OpponentAI를 매 프레임 tick(배속 공통), 매 프레임 raceStatus로 즉시 판정(40 먼저 클리어·탈락 후 앞섬), 플레이어 종료 시 finishRace(fastForward → resolveDuel). HUD 상단 중앙 '라운드 N/40', 우상단 상대 라운드. 3방향 스와이프(SwipeNav): 위=상대, 오른쪽=상점·영웅, 왼쪽=족보·시너지.
 - 완료: 1:1 판돈 걸기(GDD 3.9, 2026-09-25): Betting 순수 시스템 + BetBar + OpponentAI 베팅 성향 + 상대 패널 원장 + 결과 화면 합계. 앤티는 각자 라운드 진입 시(앞선 쪽 때문에 먼저 빠지지 않음), 레이즈 응답은 그 라운드 진입 후.
+- 완료: 교환 카운터(교환 N/5 ✓)·카드 교환권 소모품(2026-09-25): 카드 페이즈 좌하단 표시, 상점 패널(영웅 토큰 옆)·메타 화면 구매.
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
