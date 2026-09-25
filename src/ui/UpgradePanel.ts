@@ -8,7 +8,17 @@ import { CLASS_NAME, COLORS, FONT, SUIT_COLOR, SUIT_NAME, SUIT_SYMBOL } from './
 export interface UpgradePanelCallbacks {
   onUpgrade: (suit: Suit) => void;
   onSummonHero: (heroId: string) => void;
+  onBuyTicket: () => void;
   onClose: () => void;
+}
+
+/** 카드 교환권 표시/구매에 필요한 메타 정보 */
+export interface TicketInfo {
+  tickets: number;
+  gems: number;
+  cost: number;
+  max: number;
+  canBuy: boolean;
 }
 
 const SUITS: Suit[] = ['S', 'H', 'D', 'C'];
@@ -30,6 +40,8 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
   private upgradeBtns: Record<Suit, Button>;
   private shardText: Phaser.GameObjects.Text;
   private gradeText: Phaser.GameObjects.Text;
+  private ticketText: Phaser.GameObjects.Text;
+  private ticketBtn: Button;
   private heroCards: HeroCard[] = [];
 
   constructor(scene: Phaser.Scene, loop: GameLoop, private cb: UpgradePanelCallbacks, private attackPctPerLevel: number) {
@@ -57,11 +69,13 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       this.add(b);
     });
 
-    // 2) 영웅 토큰
-    this.add(this.section(scene, 500, '영웅 토큰', '플러시 이상 달성 시 획득 · 3개 = 영웅 소환 1회'));
-    this.shardText = scene.add.text(40, 570, '', { fontSize: '44px', color: '#f1d17a', fontFamily: FONT }).setOrigin(0, 0.5);
-    this.gradeText = scene.add.text(GAME_WIDTH - 40, 570, '', { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT, align: 'right' }).setOrigin(1, 0.5);
-    this.add([this.shardText, this.gradeText]);
+    // 2) 영웅 토큰 (왼쪽) · 카드 교환권 (오른쪽)
+    this.add(this.section(scene, 500, '영웅 토큰 · 카드 교환권', '토큰: 플러시 이상 달성 시 획득, 3개 = 영웅 소환 1회   ·   교환권: 교환을 다 쓴 카드를 한 번 더 (💎 구매, 계정 보관)'));
+    this.shardText = scene.add.text(40, 570, '', { fontSize: '40px', color: '#f1d17a', fontFamily: FONT }).setOrigin(0, 0.5);
+    this.gradeText = scene.add.text(40, 616, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
+    this.ticketText = scene.add.text(GAME_WIDTH - 300, 585, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT, align: 'right' }).setOrigin(1, 0.5);
+    this.ticketBtn = new Button(scene, GAME_WIDTH - 150, 585, '', () => cb.onBuyTicket(), { width: 250, height: 84, fontSize: 24 });
+    this.add([this.shardText, this.gradeText, this.ticketText, this.ticketBtn]);
 
     // 3) 영웅 선택
     this.add(this.section(scene, 660, '영웅 선택 (판당 1기 · 수트별 기본/메타/대공)', '일찍 소환할수록 강함: 남은 웨이브 20+ = S(×1.5) · 10+ = A · 그 외 B(×0.7). 근접 영웅은 지상만, 대공 영웅은 공중 특화'));
@@ -84,8 +98,12 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     scene.add.existing(this);
   }
 
-  refresh(loop: GameLoop): void {
+  refresh(loop: GameLoop, ticket?: TicketInfo): void {
     const manage = loop.phase === 'manage';
+    if (ticket) {
+      this.ticketText.setText(`🎫 교환권 ${ticket.tickets}/${ticket.max}장\n💎 ${ticket.gems} 보유`);
+      this.ticketBtn.setLabel(ticket.tickets >= ticket.max ? '보관 최대' : `💎${ticket.cost} 구매`).setEnabled(ticket.canBuy);
+    }
     this.phaseHint.setText(manage ? `💰 ${Math.floor(loop.gold)} · 정비 중 — 구매/소환 가능` : `💰 ${Math.floor(loop.gold)} · 구매/소환은 정비 페이즈(소환 직후)에서`);
 
     for (const s of SUITS) {
@@ -101,7 +119,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const dots = '●'.repeat(Math.min(loop.shards, need)) + '○'.repeat(Math.max(0, need - Math.min(loop.shards, need)));
     this.shardText.setText(`${dots}  ${loop.shards}/${need}`);
     const grade = loop.heroGradeNow;
-    this.gradeText.setText(loop.hero ? `소환 완료: ${loop.hero.def.name} ${loop.hero.grade}급` : `지금 소환하면 ${grade}급\n(웨이브 ${loop.wave})`);
+    this.gradeText.setText(loop.hero ? `소환 완료: ${loop.hero.def.name} ${loop.hero.grade}급` : `지금 소환하면 ${grade}급 (라운드 ${loop.wave})`);
 
     for (const c of this.heroCards) {
       const unlocked = loop.isHeroUnlocked(c.def.id);

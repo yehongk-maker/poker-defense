@@ -138,3 +138,38 @@ describe('GameData 반영', () => {
     expect(g.unlockedHeroes.length).toBe(6);
   });
 });
+
+describe('카드 교환권 (소모품)', () => {
+  it('신규 계정은 initial장을 갖고 시작하고, 다이아로 구매·사용하며 저장된다', () => {
+    const store = new MemoryStore();
+    const m = mk(store);
+    expect(m.tickets).toBe(cfg.exchangeTicket.initial);
+    expect(m.canBuyTicket).toBe(false); // 다이아 0
+    m.addGems(cfg.exchangeTicket.cost);
+    expect(m.canBuyTicket).toBe(true);
+    m.buyTicket();
+    expect(m.tickets).toBe(cfg.exchangeTicket.initial + 1);
+    expect(m.gems).toBe(0);
+    m.useTicket();
+    expect(m.tickets).toBe(cfg.exchangeTicket.initial);
+    expect(mk(store).tickets).toBe(cfg.exchangeTicket.initial); // 복원
+  });
+
+  it('보유 상한을 넘겨 살 수 없고, 0장이면 사용할 수 없다', () => {
+    const m = mk();
+    m.addGems(cfg.exchangeTicket.cost * 20);
+    while (m.canBuyTicket) m.buyTicket();
+    expect(m.tickets).toBe(cfg.exchangeTicket.max);
+    expect(() => m.buyTicket()).toThrow();
+    while (m.tickets > 0) m.useTicket();
+    expect(() => m.useTicket()).toThrow();
+  });
+
+  it('교환권 필드가 없는 구버전 저장은 신규 지급 수로 채운다', () => {
+    const store = new MemoryStore();
+    store.save(JSON.stringify({ version: 1, gems: 50, upgrades: {}, unlockedHeroes: [], claimedMilestones: [], stats: { runs: 1, wins: 0, bestWave: 5, totalGemsEarned: 50 } }));
+    const m = mk(store);
+    expect(m.gems).toBe(50);
+    expect(m.tickets).toBe(cfg.exchangeTicket.initial);
+  });
+});

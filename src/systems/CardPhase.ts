@@ -43,8 +43,10 @@ export class CardPhase {
   private rng: () => number;
   private deck: Card[] = [];
   private handCards: Card[] = [];
-  /** 카드 위치별 교환 횟수 */
+  /** 카드 위치별 교환 횟수 (기본 교환) */
   private exchangedCount: number[] = [];
+  /** 이번 라운드 교환권으로 교환한 횟수 (카드별) */
+  private ticketCount: number[] = [];
   private remainingTime = 0;
   private phaseState: CardPhaseState = 'idle';
   private result: HandResult | null = null;
@@ -61,6 +63,7 @@ export class CardPhase {
     this.deck = this.shuffle(createDeck());
     this.handCards = this.deck.splice(0, this.handSize);
     this.exchangedCount = new Array(this.handSize).fill(0);
+    this.ticketCount = new Array(this.handSize).fill(0);
     this.remainingTime = this.timerSeconds;
     this.phaseState = 'choosing';
     this.result = null;
@@ -82,6 +85,35 @@ export class CardPhase {
   /** 남은 총 교환 가능 횟수 (카드별 남은 횟수 합) */
   get exchangesRemaining(): number {
     return this.exchangedCount.reduce((s, n) => s + (this.exchangeLimit - n), 0);
+  }
+
+  /** 총 교환 가능 횟수 (handSize × exchangeLimit) — "교환 N/M" 표시용 */
+  get exchangesTotal(): number {
+    return this.handSize * this.exchangeLimit;
+  }
+
+  /** 사용한 기본 교환 횟수 */
+  get exchangesUsed(): number {
+    return this.exchangedCount.reduce((s, n) => s + n, 0);
+  }
+
+  /** 기본 교환을 전부 썼는가 (교환권만 남은 상태) */
+  get exchangesDone(): boolean {
+    return this.exchangesRemaining === 0;
+  }
+
+  /** 이번 라운드 교환권 사용 횟수 */
+  get ticketsUsed(): number {
+    return this.ticketCount.reduce((s, n) => s + n, 0);
+  }
+  ticketsUsedFor(index: number): number {
+    this.assertIndex(index);
+    return this.ticketCount[index];
+  }
+
+  /** 교환권으로 이 카드를 교환할 수 있는가 (횟수 제한 무시, 상태·덱만 확인) */
+  canExchangeWithTicket(index: number): boolean {
+    return this.phaseState === 'choosing' && Number.isInteger(index) && index >= 0 && index < this.handCards.length && this.deck.length > 0;
   }
 
   /** 특정 카드의 남은 교환 횟수 */
@@ -117,6 +149,20 @@ export class CardPhase {
     const next = this.deck.shift()!;
     this.handCards[index] = next;
     this.exchangedCount[index]++;
+    return next;
+  }
+
+  /**
+   * 카드 교환권 사용: 기본 교환 횟수와 무관하게 이 카드를 새 카드로 바꾼다.
+   * 교환권 재고(계정 보유)는 호출 측(MetaProgress)이 차감한다.
+   */
+  exchangeWithTicket(index: number): Card {
+    this.assertChoosing();
+    this.assertIndex(index);
+    if (this.deck.length === 0) throw new Error('Not enough cards in deck');
+    const next = this.deck.shift()!;
+    this.handCards[index] = next;
+    this.ticketCount[index]++;
     return next;
   }
 

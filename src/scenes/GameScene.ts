@@ -6,10 +6,10 @@ import { GameLoop, type GameData } from '../systems/GameLoop.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
 import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
 import { HUD } from '../ui/HUD.ts';
-import { CardHand } from '../ui/CardHand.ts';
+import { CardHand, type ExchangeStatus } from '../ui/CardHand.ts';
 import { TrackView } from '../ui/TrackView.ts';
 import { ManagePanel } from '../ui/ManagePanel.ts';
-import { UpgradePanel } from '../ui/UpgradePanel.ts';
+import { UpgradePanel, type TicketInfo } from '../ui/UpgradePanel.ts';
 import { SwipeNav } from '../ui/SwipeNav.ts';
 import { InfoPanel } from '../ui/InfoPanel.ts';
 import { OpponentPanel } from '../ui/OpponentPanel.ts';
@@ -87,12 +87,19 @@ export class GameScene extends Phaser.Scene {
     this.hand = new CardHand(this, PANEL_Y - 60, {
       onExchange: (i) => this.safe(() => {
         const p = this.loop.cardPhase;
-        if (!p.canExchange(i)) return;
         const before = evaluateHand([...p.hand], () => 0).rank;
-        const card = p.exchangeCard(i);
+        let card;
+        if (p.canExchange(i)) {
+          card = p.exchangeCard(i);
+        } else if (getMeta().tickets > 0 && p.canExchangeWithTicket(i)) {
+          // 기본 교환을 다 쓴 카드: 교환권 1장 소모
+          getMeta().useTicket();
+          card = p.exchangeWithTicket(i);
+          this.showToast(`🎫 교환권 사용 (남은 ${getMeta().tickets}장)`);
+        } else return;
         const result = evaluateHand([...p.hand], () => 0);
         // 카드가 뒤집혀 새 카드로 오픈된 뒤 족보 갱신
-        this.hand.exchangeCard(i, card, this.exchangeLeft(), result);
+        this.hand.exchangeCard(i, card, this.exchangeStatus(), result);
         // 교환으로 족보가 올랐으면 오픈 직후 패 위에서 작은 연출
         if (result.rank > before && RANK_TIER[result.rank] >= 1) {
           this.time.delayedCall(360, () => { const pos = this.hand.rankLabelPosition; this.fx.celebrate(result.rank, pos.x, pos.y, false); });
@@ -130,12 +137,17 @@ export class GameScene extends Phaser.Scene {
         const r = this.loop.summonHero(id);
         this.showToast(`영웅 소환: ${r.def.name} ${r.grade}급`);
       }),
+      onBuyTicket: () => this.safe(() => {
+        getMeta().buyTicket();
+        this.showToast(`🎫 카드 교환권 구매 (보유 ${getMeta().tickets}장)`);
+        if (this.loop.phase === 'card') this.hand.setStatus(this.exchangeStatus());
+      }),
       onClose: () => this.nav.close(),
     }, this.data_.config.upgrade.attackPctPerLevel).setDepth(10);
     this.info = new InfoPanel(this, this.data_.hands, () => this.nav.close()).setDepth(10);
     this.oppPanel = new OpponentPanel(this, () => this.nav.close()).setDepth(10);
     this.nav = new SwipeNav(this, { left: this.shop, right: this.info, bottom: this.oppPanel }, (side) => {
-      if (side === 'left') this.shop.refresh(this.loop);
+      if (side === 'left') this.shop.refresh(this.loop, this.ticketInfo());
       if (side === 'right') this.info.refresh(this.loop);
       if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
     });
@@ -330,10 +342,16 @@ export class GameScene extends Phaser.Scene {
     return { diamonds: getMeta().gems, heartsMax: this.data_.config.startLife, heroTokensMax: this.data_.config.hero.shardsRequired };
   }
 
-  /** 카드별 남은 교환 횟수 */
-  private exchangeLeft(): number[] {
+  /** 교환 현황 (카드별 남은 횟수·카운터·교환권) */
+  private exchangeStatus(): ExchangeStatus {
     const p = this.loop.cardPhase;
-    return p.hand.map((_, i) => p.exchangesRemainingFor(i));
+    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed };
+  }
+
+  /** 상점 패널용 교환권 정보 */
+  private ticketInfo(): TicketInfo {
+    const m = getMeta();
+    return { tickets: m.tickets, gems: m.gems, cost: m.ticketDef.cost, max: m.ticketDef.max, canBuy: m.canBuyTicket };
   }
 
   /** 새 라운드: 뒷면으로 받아 한 장씩 오픈 */
@@ -342,7 +360,7 @@ export class GameScene extends Phaser.Scene {
     if (p.state !== 'choosing') return;
     // 라이브 족보: 수트 동수 경합은 표시에 영향 없으므로 고정 rng
     const result = evaluateHand([...p.hand], () => 0);
-    this.hand.deal(p.hand, this.exchangeLeft(), result);
+    this.hand.deal(p.hand, this.exchangeStatus(), result);
     this.hand.setTimer(p.timeRemaining);
   }
 
@@ -354,7 +372,7 @@ export class GameScene extends Phaser.Scene {
     if (ph === 'combat') this.refreshSkillButton();
     this.track.setField(this.loop, ph === 'manage' ? this.selectedSlot : -1);
     if (ph === 'manage') this.manage.refresh(this.loop, this.selectedSlot, this.data_.config.sellRatio);
-    this.shop.refresh(this.loop);
+    this.shop.refresh(this.loop, this.ticketInfo());
     this.info.refresh(this.loop);
     this.chips.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());

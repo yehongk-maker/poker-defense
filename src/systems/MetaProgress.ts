@@ -23,6 +23,8 @@ export interface MetaConfig {
   saveKey: string;
   upgrades: MetaUpgradeDef[];
   heroUnlockCost: number;
+  /** 카드 교환권(소모품): 다이아 구매, 보유 상한, 신규 계정 지급 수 */
+  exchangeTicket: { name: string; cost: number; initial: number; max: number };
   gemRewards: {
     waveMilestones: { wave: number; gems: number }[];
     perRun: number;
@@ -39,6 +41,8 @@ export interface MetaState {
   unlockedHeroes: string[];
   /** 젬을 받은 마일스톤 웨이브 */
   claimedMilestones: number[];
+  /** 보유 카드 교환권 */
+  tickets: number;
   stats: { runs: number; wins: number; bestWave: number; totalGemsEarned: number };
 }
 
@@ -69,34 +73,35 @@ export interface RunReward {
   newBest: boolean;
 }
 
-export function emptyMetaState(): MetaState {
-  return { version: 1, gems: 0, upgrades: {}, unlockedHeroes: [], claimedMilestones: [], stats: { runs: 0, wins: 0, bestWave: 0, totalGemsEarned: 0 } };
+export function emptyMetaState(initialTickets = 0): MetaState {
+  return { version: 1, gems: 0, upgrades: {}, unlockedHeroes: [], claimedMilestones: [], tickets: initialTickets, stats: { runs: 0, wins: 0, bestWave: 0, totalGemsEarned: 0 } };
 }
 
 export class MetaProgress {
   private state: MetaState;
 
   constructor(private config: MetaConfig, private store: SaveStore, private heroIds: { id: string; unlock: 'basic' | 'meta' }[]) {
-    this.state = MetaProgress.parse(store.load());
+    this.state = MetaProgress.parse(store.load(), config.exchangeTicket?.initial ?? 0);
   }
 
-  /** 저장 문자열 → 상태 (손상/구버전이면 초기 상태) */
-  static parse(json: string | null): MetaState {
-    if (!json) return emptyMetaState();
+  /** 저장 문자열 → 상태 (손상/구버전이면 초기 상태). 교환권 필드가 없는 구 저장은 신규 지급 수로 채운다 */
+  static parse(json: string | null, initialTickets = 0): MetaState {
+    if (!json) return emptyMetaState(initialTickets);
     try {
       const raw = JSON.parse(json) as Partial<MetaState>;
-      if (raw.version !== 1) return emptyMetaState();
-      const base = emptyMetaState();
+      if (raw.version !== 1) return emptyMetaState(initialTickets);
+      const base = emptyMetaState(initialTickets);
       return {
         version: 1,
         gems: Math.max(0, Number(raw.gems) || 0),
         upgrades: { ...(raw.upgrades ?? {}) },
         unlockedHeroes: [...(raw.unlockedHeroes ?? [])],
         claimedMilestones: [...(raw.claimedMilestones ?? [])],
+        tickets: raw.tickets === undefined ? initialTickets : Math.max(0, Number(raw.tickets) || 0),
         stats: { ...base.stats, ...(raw.stats ?? {}) },
       };
     } catch {
-      return emptyMetaState();
+      return emptyMetaState(initialTickets);
     }
   }
 
@@ -129,6 +134,13 @@ export class MetaProgress {
     return !!h && h.unlock === 'meta' && !this.isHeroUnlocked(id) && this.state.gems >= this.config.heroUnlockCost;
   }
   hasClaimed(wave: number): boolean { return this.state.claimedMilestones.includes(wave); }
+  /** 카드 교환권 */
+  get tickets(): number { return this.state.tickets; }
+  get ticketDef(): MetaConfig['exchangeTicket'] { return this.config.exchangeTicket; }
+  get canBuyTicket(): boolean {
+    const t = this.config.exchangeTicket;
+    return this.state.tickets < t.max && this.state.gems >= t.cost;
+  }
 
   // ── 변경 (전부 저장) ──
   buyUpgrade(id: string): void {
@@ -148,6 +160,23 @@ export class MetaProgress {
     if (this.state.gems < this.config.heroUnlockCost) throw new Error(`Not enough gems: need ${this.config.heroUnlockCost}, have ${this.state.gems}`);
     this.state.gems -= this.config.heroUnlockCost;
     this.state.unlockedHeroes.push(id);
+    this.persist();
+  }
+
+  /** 카드 교환권 구매 (다이아) */
+  buyTicket(): void {
+    const t = this.config.exchangeTicket;
+    if (this.state.tickets >= t.max) throw new Error(`교환권은 최대 ${t.max}장까지 보관`);
+    if (this.state.gems < t.cost) throw new Error(`다이아 부족: 💎${t.cost} 필요, 보유 ${this.state.gems}`);
+    this.state.gems -= t.cost;
+    this.state.tickets++;
+    this.persist();
+  }
+
+  /** 카드 교환권 1장 사용 */
+  useTicket(): void {
+    if (this.state.tickets <= 0) throw new Error('교환권이 없습니다');
+    this.state.tickets--;
     this.persist();
   }
 
@@ -183,7 +212,7 @@ export class MetaProgress {
   }
 
   reset(): void {
-    this.state = emptyMetaState();
+    this.state = emptyMetaState(this.config.exchangeTicket?.initial ?? 0);
     this.store.clear();
   }
 

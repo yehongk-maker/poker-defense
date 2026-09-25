@@ -197,3 +197,41 @@ describe('통합 시나리오', () => {
     expect(true).toBe(true);
   });
 });
+
+describe('카드 교환권(exchangeWithTicket) — 기본 교환을 다 쓴 카드를 한 번 더', () => {
+  it('교환 카운터: 총 5회, 사용 수·완료 여부를 알려준다', () => {
+    const p = new CardPhase({}, seededRng(21));
+    p.start();
+    expect(p.exchangesTotal).toBe(5);
+    expect(p.exchangesUsed).toBe(0);
+    expect(p.exchangesDone).toBe(false);
+    for (let i = 0; i < 5; i++) p.exchangeCard(i);
+    expect(p.exchangesUsed).toBe(5);
+    expect(p.exchangesDone).toBe(true);
+    expect(p.canExchange(0)).toBe(false);
+  });
+
+  it('교환권은 횟수 제한을 무시하고 새 카드로 바꾸며, 기본 교환 카운터는 건드리지 않는다', () => {
+    const p = new CardPhase({}, seededRng(22));
+    p.start();
+    p.exchangeCard(2);
+    const before = key(p.hand[2]);
+    expect(p.canExchange(2)).toBe(false);
+    expect(p.canExchangeWithTicket(2)).toBe(true);
+    const next = p.exchangeWithTicket(2);
+    expect(key(p.hand[2])).toBe(key(next));
+    expect(key(p.hand[2])).not.toBe(before);
+    expect(p.exchangesUsed).toBe(1);
+    expect(p.ticketsUsed).toBe(1);
+    expect(p.ticketsUsedFor(2)).toBe(1);
+    expect(p.ticketsUsedFor(0)).toBe(0);
+  });
+
+  it('확정 후에는 교환권도 쓸 수 없다', () => {
+    const p = new CardPhase({}, seededRng(23));
+    p.start();
+    p.confirm();
+    expect(p.canExchangeWithTicket(0)).toBe(false);
+    expect(() => p.exchangeWithTicket(0)).toThrow();
+  });
+});

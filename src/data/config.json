@@ -139,6 +139,13 @@
       }
     ],
     "heroUnlockCost": 300,
+    "exchangeTicket": {
+      "comment": "카드 교환권(소모품): 교환을 다 쓴 카드를 한 번 더 바꾼다. 다이아로 구매, 계정에 보관(localStorage). 편의 아이템 (§9.1).",
+      "name": "카드 교환권",
+      "cost": 30,
+      "initial": 2,
+      "max": 9
+    },
     "gemRewards": {
       "waveMilestones": [
         {

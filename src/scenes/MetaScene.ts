@@ -14,6 +14,8 @@ export class MetaScene extends Phaser.Scene {
   private gemText!: Phaser.GameObjects.Text;
   private upgradeBtns = new Map<string, { btn: Button; lv: Phaser.GameObjects.Text }>();
   private heroBtns = new Map<string, { btn: Button; status: Phaser.GameObjects.Text }>();
+  private ticketText!: Phaser.GameObjects.Text;
+  private ticketBtn!: Button;
   private toast!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -59,7 +61,17 @@ export class MetaScene extends Phaser.Scene {
       this.heroBtns.set(h.id, { btn, status });
     });
 
-    // 3) 기록 / 초기화
+    // 3) 카드 교환권 (소모품)
+    const t = meta.ticketDef;
+    const ticketY = heroY + 90 + Math.ceil(metaHeroes.length / 2) * (ch + gapY) + 50;
+    this.section(ticketY, '카드 교환권 (소모품)', `교환을 다 쓴 카드를 한 번 더 바꾼다 · 장당 💎${t.cost} · 최대 ${t.max}장 보관 · 판 안 카드 선택 중 카드를 탭해 사용`);
+    const ry = ticketY + 110;
+    this.add.rectangle(GAME_WIDTH / 2, ry, GAME_WIDTH - 80, 110, COLORS.panel).setStrokeStyle(2, COLORS.panelLine);
+    this.add.text(60, ry, `🎫 ${t.name}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.ticketText = this.add.text(GAME_WIDTH - 330, ry, '', { fontSize: '28px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(1, 0.5);
+    this.ticketBtn = new Button(this, GAME_WIDTH - 170, ry, '', () => this.safe(() => { meta.buyTicket(); this.showToast(`${t.name} 구매! (보유 ${meta.tickets}장)`); }), { width: 260, height: 84, fontSize: 28 });
+
+    // 4) 기록 / 초기화
     const st = meta.stats;
     this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 150, `기록: ${st.runs}판 · 승리 ${st.wins} · 최고 웨이브 ${st.bestWave} · 누적 다이아 ${st.totalGemsEarned}`, { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
     this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 110, '다이아 획득: 웨이브 10/20/30/40 최초 도달 시 20/30/50/100 · 판당 5 · 승리 50', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
@@ -79,6 +91,9 @@ export class MetaScene extends Phaser.Scene {
       if (cost === null) btn.setLabel('MAX').setEnabled(false);
       else btn.setLabel(`💎 ${cost} 구매`).setEnabled(meta.canBuy(def.id));
     }
+    const t = meta.ticketDef;
+    this.ticketText.setText(`보유 ${meta.tickets} / ${t.max}장`);
+    this.ticketBtn.setLabel(meta.tickets >= t.max ? '보관 최대' : `💎 ${t.cost} 구매`).setEnabled(meta.canBuyTicket);
     for (const [id, { btn, status }] of this.heroBtns) {
       if (meta.isHeroUnlocked(id)) { status.setText('해금됨').setColor('#5fcf7a'); btn.setLabel('해금됨').setEnabled(false); }
       else { status.setText(meta.canUnlockHero(id) ? '해금 가능' : `💎 ${meta.heroUnlockCost} 필요`).setColor(COLORS.textDim); btn.setLabel(`💎 ${meta.heroUnlockCost} 해금`).setEnabled(meta.canUnlockHero(id)); }

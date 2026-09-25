@@ -6,9 +6,22 @@ import { Button } from './Button.ts';
 import { COLORS, FONT, HAND_NAME, SUIT_CARD_COLOR, SUIT_SYMBOL, TAP_SLOP, rankLabel } from './theme.ts';
 
 export interface CardHandCallbacks {
-  /** 카드 탭 = 그 카드 1장 교환 (가능할 때만 호출됨) */
+  /** 카드 탭 = 그 카드 1장 교환 (기본 교환이 남았거나 교환권이 있을 때만 호출됨) */
   onExchange: (index: number) => void;
   onConfirm: () => void;
+}
+
+/** 교환 현황 (씬이 CardPhase·MetaProgress에서 읽어 넘김) */
+export interface ExchangeStatus {
+  /** 카드별 남은 기본 교환 횟수 */
+  left: readonly number[];
+  /** 사용한 기본 교환 / 총 기본 교환 */
+  used: number;
+  total: number;
+  /** 보유 카드 교환권 */
+  tickets: number;
+  /** 이번 라운드 교환권 사용 횟수 */
+  ticketsUsed: number;
 }
 
 const CARD_W = 176;
@@ -47,6 +60,9 @@ export class CardHand extends Phaser.GameObjects.Container {
   private busy = 0;
   private lastResult: HandResult | null = null;
   private exchangeLeft: number[] = [0, 0, 0, 0, 0];
+  private status: ExchangeStatus = { left: [0, 0, 0, 0, 0], used: 0, total: 5, tickets: 0, ticketsUsed: 0 };
+  private countText: Phaser.GameObjects.Text;
+  private ticketText: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, y: number, private cb: CardHandCallbacks) {
     super(scene, 0, y);
@@ -68,7 +84,7 @@ export class CardHand extends Phaser.GameObjects.Container {
       root.add([back, front]);
       root.setSize(CARD_W, CARD_H).setInteractive({ useHandCursor: true });
       root.on('pointerup', (p: Phaser.Input.Pointer) => {
-        if (p.getDistance() < TAP_SLOP && this.busy === 0 && this.exchangeLeft[i] > 0) this.cb.onExchange(i);
+        if (p.getDistance() < TAP_SLOP && this.busy === 0 && (this.exchangeLeft[i] > 0 || this.status.tickets > 0)) this.cb.onExchange(i);
       });
       this.cards.push({ root, front, back, bg, rank, suit, badge, faceUp: true });
       this.add(root);
@@ -80,14 +96,17 @@ export class CardHand extends Phaser.GameObjects.Container {
     this.confirmBtn = new Button(scene, GAME_WIDTH / 2, by, '진행', () => { if (this.busy === 0) this.cb.onConfirm(); }, { width: 520, height: 110 });
     this.timerText = scene.add.text(GAME_WIDTH - 60, by, '⏱ 30', { fontSize: '40px', color: COLORS.text, fontFamily: FONT }).setOrigin(1, 0.5);
     this.hintText = scene.add.text(GAME_WIDTH / 2, by + 88, '', { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5);
-    this.add([this.confirmBtn, this.timerText, this.hintText]);
+    // 왼쪽: 교환 횟수 카운터 + 교환권 (진행 버튼 왼쪽 빈 공간)
+    this.countText = scene.add.text(60, by - 22, '', { fontSize: '30px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
+    this.ticketText = scene.add.text(60, by + 24, '', { fontSize: '24px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(0, 0.5);
+    this.add([this.confirmBtn, this.timerText, this.hintText, this.countText, this.ticketText]);
     scene.add.existing(this);
   }
 
   /** 새 라운드 배분: 전부 뒷면으로 놓고 한 장씩 오픈 */
-  deal(hand: readonly Card[], exchangeLeft: readonly number[], result: HandResult): void {
+  deal(hand: readonly Card[], status: ExchangeStatus, result: HandResult): void {
     this.lastResult = result;
-    this.exchangeLeft = [...exchangeLeft];
+    this.setStatus(status);
     this.rankTier = -1;
     this.pulse?.remove(); this.pulse = null;
     this.rankText.setText('? ? ?').setScale(1);
@@ -110,8 +129,8 @@ export class CardHand extends Phaser.GameObjects.Container {
   }
 
   /** 교환 결과 반영: 해당 카드만 뒤집어 새 카드로 오픈 */
-  exchangeCard(index: number, card: Card, exchangeLeft: readonly number[], result: HandResult): void {
-    this.exchangeLeft = [...exchangeLeft];
+  exchangeCard(index: number, card: Card, status: ExchangeStatus, result: HandResult): void {
+    this.setStatus(status);
     this.lastResult = result;
     const v = this.cards[index];
     this.busy++;
@@ -129,8 +148,8 @@ export class CardHand extends Phaser.GameObjects.Container {
   }
 
   /** 애니메이션 없이 즉시 갱신 (교환 횟수 표시 등) */
-  refreshStatic(hand: readonly Card[], exchangeLeft: readonly number[], result: HandResult): void {
-    this.exchangeLeft = [...exchangeLeft];
+  refreshStatic(hand: readonly Card[], status: ExchangeStatus, result: HandResult): void {
+    this.setStatus(status);
     this.lastResult = result;
     if (this.busy > 0) return;
     hand.forEach((card, i) => this.setFace(this.cards[i], card, true));
@@ -138,6 +157,16 @@ export class CardHand extends Phaser.GameObjects.Container {
   }
 
   get isAnimating(): boolean { return this.busy > 0; }
+
+  /** 교환 현황 갱신 (카운터·교환권 텍스트는 즉시, 카드 배지는 오픈 완료 후) */
+  setStatus(status: ExchangeStatus): void {
+    this.status = { ...status, left: [...status.left] };
+    this.exchangeLeft = [...status.left];
+    const done = status.used >= status.total;
+    this.countText.setText(`교환 ${status.used}/${status.total}${done ? ' ✓' : ''}`).setColor(done ? '#5fcf7a' : COLORS.text);
+    const t = status.tickets;
+    this.ticketText.setText(`🎫 교환권 ${t}장${status.ticketsUsed > 0 ? ` (사용 ${status.ticketsUsed})` : ''}`).setColor(t > 0 ? '#8fe3ff' : COLORS.textMuted);
+  }
 
   setTimer(sec: number): void {
     this.timerText.setText(`⏱ ${Math.ceil(sec)}`).setColor(sec <= 5 ? '#e0473f' : COLORS.text);
@@ -163,13 +192,22 @@ export class CardHand extends Phaser.GameObjects.Container {
       v.bg.setFillStyle(isCore ? 0xfff1c2 : 0xf4efe2);
       v.bg.setStrokeStyle(4, isCore ? 0xd4a941 : 0xd8d0bd);
       const left = this.exchangeLeft[i];
-      v.badge.setText(left > 0 ? `교환 ${left}` : '').setColor(left > 0 ? '#7a5a12' : '#b0a890');
+      const ticket = left <= 0 && this.status.tickets > 0;
+      v.badge.setText(left > 0 ? `교환 ${left}회` : ticket ? '🎫 교환권' : '교환 완료').setColor(left > 0 ? '#7a5a12' : ticket ? '#2b6fb3' : '#b0a890');
       v.root.setAlpha(1);
     });
     this.setRank(result);
-    const total = this.exchangeLeft.reduce((a, b) => a + b, 0);
-    this.hintText.setText(total > 0 ? `카드를 탭하면 그 카드만 교환 (카드당 ${Math.max(...this.exchangeLeft)}회 · 남은 교환 ${total})` : '교환 완료 — 진행하세요');
+    const st = this.status;
+    const left = st.total - st.used;
+    if (left > 0) this.hintText.setText(`카드를 탭하면 그 카드만 교환 · 남은 교환 ${left}회 (카드당 ${this.exchangeLimitText()})`);
+    else if (st.tickets > 0) this.hintText.setText(`기본 교환 완료 — 카드를 탭하면 🎫 교환권 1장으로 한 번 더 (남은 ${st.tickets}장)`);
+    else this.hintText.setText('교환 완료 — 진행하세요 (교환권은 상점에서 💎로 구매)');
     this.confirmBtn.setEnabled(true);
+  }
+
+  private exchangeLimitText(): string {
+    const per = Math.round(this.status.total / Math.max(1, this.cards.length));
+    return `${per}회`;
   }
 
   private setFace(v: CardView, card: Card, keepRef: boolean): void {
