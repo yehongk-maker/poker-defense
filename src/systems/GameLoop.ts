@@ -234,6 +234,18 @@ export class GameLoop {
     const g = this.data.config.hero.grades;
     return remaining >= g.S.minRemainingWaves ? 'S' : remaining >= g.A.minRemainingWaves ? 'A' : 'B';
   }
+  /**
+   * 지금 등급이 유지되는 마지막 웨이브와 그다음 등급 (DESIGN §5-04 "웨이브 N 이후엔 A급으로 하락!" 카피용).
+   * 최하 등급이면 null.
+   */
+  get heroGradeDrop(): { until: number; next: HeroGrade } | null {
+    const g = this.data.config.hero.grades;
+    const total = this.data.config.totalWaves;
+    const now = this.heroGradeNow;
+    if (now === 'S') return { until: total + 1 - g.S.minRemainingWaves, next: 'A' };
+    if (now === 'A') return { until: total + 1 - g.A.minRemainingWaves, next: 'B' };
+    return null;
+  }
 
   // ── 카드 페이즈 → 소환 ─────────────────────────────────────
   /** 카드 확정(수동 confirm 또는 타이머 자동 확정) 후 호출. 소환/조각/영웅권을 처리하고 manage 페이즈로 */

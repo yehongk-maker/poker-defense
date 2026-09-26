@@ -1,6 +1,7 @@
 # 포커디펜스 (Poker Defense) — 프로젝트 헌법
 
 기획서: `GDD.md` (v1.7). 이 문서와 충돌하면 GDD가 우선하되, 코드 규칙은 이 문서를 따른다.
+UI 디자인 시스템: `DESIGN.md` — 모든 UI는 이 문서의 토큰(`src/ui/theme.ts`의 COLOR/FONT/SIZE)과 컴포넌트 규칙을 따른다. 임의 색·크기·폰트 금지.
 
 ## 스택
 - Phaser 3 + TypeScript + Vite. 모바일 세로 1080×1920, Scale FIT (`src/config.ts`).
@@ -23,11 +24,21 @@ src/
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
                  SynergyCodex(도감, embedded 가능) + synergyText(JSON→한글 설명, 순수), SwipeNav(3방향: left=상점 UpgradePanel,
                  right=InfoPanel 족보·시너지, bottom=OpponentPanel 상대 현황), SynergyChips(화면 왼쪽 활성 시너지 칩),
-                 BetBar(맨 아래 판돈 바: 체크/레이즈 → 콜/폴드), Button, theme (Phaser)
+                 BetBar(팟 알약 + 베팅 3버튼 폴드/체크·콜/레이즈), Button(UIButton: variant gold/green/purple/red/gray/blue,
+                 3D 섀도·눌림·비활성, 라벨 '\n' 뒤는 서브 라벨), ResourcePill·TokenBar(재화 알약), TimerRing, SpeechBubble,
+                 WaveBanner, ResultOverlay(승리 광선·리본·별 / 패배), Backdrop(월드 그라디언트·하단 시트·가장자리 핸들),
+                 draw(도형 아이콘: 동전·하트·젬·영웅 토큰·교환권·별), theme(DESIGN 토큰 + 구 COLORS 호환) (Phaser)
   data/          units, hands, waves, synergies, heroes, config, duel(판돈 룰·AI 성향) .json
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 ```
+
+## 디자인 규칙 (DESIGN.md 요약)
+- 배경: 로비·메타 = 블루 하늘(solo), 게임 = 퍼플 월드(duel, 1:1 레이스가 기본 룰). `addBackdrop(scene, mode)`.
+- 폰트: Jua(`FONT.display`, 타이틀·버튼·숫자) + Noto Sans KR(`FONT.body`). index.html에서 Google Fonts 로드, BootScene이 최대 2.5초 대기 후 대체 폰트로 진행. 텍스트 기본 = 흰색 + `OUTLINE`(navy 4px).
+- 버튼 색은 역할로만: gold=진행·핵심 CTA, purple=베팅·다이아 가격, blue=일반(체크·콜·배속·탭), gray=보조·닫기, red=위험(판매·초기화), green=광고 보상(▶ AD 필수, 1:1 대결에서는 금지).
+- 매 프레임 호출되는 UI 갱신은 값이 바뀔 때만 다시 그린다 (Button.setLabel/setEnabled/setVariant는 같은 값이면 무시).
+- 이모지는 임시 아이콘: HUD·알약·결과 화면은 도형 아이콘으로 교체 완료, 토스트·일부 라벨 문자열에 남은 💰💎 등은 스프라이트 도입 때 교체.
 
 ## 절대 규칙
 1. **게임 로직은 `src/systems/`에 순수 함수/클래스로.** Phaser·DOM 의존 금지. 난수는 `rng` 주입(테스트 재현성).
@@ -77,6 +88,7 @@ scripts/         generate-waves.mjs 등 데이터 생성/시뮬레이터
 - 완료: 1:1 실시간 레이스(GDD 3.7): GameScene이 OpponentAI를 매 프레임 tick(배속 공통), 매 프레임 raceStatus로 즉시 판정(40 먼저 클리어·탈락 후 앞섬), 플레이어 종료 시 finishRace(fastForward → resolveDuel). HUD 상단 중앙 '라운드 N/40', 우상단 상대 라운드. 3방향 스와이프(SwipeNav): 위=상대, 오른쪽=상점·영웅, 왼쪽=족보·시너지.
 - 완료: 1:1 판돈 걸기(GDD 3.9, 2026-09-25): Betting 순수 시스템 + BetBar + OpponentAI 베팅 성향 + 상대 패널 원장 + 결과 화면 합계. 앤티는 각자 라운드 진입 시(앞선 쪽 때문에 먼저 빠지지 않음), 레이즈 응답은 그 라운드 진입 후.
 - 완료: 교환 카운터(교환 N/5 ✓)·카드 교환권 소모품(2026-09-25): 카드 페이즈 좌하단 표시, 상점 패널(영웅 토큰 옆)·메타 화면 구매.
+- 완료: DESIGN.md 캐주얼 디자인 적용(2026-09-26): 토큰·UIButton·재화 알약·타이머 링·부채꼴 손패·잔디 필드/모래 트랙·유닛 칩·지상/공중 적 표현·데미지 숫자·베팅 3버튼·상대 말풍선·웨이브/위기 배너·결과 화면·로비 탭바. GameLoop.heroGradeDrop(등급 하락 카피).
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

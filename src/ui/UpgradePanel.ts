@@ -3,7 +3,7 @@ import type { GameLoop, HeroDef } from '../systems/GameLoop.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { Button } from './Button.ts';
-import { CLASS_NAME, COLORS, FONT, SUIT_COLOR, SUIT_NAME, SUIT_SYMBOL } from './theme.ts';
+import { CLASS_NAME, COLORS, FONT, OUTLINE, SUIT_COLOR, SUIT_NAME, SUIT_SYMBOL, SUIT_TEXT_COLOR, hex } from './theme.ts';
 
 export interface UpgradePanelCallbacks {
   onUpgrade: (suit: Suit) => void;
@@ -53,10 +53,10 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
 
     // 헤더
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
-    this.add(scene.add.text(40, 70, '상점 & 영웅', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.phaseHint = scene.add.text(40, 130, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
+    this.add(scene.add.text(40, 70, '상점 & 영웅', { fontSize: '46px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5));
+    this.phaseHint = scene.add.text(40, 130, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
     this.add(this.phaseHint);
-    this.add(new Button(scene, GAME_WIDTH - 170, 90, '게임 화면 ▶', () => cb.onClose(), { width: 260, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
+    this.add(new Button(scene, GAME_WIDTH - 170, 90, '게임 화면 ▶', () => cb.onClose(), { width: 260, height: 90, fontSize: 32, variant: 'gray' }));
 
     // 1) 종족 업그레이드
     this.add(this.section(scene, 250, '종족 업그레이드', '이번 판 한정 · 공격력 +6%/Lv · 비용 50×1.4^Lv'));
@@ -64,17 +64,17 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const x0 = (GAME_WIDTH - (4 * bw + 3 * 16)) / 2 + bw / 2;
     this.upgradeBtns = {} as Record<Suit, Button>;
     SUITS.forEach((s, i) => {
-      const b = new Button(scene, x0 + i * (bw + 16), 370, '', () => cb.onUpgrade(s), { width: bw, height: 130, fontSize: 26, fill: 0x3b4a66, textColor: COLORS.text });
+      const b = new Button(scene, x0 + i * (bw + 16), 370, '', () => cb.onUpgrade(s), { width: bw, height: 130, fontSize: 30, variant: 'gold' });
       this.upgradeBtns[s] = b;
       this.add(b);
     });
 
     // 2) 영웅 토큰 (왼쪽) · 카드 교환권 (오른쪽)
     this.add(this.section(scene, 500, '영웅 토큰 · 카드 교환권', '토큰: 플러시 이상 달성 시 획득, 3개 = 영웅 소환 1회   ·   교환권: 교환을 다 쓴 카드를 한 번 더 (💎 구매, 계정 보관)'));
-    this.shardText = scene.add.text(40, 570, '', { fontSize: '40px', color: '#f1d17a', fontFamily: FONT }).setOrigin(0, 0.5);
-    this.gradeText = scene.add.text(40, 616, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
-    this.ticketText = scene.add.text(GAME_WIDTH - 300, 585, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT, align: 'right' }).setOrigin(1, 0.5);
-    this.ticketBtn = new Button(scene, GAME_WIDTH - 150, 585, '', () => cb.onBuyTicket(), { width: 250, height: 84, fontSize: 24 });
+    this.shardText = scene.add.text(40, 570, '', { fontSize: '40px', color: '#f1d17a', fontFamily: FONT.body }).setOrigin(0, 0.5);
+    this.gradeText = scene.add.text(40, 616, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
+    this.ticketText = scene.add.text(GAME_WIDTH - 300, 585, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT.body, align: 'right' }).setOrigin(1, 0.5);
+    this.ticketBtn = new Button(scene, GAME_WIDTH - 150, 585, '', () => cb.onBuyTicket(), { width: 250, height: 84, fontSize: 28, variant: 'purple' });
     this.add([this.shardText, this.gradeText, this.ticketText, this.ticketBtn]);
 
     // 3) 영웅 선택
@@ -94,7 +94,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       this.add(this.heroCard(scene, h, x, y, cw, ch));
     });
 
-    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '◀ 왼쪽으로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5));
+    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '◀ 왼쪽으로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT.body }).setOrigin(0.5));
     scene.add.existing(this);
   }
 
@@ -102,7 +102,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const manage = loop.phase === 'manage';
     if (ticket) {
       this.ticketText.setText(`🎫 교환권 ${ticket.tickets}/${ticket.max}장\n💎 ${ticket.gems} 보유`);
-      this.ticketBtn.setLabel(ticket.tickets >= ticket.max ? '보관 최대' : `💎${ticket.cost} 구매`).setEnabled(ticket.canBuy);
+      this.ticketBtn.setLabel(ticket.tickets >= ticket.max ? '보관 최대' : `다이아 ${ticket.cost}\n교환권 구매`).setEnabled(ticket.canBuy);
     }
     this.phaseHint.setText(manage ? `💰 ${Math.floor(loop.gold)} · 정비 중 — 구매/소환 가능` : `💰 ${Math.floor(loop.gold)} · 구매/소환은 정비 페이즈(소환 직후)에서`);
 
@@ -119,7 +119,9 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const dots = '●'.repeat(Math.min(loop.shards, need)) + '○'.repeat(Math.max(0, need - Math.min(loop.shards, need)));
     this.shardText.setText(`${dots}  ${loop.shards}/${need}`);
     const grade = loop.heroGradeNow;
-    this.gradeText.setText(loop.hero ? `소환 완료: ${loop.hero.def.name} ${loop.hero.grade}급` : `지금 소환하면 ${grade}급 (라운드 ${loop.wave})`);
+    const drop = loop.heroGradeDrop;
+    this.gradeText.setText(loop.hero ? `소환 완료: ${loop.hero.def.name} ${loop.hero.grade}급`
+      : drop ? `지금 소환 시 ${grade}급 · 라운드 ${drop.until} 이후엔 ${drop.next}급으로 하락!` : `지금 소환 시 ${grade}급 (최하 등급)`);
 
     for (const c of this.heroCards) {
       const unlocked = loop.isHeroUnlocked(c.def.id);
@@ -145,8 +147,11 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
 
   private section(scene: Phaser.Scene, y: number, title: string, sub: string): Phaser.GameObjects.Container {
     const c = scene.add.container(0, y);
-    c.add(scene.add.text(40, 0, title, { fontSize: '34px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    c.add(scene.add.text(40, 40, sub, { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0, 0.5));
+    c.add(scene.add.text(40, 0, title, { fontSize: '34px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5));
+    const t = scene.add.text(40, 40, sub, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
+    // 화면 밖(닫힌 패널은 x=-1080)으로 삐져나와 보이지 않게 폭에 맞춰 축소
+    if (t.width > GAME_WIDTH - 80) t.setScale((GAME_WIDTH - 80) / t.width);
+    c.add(t);
     return c;
   }
 
@@ -155,15 +160,15 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
     const bg = scene.add.rectangle(0, 0, w, ht, COLORS.panel).setStrokeStyle(3, SUIT_COLOR[h.suit]);
     const left = -w / 2 + 20;
     const top = -ht / 2 + 18;
-    const title = scene.add.text(left, top, `${SUIT_SYMBOL[h.suit]} ${h.name}`, { fontSize: '26px', color: `#${SUIT_COLOR[h.suit].toString(16).padStart(6, '0')}`, fontFamily: FONT, fontStyle: 'bold' });
+    const title = scene.add.text(left, top, `${SUIT_SYMBOL[h.suit]} ${h.name}`, { fontSize: '26px', color: hex(SUIT_TEXT_COLOR[h.suit]), fontFamily: FONT.display, ...OUTLINE });
     const tg = h.combat.targets ?? 'both';
     const tgText = tg === 'ground' ? '지상' : tg === 'air' ? '공중만' : '지상·공중';
-    const tag = scene.add.text(w / 2 - 14, top + 4, `${h.unlock === 'basic' ? '기본' : '메타'} · ${tgText}`, { fontSize: '17px', color: tg === 'air' ? '#6fb7ff' : tg === 'ground' ? '#c9a06a' : COLORS.textMuted, fontFamily: FONT }).setOrigin(1, 0);
-    const passive = scene.add.text(left, top + 38, `패시브: ${this.passiveText(h)}`, { fontSize: '18px', color: COLORS.text, fontFamily: FONT, wordWrap: { width: w - 30 } });
+    const tag = scene.add.text(w / 2 - 14, top + 4, `${h.unlock === 'basic' ? '기본' : '메타'} · ${tgText}`, { fontSize: '17px', color: tg === 'air' ? '#6fb7ff' : tg === 'ground' ? '#c9a06a' : COLORS.textMuted, fontFamily: FONT.body }).setOrigin(1, 0);
+    const passive = scene.add.text(left, top + 38, `패시브: ${this.passiveText(h)}`, { fontSize: '18px', color: COLORS.text, fontFamily: FONT.body, wordWrap: { width: w - 30 } });
     const a = h.active;
-    const active = scene.add.text(left, top + 96, `액티브: ${a.name} (${a.cooldownSec}s) — ${a.desc}`, { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: w - 30 } });
-    const status = scene.add.text(left, ht / 2 - 32, '', { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5);
-    const btn = new Button(scene, w / 2 - 82, ht / 2 - 36, '소환', () => this.cb.onSummonHero(h.id), { width: 140, height: 54, fontSize: 21 });
+    const active = scene.add.text(left, top + 96, `액티브: ${a.name} (${a.cooldownSec}s) — ${a.desc}`, { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT.body, wordWrap: { width: w - 30 } });
+    const status = scene.add.text(left, ht / 2 - 32, '', { fontSize: '17px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
+    const btn = new Button(scene, w / 2 - 82, ht / 2 - 36, '소환', () => this.cb.onSummonHero(h.id), { width: 140, height: 62, fontSize: 24, variant: 'gold' });
     c.add([bg, title, tag, passive, active, status, btn]);
     this.heroCards.push({ def: h, bg, status, btn });
     return c;

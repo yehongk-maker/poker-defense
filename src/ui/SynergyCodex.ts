@@ -3,7 +3,7 @@ import type { GameLoop } from '../systems/GameLoop.ts';
 import type { SynergyGroupDef, SynergyKind } from '../systems/SynergySystem.ts';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { Button } from './Button.ts';
-import { COLORS, FONT, SUIT_COLOR } from './theme.ts';
+import { COLORS, FONT, OUTLINE, SUIT_COLOR } from './theme.ts';
 import { KIND_LABEL, countLabel, describeTier, groupCondition, groupTitle, thresholdLabel } from './synergyText.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 
@@ -30,16 +30,16 @@ export class SynergyCodex extends Phaser.GameObjects.Container {
       const bg = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.bg, 0.97).setInteractive();
       this.add(bg);
       this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
-      this.add(scene.add.text(40, 70, '시너지 도감', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-      this.add(scene.add.text(40, 130, '금색 = 현재 발동 중 · 회색 = 미도달. 상위 구간이 하위 구간을 대체', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0, 0.5));
-      this.add(new Button(scene, GAME_WIDTH - 130, 90, '닫기 ✕', () => this.onClose(), { width: 200, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
+      this.add(scene.add.text(40, 70, '시너지 도감', { fontSize: '46px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5));
+      this.add(scene.add.text(40, 130, '금색 = 현재 발동 중 · 회색 = 미도달. 상위 구간이 하위 구간을 대체', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5));
+      this.add(new Button(scene, GAME_WIDTH - 130, 90, '닫기 ✕', () => this.onClose(), { width: 200, height: 90, fontSize: 32, variant: 'gray' }));
     }
 
     // 탭
     const tw = 240, gap = 16;
     const x0 = (GAME_WIDTH - (4 * tw + 3 * gap)) / 2 + tw / 2;
     KINDS.forEach((k, i) => {
-      const b = new Button(scene, x0 + i * (tw + gap), top, KIND_LABEL[k], () => { this.kind = k; this.render(); }, { width: tw, height: 80, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text });
+      const b = new Button(scene, x0 + i * (tw + gap), top, KIND_LABEL[k], () => { this.kind = k; this.render(); }, { width: tw, height: 84, fontSize: 32, variant: 'blue' });
       this.tabBtns.set(k, b);
       this.add(b);
     });
@@ -85,15 +85,15 @@ export class SynergyCodex extends Phaser.GameObjects.Container {
       const color = this.kind === 'suit' ? SUIT_COLOR[key as Suit] : reached ? COLORS.goldLight : COLORS.panelLine;
       const box = scene.add.rectangle(GAME_WIDTH / 2, y + h / 2, GAME_WIDTH - 60, h, COLORS.panel).setStrokeStyle(reached ? 4 : 2, color);
       this.content.add(box);
-      const title = scene.add.text(50, y + 22, groupTitle(this.kind, key, def), { fontSize: '30px', color: reached ? '#f1d17a' : COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
-      const cur = scene.add.text(GAME_WIDTH - 50, y + 22, `현재 ${countLabel(this.kind, def, count)}`, { fontSize: '26px', color: reached ? '#f1d17a' : COLORS.textDim, fontFamily: FONT }).setOrigin(1, 0.5);
-      const cond = scene.add.text(50, y + 52, groupCondition(this.kind, key, def), { fontSize: '21px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0, 0.5);
+      const title = scene.add.text(50, y + 22, groupTitle(this.kind, key, def), { fontSize: '30px', color: reached ? '#f1d17a' : COLORS.text, fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5);
+      const cur = scene.add.text(GAME_WIDTH - 50, y + 22, `현재 ${countLabel(this.kind, def, count)}`, { fontSize: '26px', color: reached ? '#f1d17a' : COLORS.textDim, fontFamily: FONT.body }).setOrigin(1, 0.5);
+      const cond = scene.add.text(50, y + 52, groupCondition(this.kind, key, def), { fontSize: '21px', color: COLORS.textMuted, fontFamily: FONT.body }).setOrigin(0, 0.5);
       this.content.add([title, cur, cond]);
       def.thresholds.forEach((t, i) => {
         const on = reached === t;
         const passed = reached > t;
-        const label = scene.add.text(60, y + 84 + i * 34, thresholdLabel(this.kind, def, t), { fontSize: '23px', color: on ? '#f1d17a' : passed ? COLORS.textDim : COLORS.textMuted, fontFamily: FONT, fontStyle: on ? 'bold' : 'normal' }).setOrigin(0, 0.5);
-        const desc = scene.add.text(150, y + 84 + i * 34, describeTier(def.effects[i], this.kind, key), { fontSize: '22px', color: on ? COLORS.text : COLORS.textMuted, fontFamily: FONT, wordWrap: { width: GAME_WIDTH - 220 } }).setOrigin(0, 0.5);
+        const label = scene.add.text(60, y + 84 + i * 34, thresholdLabel(this.kind, def, t), { fontSize: '23px', color: on ? '#f1d17a' : passed ? COLORS.textDim : COLORS.textMuted, fontFamily: FONT.body, fontStyle: on ? 'bold' : 'normal' }).setOrigin(0, 0.5);
+        const desc = scene.add.text(150, y + 84 + i * 34, describeTier(def.effects[i], this.kind, key), { fontSize: '22px', color: on ? COLORS.text : COLORS.textMuted, fontFamily: FONT.body, wordWrap: { width: GAME_WIDTH - 220 } }).setOrigin(0, 0.5);
         this.content.add([label, desc]);
       });
       y += h + 14;

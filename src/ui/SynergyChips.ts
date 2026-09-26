@@ -2,47 +2,55 @@ import Phaser from 'phaser';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import type { ActiveSynergy } from '../systems/SynergySystem.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
-import { COLORS, FONT, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP } from './theme.ts';
+import { ALPHA, COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, SUIT_TEXT_COLOR, TAP_SLOP, hex } from './theme.ts';
+import { FIELD } from './TrackView.ts';
 
-const X = 8;          // 왼쪽 가장자리
-const TOP = 210;      // 트랙 상단 아래
-const W = 150;
-const H = 42;
-const GAP = 6;
-const MAX = 18;
+const X = 14;         // 왼쪽 가장자리
+const TOP = FIELD.y + 24;
+const S = 84;         // DESIGN §4 SynergyBadge 84×84
+const GAP = 8;
+const MAX = 10;
 const KIND_ORDER = { suit: 0, class: 1, race: 2, formation: 3 } as const;
-const KIND_COLOR: Record<ActiveSynergy['kind'], number> = { suit: 0x3b4a66, class: 0x5a3b8a, race: 0x2f6b4f, formation: 0x7a5a12 };
-const KIND_TAG: Record<ActiveSynergy['kind'], string> = { suit: '', class: '⚔', race: '☗', formation: '▦' };
+const KIND_COLOR: Record<ActiveSynergy['kind'], number> = { suit: COLOR.navy, class: COLOR.purple, race: COLOR.green, formation: COLOR.gold };
+const KIND_GLYPH: Record<ActiveSynergy['kind'], string> = { suit: '', class: '⚔', race: '☗', formation: '▦' };
 
 /**
- * 화면 왼쪽의 활성 시너지 칩 (GDD 3.2.2 "HUD 좌측에 활성 시너지 아이콘"). 트랙 왼쪽 띠 위에 반투명으로 세로 배치.
- * 탭하면 시너지 도감. 진영=수트 색, 역할 ⚔, 종족 ☗, 진형 ▦.
+ * 시너지 뱃지 세로 스택 (DESIGN §4 SynergyBadge): 84×84 hudBg 라운드 + 수트/축 아이콘 + 이름 + 우하단 골드 숫자 뱃지(발동 단계).
+ * 필드 왼쪽 위에 겹쳐 쌓고, 탭하면 시너지 도감.
  */
 export class SynergyChips {
   private root: Phaser.GameObjects.Container;
-  private title: Phaser.GameObjects.Text;
 
   constructor(private scene: Phaser.Scene, private onTap: () => void) {
     this.root = scene.add.container(0, 0).setDepth(4);
-    this.title = scene.add.text(X + W / 2, TOP - 14, '시너지', { fontSize: '18px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5).setDepth(4);
   }
 
   refresh(loop: GameLoop): void {
     this.root.removeAll(true);
-    const list = [...loop.activeSynergies].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.reached - a.reached).slice(0, MAX);
-    this.title.setVisible(true).setText(list.length ? `시너지 ${list.length}` : '시너지 없음');
-    list.forEach((s, i) => {
-      const y = TOP + i * (H + GAP) + H / 2;
+    const list = [...loop.activeSynergies].sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.reached - a.reached);
+    const shown = list.slice(0, MAX);
+    shown.forEach((s, i) => {
+      const cx = X + S / 2, cy = TOP + i * (S + GAP) + S / 2;
+      const g = this.scene.add.graphics();
       const isSuit = s.kind === 'suit';
-      const fill = isSuit ? SUIT_COLOR[s.key as Suit] : KIND_COLOR[s.kind];
-      const bg = this.scene.add.rectangle(X + W / 2, y, W, H, fill, 0.85).setStrokeStyle(2, 0xf1d17a, isSuit ? 0.6 : 0.35);
-      bg.setInteractive({ useHandCursor: true }).on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) this.onTap(); });
-      const label = isSuit
-        ? `${SUIT_SYMBOL[s.key as Suit]} ${s.name} ${s.reached}`
-        : `${KIND_TAG[s.kind]} ${s.name}${s.reached === 1 && s.count === 1 ? '' : ' ' + s.reached}`;
-      const txt = this.scene.add.text(X + 10, y, label, { fontSize: '21px', color: isSuit ? '#0b0e14' : COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5);
-      if (txt.width > W - 16) txt.setFontSize(17);
-      this.root.add([bg, txt]);
+      g.fillStyle(COLOR.hudBg, ALPHA.hudBg + 0.2).fillRoundedRect(cx - S / 2, cy - S / 2, S, S, 18);
+      g.lineStyle(3, isSuit ? SUIT_COLOR[s.key as Suit] : KIND_COLOR[s.kind]).strokeRoundedRect(cx - S / 2, cy - S / 2, S, S, 18);
+      // 단계 뱃지 (우하단 골드 원)
+      g.fillStyle(COLOR.goldDark).fillCircle(cx + S / 2 - 8, cy + S / 2 - 6, 15);
+      g.fillStyle(COLOR.gold).fillCircle(cx + S / 2 - 8, cy + S / 2 - 8, 14);
+      const icon = this.scene.add.text(cx, cy - 12, isSuit ? SUIT_SYMBOL[s.key as Suit] : KIND_GLYPH[s.kind], {
+        fontSize: '38px', color: isSuit ? hex(SUIT_TEXT_COLOR[s.key as Suit]) : hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE,
+      }).setOrigin(0.5);
+      const name = this.scene.add.text(cx, cy + 24, s.name, { fontSize: `${SIZE.tiny - 2}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5);
+      if (name.width > S - 8) name.setScale((S - 8) / name.width);
+      const lv = this.scene.add.text(cx + S / 2 - 8, cy + S / 2 - 8, `${s.reached}`, { fontSize: '20px', color: hex(COLOR.textOnGold), fontFamily: FONT.display }).setOrigin(0.5);
+      const z = this.scene.add.zone(cx, cy, S, S).setInteractive({ useHandCursor: true });
+      z.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) this.onTap(); });
+      this.root.add([g, icon, name, lv, z]);
     });
+    if (list.length > MAX) {
+      const y = TOP + MAX * (S + GAP) + 16;
+      this.root.add(this.scene.add.text(X + S / 2, y, `+${list.length - MAX}`, { fontSize: '26px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5));
+    }
   }
 }

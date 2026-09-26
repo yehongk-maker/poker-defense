@@ -16,11 +16,19 @@ import { OpponentPanel } from '../ui/OpponentPanel.ts';
 import { SynergyChips } from '../ui/SynergyChips.ts';
 import { OpponentAI, raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
 import { BettingSystem, REASON_TEXT, type BetAction } from '../systems/Betting.ts';
-import { BetBar, BET_BAR_H } from '../ui/BetBar.ts';
+import { BetBar } from '../ui/BetBar.ts';
 import { Button } from '../ui/Button.ts';
-import { COLORS, FONT, HAND_NAME, SUIT_SYMBOL } from '../ui/theme.ts';
+import { TimerRing } from '../ui/TimerRing.ts';
+import { SpeechBubble } from '../ui/SpeechBubble.ts';
+import { WaveBanner } from '../ui/WaveBanner.ts';
+import { ResultOverlay, type ResultRow } from '../ui/ResultOverlay.ts';
+import { FIELD } from '../ui/TrackView.ts';
+import { addBackdrop, addBottomSheet, addEdgeHandle } from '../ui/Backdrop.ts';
+import { COLOR, FONT, OUTLINE, HAND_NAME, SIZE, SUIT_SYMBOL, hex } from '../ui/theme.ts';
 
-const PANEL_Y = 1490; // 하단 패널 중심
+const PANEL_Y = 1530; // 정비/전투 패널 기준 y (베팅 행 아래)
+const HAND_Y = 1490;  // 손패 카드 중심 y
+const SHEET_TOP = FIELD.y + FIELD.h + 12; // 하단 조작 시트 시작
 
 /**
  * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. 1:1 대결: 상대 AI(OpponentAI)를 매 프레임 같이 진행.
@@ -52,6 +60,11 @@ export class GameScene extends Phaser.Scene {
   private speedBtn!: Button;
   private skillBtn!: Button;
   private toast!: Phaser.GameObjects.Text;
+  private combatTimer!: TimerRing;
+  private oppBubble!: SpeechBubble;
+  private banner!: WaveBanner;
+  private seenOppActions = new Set<string>();
+  private bestRank = -1;
   private selectedSlot = -1;
   private speed = 1;
   private ended = false;
@@ -66,6 +79,9 @@ export class GameScene extends Phaser.Scene {
     this.selectedSlot = -1;
     this.speed = 1;
     this.ended = false;
+    this.seenOppActions = new Set();
+    this.bestRank = -1;
+    addBackdrop(this, 'duel'); // DESIGN §2: 듀얼 = 퍼플 월드
 
     // 1:1 대결 상대 (메타 업그레이드 없는 기본 설정, smart 봇) + 판돈 걸기
     const oppData = loadGameData();
@@ -82,9 +98,10 @@ export class GameScene extends Phaser.Scene {
     this.track = new TrackView(this);
     this.chips = new SynergyChips(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.fx = new HandFx(this);
-    this.add.rectangle(GAME_WIDTH / 2, 1560, GAME_WIDTH, 720, COLORS.panel);
+    addBottomSheet(this, SHEET_TOP);
+    this.banner = new WaveBanner(this, GAME_WIDTH / 2, FIELD.y + 150);
 
-    this.hand = new CardHand(this, PANEL_Y - 60, {
+    this.hand = new CardHand(this, HAND_Y, {
       onExchange: (i) => this.safe(() => {
         const p = this.loop.cardPhase;
         const before = evaluateHand([...p.hand], () => 0).rank;
@@ -151,26 +168,21 @@ export class GameScene extends Phaser.Scene {
       if (side === 'right') this.info.refresh(this.loop);
       if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
     });
-    // 가장자리 핸들 (탭으로도 열기)
-    const mkHandle = (x: number, y: number, w: number, h: number, label: string, angle: number, side: 'left' | 'right' | 'bottom') => {
-      const r = this.add.rectangle(x, y, w, h, COLORS.panel).setStrokeStyle(2, COLORS.panelLine).setInteractive({ useHandCursor: true });
-      r.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < 24) this.nav.open(side); });
-      this.add.text(x, y, label, { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setAngle(angle);
-    };
-    // 왼쪽 위는 시너지 칩이 차지하므로 핸들은 카드 패널 높이에
-    mkHandle(22, 1500, 44, 220, '상점 · 영웅 ▶', 90, 'left');
-    mkHandle(GAME_WIDTH - 22, 1500, 44, 220, '◀ 족보 · 시너지', -90, 'right');
-    mkHandle(GAME_WIDTH / 2, GAME_HEIGHT - 22, 360, 40, '▲ 상대 진행 상황', 0, 'bottom');
+    // 가장자리 핸들 (탭으로도 열기). 왼쪽 위는 시너지 뱃지가 차지하므로 핸들은 손패 높이에
+    addEdgeHandle(this, 22, HAND_Y, 40, 230, '상점 · 영웅 ▶', 90, () => this.nav.open('left'));
+    addEdgeHandle(this, GAME_WIDTH - 22, HAND_Y, 40, 230, '◀ 족보 · 시너지', -90, () => this.nav.open('right'));
+    addEdgeHandle(this, GAME_WIDTH / 2, GAME_HEIGHT - 26, 380, 40, '▲ 상대 진행 상황', 0, () => this.nav.open('bottom'));
 
-    // 판돈 걸기 바 (맨 아래, 핸들 바로 위)
-    this.betBar = new BetBar(this, GAME_HEIGHT - 44 - BET_BAR_H / 2, (a) => this.bet(a));
+    // 판돈 걸기: 팟 알약 + 베팅 3버튼 (필드 바로 아래)
+    this.betBar = new BetBar(this, (a) => this.bet(a));
+    this.oppBubble = new SpeechBubble(this, this.hud.opponentAnchor.x, this.hud.opponentAnchor.y + 24).setDepth(16);
 
     // 전투 패널
-    this.combatText = this.add.text(GAME_WIDTH / 2, PANEL_Y - 40, '', { fontSize: '36px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.speedBtn = new Button(this, GAME_WIDTH / 2, PANEL_Y + 90, '⏩ 1×', () => {
+    this.combatText = this.add.text(GAME_WIDTH / 2 - 60, PANEL_Y - 30, '', { fontSize: '36px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE, align: 'center' }).setOrigin(0.5);
+    this.speedBtn = new Button(this, GAME_WIDTH / 2, PANEL_Y + 90, '배속 ×1', () => {
       this.speed = this.speed >= 3 ? 1 : this.speed + 1;
-      this.speedBtn.setLabel(`⏩ ${this.speed}×`);
-    }, { width: 300, height: 100, fontSize: 34, fill: 0x3b4a66, textColor: COLORS.text });
+      this.speedBtn.setLabel(`배속 ×${this.speed}`);
+    }, { width: 280, height: SIZE.btnM, fontSize: 36, variant: 'blue' });
     // 영웅 액티브 스킬 버튼 (전투 중, 쿨타임 표시)
     this.skillBtn = new Button(this, GAME_WIDTH / 2 - 250, PANEL_Y + 90, '영웅 없음', () => this.safe(() => {
       const r = this.loop.useHeroSkill();
@@ -178,11 +190,13 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.flash(140, 241, 209, 122);
       const hero = this.loop.hero;
       if (hero) this.track.pulseCell(hero.unit.slot);
-    }), { width: 420, height: 100, fontSize: 28, fill: 0x5a3b8a, textColor: COLORS.text });
-    this.speedBtn.setX(GAME_WIDTH / 2 + 170);
-    this.combatPanel = this.add.container(0, 0, [this.combatText, this.speedBtn, this.skillBtn]);
+    }), { width: 420, height: SIZE.btnM, fontSize: 30, variant: 'purple' });
+    this.skillBtn.setX(SIZE.gutter + 210);
+    this.speedBtn.setX(SIZE.gutter + 420 + 16 + 140);
+    this.combatTimer = new TimerRing(this, GAME_WIDTH - SIZE.gutter - SIZE.timerD / 2 - 6, PANEL_Y + 40);
+    this.combatPanel = this.add.container(0, 0, [this.combatText, this.speedBtn, this.skillBtn, this.combatTimer]);
 
-    this.toast = this.add.text(GAME_WIDTH / 2, 1215, '', { fontSize: '32px', color: '#f1d17a', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setAlpha(0).setDepth(20);
+    this.toast = this.add.text(GAME_WIDTH / 2, FIELD.y + FIELD.h - 70, '', { fontSize: '34px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 5, align: 'center' }).setOrigin(0.5).setAlpha(0).setDepth(20);
 
     // 배치: 유닛 탭 = 선택(판매 대상), 미확정 유닛 선택 중 빈 칸 탭 = 1회 이동 후 확정, 다른 유닛 탭 = 선택 변경, 같은 칸 = 해제
     this.track.setCellTapHandler((slot) => {
@@ -219,7 +233,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.loop.phase === 'card') {
       const r = this.loop.cardPhase.tick(dt * this.speed);
-      this.hand.setTimer(r.remaining);
+      this.hand.setTimer(r.remaining, this.loop.cardPhase.timerSeconds);
       this.hand.update(_time);
       if (r.autoConfirmed) this.confirmHand();
       return;
@@ -233,8 +247,10 @@ export class GameScene extends Phaser.Scene {
         const b = this.loop.battle;
         if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
         if (ev.timeUp && ev.leaked > 0) {
-          leakMsg = `⏱ 시간 초과! 이탈 ${ev.leaked}기 → 하트 -${ev.lifeLost}`;
+          leakMsg = `시간 초과! 이탈 ${ev.leaked}기 → 하트 -${ev.lifeLost}`;
           this.cameras.main.flash(220, 224, 71, 63);
+          // 위기 배너 (DESIGN §5-03): 하트를 잃었고 대공 유닛이 0기이며 공중 적이 있을 때만
+          if (ev.lifeLost > 0 && this.antiAirCount() === 0 && this.waveHasAir(this.loop.wave)) this.banner.show('공중 적 통과 중! 대공 유닛 부족', { danger: true, holdMs: 2400 });
         }
       }
       const b = this.loop.battle;
@@ -243,8 +259,9 @@ export class GameScene extends Phaser.Scene {
         this.track.updateTemporaryUnits(b.temporaryUnits);
         this.refreshSkillButton();
         const t = Math.ceil(b.timeRemaining);
-        this.combatText.setText(`라운드 ${this.loop.wave}   ⏱ ${t}초   남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
-          .setColor(t <= 5 ? '#e0473f' : COLORS.text);
+        this.combatText.setText(`라운드 ${this.loop.wave} · 남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
+          .setColor(t <= 5 ? hex(COLOR.red) : hex(COLOR.textMain));
+        this.combatTimer.set(b.timeRemaining, this.data_.waves[this.loop.wave - 1]?.timeLimit ?? 30);
       }
       this.track.update(dt * steps);
       this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
@@ -275,7 +292,8 @@ export class GameScene extends Phaser.Scene {
       const o = this.opponent.loop;
       const diff = this.loop.wave - o.wave;
       const lead = diff > 0 ? `내가 ${diff} 앞섬` : diff < 0 ? `상대가 ${-diff} 앞섬` : '동률';
-      this.hud.setOpponent(`상대 라운드 ${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''} · ${lead}`);
+      const exch = o.phase === 'card' ? ` · 교환 ${o.cardPhase.exchangesUsed}장` : '';
+      this.hud.setOpponent(`R${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''}${exch} · ${lead}`);
       if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
       if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
         this.oppDefeatAnnounced = true;
@@ -291,6 +309,7 @@ export class GameScene extends Phaser.Scene {
     if (this.betting.options('player', this.loop.wave).includes('check')) this.betting.act('player', this.loop.wave, 'check');
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
+    this.bestRank = Math.max(this.bestRank, hr.rank);
     // 족보 확정 연출: 등급이 높을수록 화려하게 (트랙 중앙)
     if (RANK_TIER[hr.rank] >= 1) this.fx.celebrate(hr.rank, FX_CENTER.x, FX_CENTER.y, true);
     const lines = [`${HAND_NAME[hr.rank]}!`];
@@ -322,8 +341,48 @@ export class GameScene extends Phaser.Scene {
       else this.showToast(`라운드 ${r.wave} 동률 — 판돈 💰${r.pot} 다음 라운드로 이월`);
       this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
     }
+    this.announceOpponentBets();
     // 상대 선택이 바뀌었을 수 있으니 바는 매 프레임 갱신 (텍스트 setText는 같은 값이면 비용 없음)
     this.betBar.refresh(this.betting.view('player', this.loop.wave), this.loop.phase);
+  }
+
+  /** 상대 베팅 액션을 말풍선으로 (DESIGN §4 SpeechBubble, 강조어 red) */
+  private announceOpponentBets(): void {
+    const o = this.opponent.loop;
+    for (const w of new Set([o.wave, o.wave - 1, this.loop.wave])) {
+      const rb = this.betting.round(w);
+      if (!rb) continue;
+      const a = rb.action.opponent, r = rb.response.opponent;
+      if (a && !this.seenOppActions.has(`${w}:a`)) {
+        this.seenOppActions.add(`${w}:a`);
+        if (a === 'raise') this.oppBubble.show(`레이즈 +${rb.raise?.amount ?? ''}!`, true);
+        else if (!rb.raise || rb.raise.by !== 'player') this.oppBubble.show('체크');
+      }
+      if (r && !this.seenOppActions.has(`${w}:r`)) {
+        this.seenOppActions.add(`${w}:r`);
+        this.oppBubble.show(r === 'call' ? '콜! 받아친다' : '폴드…', r === 'call');
+      }
+    }
+  }
+
+  /** 대공 가능한 유닛 수 (영웅 포함) */
+  private antiAirCount(): number {
+    const all = this.loop.hero ? [...this.loop.units, this.loop.hero.unit] : [...this.loop.units];
+    return all.filter((u) => u.def.targets !== 'ground').length;
+  }
+
+  private waveHasAir(wave: number): boolean {
+    const w = this.data_.waves[wave - 1];
+    return !!w && w.groups.some((g) => this.data_.enemyTypes[g.type]?.movement === 'air');
+  }
+
+  /** 새 라운드 예고 배너: 보스 / 공중 웨이브 */
+  private announceWave(): void {
+    const w = this.data_.waves[this.loop.wave - 1];
+    if (!w) return;
+    const air = w.groups.filter((g) => this.data_.enemyTypes[g.type]?.movement === 'air').reduce((n, g) => n + g.count, 0);
+    if (w.boss) this.banner.show(`보스 라운드! ${this.data_.enemyTypes[w.groups.find((g) => this.data_.enemyTypes[g.type]?.boss)?.type ?? '']?.name ?? ''}`.trim(), { danger: true });
+    else if (air > 0) this.banner.show(`공중 적 ${air}기 접근!`, { wings: true });
   }
 
   private refreshSkillButton(): void {
@@ -361,7 +420,8 @@ export class GameScene extends Phaser.Scene {
     // 라이브 족보: 수트 동수 경합은 표시에 영향 없으므로 고정 rng
     const result = evaluateHand([...p.hand], () => 0);
     this.hand.deal(p.hand, this.exchangeStatus(), result);
-    this.hand.setTimer(p.timeRemaining);
+    this.hand.setTimer(p.timeRemaining, p.timerSeconds);
+    this.announceWave();
   }
 
   private refreshPanels(): void {
@@ -404,24 +464,38 @@ export class GameScene extends Phaser.Scene {
   private showEnd(duel: DuelResult): void {
     if (this.ended) return;
     this.ended = true;
+    const total = this.data_.config.totalWaves;
     const cleared = this.loop.phase === 'victory';
     this.nav.close();
-    const win = duel.winner === 'player';
-    const title = duel.winner === 'draw' ? '무승부' : win ? '승리!' : '패배';
-    const color = duel.winner === 'draw' ? '#8fe3ff' : win ? '#f1d17a' : '#e0473f';
-    const reason: Record<string, string> = { first_clear: '마지막 라운드 먼저 클리어', opponent_out: '상대 탈락 후 라운드 앞섬', wave: '도달 라운드', life: '남은 하트', gold: '골드', draw: '완전 동률' };
+    const outcome = duel.winner === 'draw' ? 'draw' : duel.winner === 'player' ? 'win' : 'lose';
+    const PATH: Record<string, string> = {
+      first_clear: '1:1 레이스 · 마지막 라운드 먼저 클리어',
+      opponent_out: '1:1 레이스 · 상대 탈락 후 라운드 앞섬',
+      wave: '1:1 레이스 · 도달 라운드 판정',
+      life: '1:1 레이스 · 남은 하트 판정',
+      gold: '1:1 레이스 · 골드 판정',
+      draw: '1:1 레이스 · 완전 동률',
+    };
     const o = this.opponent.loop;
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setInteractive().setDepth(30);
-    this.add.text(GAME_WIDTH / 2, 700, title, { fontSize: '120px', color, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(31);
-    this.add.text(GAME_WIDTH / 2, 820, `나: 라운드 ${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life} 💰${Math.floor(this.loop.gold)}   vs   상대: 라운드 ${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life} 💰${Math.floor(o.gold)}`, { fontSize: '32px', color: COLORS.text, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
-    this.add.text(GAME_WIDTH / 2, 880, `판정 기준: ${reason[duel.reason]}   ·   판돈 획득 합계  나 💰${this.betting.won.player} / 상대 💰${this.betting.won.opponent}`, { fontSize: '28px', color: COLORS.textDim, fontFamily: FONT }).setOrigin(0.5).setDepth(31);
-    // 메타 진행 기록 + 젬 지급 (localStorage 저장)
-    const reward = getMeta().recordRun({ wave: cleared ? this.data_.config.totalWaves : this.loop.wave, victory: cleared });
-    const parts = [`💎 +${reward.gemsGained}`];
-    if (reward.newMilestones.length) parts.push(`마일스톤 ${reward.newMilestones.map((w) => `웨이브 ${w}`).join('·')} 최초 달성!`);
-    if (reward.newBest) parts.push('최고 기록 갱신!');
-    this.add.text(GAME_WIDTH / 2, 950, parts.join('   '), { fontSize: '34px', color: '#8fe3ff', fontFamily: FONT }).setOrigin(0.5).setDepth(31);
-    new Button(this, GAME_WIDTH / 2, 1040, '다시 시작', () => this.scene.restart(), { width: 480, height: 120, fontSize: 44 }).setDepth(31);
-    new Button(this, GAME_WIDTH / 2, 1200, '로비로', () => this.scene.start(SCENE.Lobby), { width: 480, height: 120, fontSize: 44, fill: 0x3b4a66, textColor: COLORS.text }).setDepth(31);
+    const caption = `${PATH[duel.reason]}\n나 R${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life}  vs  상대 R${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life}`;
+    // 메타 진행 기록 + 다이아 지급 (localStorage 저장)
+    const reward = getMeta().recordRun({ wave: cleared ? total : this.loop.wave, victory: cleared });
+    const rows: ResultRow[] = [
+      { icon: 'gem', label: '다이아', value: `+${reward.gemsGained}` },
+      { icon: 'coin', label: '판돈 획득 (나 / 상대)', value: `${this.betting.won.player} / ${this.betting.won.opponent}` },
+      { icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true },
+    ];
+    if (reward.newMilestones.length || reward.newBest) {
+      rows.push({ icon: 'token', label: reward.newMilestones.length ? `라운드 ${reward.newMilestones.join('·')} 최초 달성` : '최고 기록', value: reward.newBest ? '갱신!' : '달성!' });
+    }
+    // 별 3개: 승리 / 하트 4+ / 하트 7+ (DESIGN §5-05)
+    const stars = outcome === 'win' ? 1 + (this.loop.life >= 4 ? 1 : 0) + (this.loop.life >= 7 ? 1 : 0) : 0;
+    const subtitle = outcome === 'lose' ? (this.loop.phase === 'defeat' ? `라운드 ${this.loop.wave}에서 전멸...` : '상대가 먼저 결승선을 넘었어요') : undefined;
+    new ResultOverlay(this, {
+      outcome, caption, subtitle, stars, rows,
+      onContinue: () => this.scene.start(SCENE.Lobby),
+      onAgain: () => this.scene.restart(),
+    });
   }
+
 }

@@ -8,7 +8,7 @@ import { MetaScene } from './scenes/MetaScene.ts';
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  backgroundColor: '#0b0e14',
+  backgroundColor: '#0f2450',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

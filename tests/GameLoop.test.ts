@@ -317,3 +317,15 @@ describe('풀 게임 헤드리스 시뮬레이션 (봇 전략: 즉시 확정, �
     expect(bestWave >= 5).toBe(true); // 무전략 봇도 최소 5웨이브는 도달해야 초반 밸런스 정상
   });
 });
+
+describe('영웅 등급 하락 안내 (heroGradeDrop)', () => {
+  it('S급은 남은 웨이브가 기준 이상인 마지막 웨이브까지, 그다음은 A급', () => {
+    const g = new GameLoop(baseData(), () => 0.5);
+    expect(g.heroGradeNow).toBe('S');
+    const drop = g.heroGradeDrop!;
+    expect(drop.next).toBe('A');
+    const cfg = baseData().config;
+    // until 웨이브에서 남은 웨이브 = S 기준, until+1이면 기준 미만
+    expect(cfg.totalWaves - drop.until + 1).toBe(cfg.hero.grades.S.minRemainingWaves);
+  });
+});

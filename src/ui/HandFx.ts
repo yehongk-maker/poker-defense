@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { HandRank } from '../systems/PokerEvaluator.ts';
 import { GAME_WIDTH } from '../config.ts';
-import { FONT, HAND_NAME } from './theme.ts';
+import { COLOR, FONT, OUTLINE, HAND_NAME, hex } from './theme.ts';
 
 /**
  * 족보 등급별 연출 (GDD Phase 4 "족보 달성 연출 — 플러시 이상은 화려하게").
@@ -38,12 +38,13 @@ export interface TierStyle {
 }
 
 export const TIER_STYLE: TierStyle[] = [
-  { color: '#8f98a8', fontSize: 38, pulseMs: 0, sparks: [] },
-  { color: '#e8e2d0', fontSize: 42, pulseMs: 0, sparks: [0xe8e2d0] },
-  { color: '#f1d17a', fontSize: 48, stroke: '#7a5a12', strokeWidth: 4, pulseMs: 1400, sparks: [0xf1d17a, 0xd4a941] },
-  { color: '#8fe3ff', fontSize: 54, stroke: '#0f5c80', strokeWidth: 6, glow: '#4fd1e0', pulseMs: 1000, sparks: [0x8fe3ff, 0x4fd1e0, 0xffffff] },
-  { color: '#ffa3e0', fontSize: 60, stroke: '#7a1f5c', strokeWidth: 7, glow: '#ff5fc4', pulseMs: 700, sparks: [0xffa3e0, 0xff5fc4, 0xf1d17a, 0xffffff] },
-  { color: '#ffffff', fontSize: 68, stroke: '#3a2a80', strokeWidth: 8, glow: '#ffffff', pulseMs: 450, sparks: [0xff5f5f, 0xffc35f, 0xfff65f, 0x7dff5f, 0x5fe3ff, 0xb45fff] },
+  // DESIGN 토큰 기반: 흰 글자 + 다크 아웃라인이 기본, 등급이 오를수록 골드 → 블루 광채 → 핑크 → 무지개
+  { color: hex(COLOR.textSub), fontSize: 40, stroke: hex(COLOR.navyDark), strokeWidth: 4, pulseMs: 0, sparks: [] },
+  { color: hex(COLOR.textMain), fontSize: 46, stroke: hex(COLOR.navyDark), strokeWidth: 5, pulseMs: 0, sparks: [COLOR.textMain] },
+  { color: hex(COLOR.textGold), fontSize: 52, stroke: hex(COLOR.goldDark), strokeWidth: 6, pulseMs: 1400, sparks: [COLOR.textGold, COLOR.gold] },
+  { color: hex(COLOR.textMain), fontSize: 58, stroke: hex(COLOR.blueDark), strokeWidth: 7, glow: hex(COLOR.blue), pulseMs: 1000, sparks: [COLOR.blue, COLOR.textMain, COLOR.textGold] },
+  { color: hex(COLOR.textMain), fontSize: 64, stroke: hex(COLOR.purpleDark), strokeWidth: 8, glow: hex(COLOR.suitH), pulseMs: 700, sparks: [COLOR.suitH, COLOR.purple, COLOR.textGold, COLOR.textMain] },
+  { color: hex(COLOR.textMain), fontSize: 72, stroke: hex(COLOR.purpleDark), strokeWidth: 9, glow: hex(COLOR.textMain), pulseMs: 450, sparks: [COLOR.red, COLOR.critNum, COLOR.textGold, COLOR.green, COLOR.blue, COLOR.purple] },
 ];
 
 const RAINBOW = ['#ff6b6b', '#ffb36b', '#fff36b', '#8dff6b', '#6bf0ff', '#8d6bff', '#ff6bd6'];
@@ -86,7 +87,7 @@ export class HandFx {
     // 1) 텍스트 팝 (원페어 이상)
     if (tier >= 1) {
       const label = `${HAND_NAME[rank]}!`;
-      const t = this.scene.add.text(x, y, label, { fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5).setDepth(this.depth + 1);
+      const t = this.scene.add.text(x, y, label, { fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setDepth(this.depth + 1);
       applyTierStyle(t, tier, scale);
       fitTextWidth(t, GAME_WIDTH - 120);
       t.setScale(0.4).setAlpha(0);

@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import { GAME_WIDTH } from '../config.ts';
 import { Button } from './Button.ts';
-import { CLASS_NAME, COLORS, FONT, RACE_NAME, TARGET_LABEL } from './theme.ts';
+import { CLASS_NAME, COLORS, FONT, RACE_NAME, TARGET_LABEL, SIZE, OUTLINE } from './theme.ts';
 
 export interface ManageCallbacks {
   onMerge: () => void;
@@ -26,15 +26,15 @@ export class ManagePanel extends Phaser.GameObjects.Container {
 
   constructor(scene: Phaser.Scene, y: number, cb: ManageCallbacks) {
     super(scene, 0, y);
-    this.summary = scene.add.text(GAME_WIDTH / 2, -130, '', { fontSize: '34px', color: COLORS.text, fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.hint = scene.add.text(GAME_WIDTH / 2, -62, '반투명 유닛은 빈 칸 탭으로 1회 이동 가능 (안 옮기면 그 자리로 확정) · 확정 유닛은 판매만 · 같은 수트 한 줄 = 빙고', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5);
+    this.summary = scene.add.text(GAME_WIDTH / 2, -130, '', { fontSize: '32px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE, align: 'center' }).setOrigin(0.5);
+    this.hint = scene.add.text(GAME_WIDTH / 2, -62, '반투명 유닛은 빈 칸 탭으로 1회 이동 가능 (안 옮기면 그 자리로 확정) · 확정 유닛은 판매만 · 같은 수트 한 줄 = 빙고', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT.body, wordWrap: { width: 1000 }, align: 'center' }).setOrigin(0.5);
     this.add([this.summary, this.hint]);
 
     const row = 20;
-    this.mergeBtn = new Button(scene, GAME_WIDTH / 2 - 340, row, '합성', () => cb.onMerge(), { width: 300, height: 100, fontSize: 32, fill: 0x3b4a66, textColor: COLORS.text });
-    this.sellBtn = new Button(scene, GAME_WIDTH / 2, row, '판매', () => cb.onSell(), { width: 300, height: 100, fontSize: 32, fill: 0x6b3b3b, textColor: COLORS.text });
-    this.upgradesBtn = new Button(scene, GAME_WIDTH / 2 + 340, row, '업그레이드\n영웅 ▶', () => cb.onOpenUpgrades(), { width: 300, height: 100, fontSize: 28, fill: 0x5a3b8a, textColor: COLORS.text });
-    this.startBtn = new Button(scene, GAME_WIDTH / 2, row + 140, '전투 시작', () => cb.onStart(), { width: 640, height: 120, fontSize: 44 });
+    this.mergeBtn = new Button(scene, GAME_WIDTH / 2 - 340, row, '합성', () => cb.onMerge(), { width: 300, height: SIZE.btnM, fontSize: 36, variant: 'blue' });
+    this.sellBtn = new Button(scene, GAME_WIDTH / 2, row, '판매', () => cb.onSell(), { width: 300, height: SIZE.btnM, fontSize: 36, variant: 'red' });
+    this.upgradesBtn = new Button(scene, GAME_WIDTH / 2 + 340, row, '강화 · 영웅\n상점 ◀', () => cb.onOpenUpgrades(), { width: 300, height: SIZE.btnM, fontSize: 32, variant: 'gray' });
+    this.startBtn = new Button(scene, GAME_WIDTH / 2, row + 140, '전투 시작', () => cb.onStart(), { width: 640, height: SIZE.btnL, fontSize: 52, variant: 'gold' });
     this.add([this.mergeBtn, this.sellBtn, this.upgradesBtn, this.startBtn]);
     scene.add.existing(this);
   }
@@ -51,7 +51,6 @@ export class ManagePanel extends Phaser.GameObjects.Container {
     if (u && !isHero) this.sellBtn.setLabel(`판매 +💰${Math.floor(u.def.value * sellRatio)}`).setEnabled(true);
     else this.sellBtn.setLabel(isHero ? '영웅은 판매 불가' : '판매 (유닛 탭)').setEnabled(false);
     this.hint.setText(u ? `${u.def.name} · ${RACE_NAME[u.def.race]} · ${CLASS_NAME[u.def.class]} · 사거리 ${u.def.range}칸${TARGET_LABEL[u.def.targets] ? ` · ${TARGET_LABEL[u.def.targets]}만 공격` : ''}${auraText(u.def.effect)} — ${u.placed ? '배치 확정 (판매만 가능)' : '빈 칸 탭: 1회 배치'}` : '반투명 유닛은 빈 칸 탭으로 1회 이동 가능 (안 옮기면 그 자리로 확정) · 확정 유닛은 판매만 · 같은 수트 한 줄 = 빙고');
-    const hero = loop.canSummonHero ? '영웅 소환 가능!' : '업그레이드';
-    this.upgradesBtn.setLabel(`${hero}\n영웅 ▶`);
+    this.upgradesBtn.setLabel(loop.canSummonHero ? '영웅 소환!\n지금 가능' : '강화 · 영웅\n상점 열기').setVariant(loop.canSummonHero ? 'purple' : 'gray');
   }
 }

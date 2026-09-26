@@ -4,7 +4,7 @@ import type { OpponentAI } from '../systems/Duel.ts';
 import type { BettingSystem } from '../systems/Betting.ts';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { Button } from './Button.ts';
-import { COLORS, FONT, HAND_NAME, SUIT_COLOR, SUIT_SYMBOL } from './theme.ts';
+import { COLORS, FONT, OUTLINE, HAND_NAME, SUIT_COLOR, SUIT_SYMBOL } from './theme.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 
 const GRID_N = 5;
@@ -27,14 +27,14 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
     this.add(bg);
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 2, GAME_WIDTH, 4, COLORS.panelLine));
     this.add(scene.add.rectangle(GAME_WIDTH / 2, 90, GAME_WIDTH, 180, COLORS.panel));
-    this.add(scene.add.text(40, 70, '상대 진행 상황', { fontSize: '46px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0, 0.5));
-    this.add(scene.add.text(40, 130, '실시간 레이스 · 40라운드 먼저 클리어 = 승리 · 라운드마다 판돈은 더 잘 막은 쪽이', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT, wordWrap: { width: GAME_WIDTH - 330 } }).setOrigin(0, 0.5));
-    this.add(new Button(scene, GAME_WIDTH - 150, 90, '▼ 닫기', () => onClose(), { width: 220, height: 90, fontSize: 30, fill: 0x3b4a66, textColor: COLORS.text }));
+    this.add(scene.add.text(40, 70, '상대 진행 상황', { fontSize: '46px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5));
+    this.add(scene.add.text(40, 130, '실시간 레이스 · 40라운드 먼저 클리어 = 승리 · 라운드마다 판돈은 더 잘 막은 쪽이', { fontSize: '24px', color: COLORS.textDim, fontFamily: FONT.body, wordWrap: { width: GAME_WIDTH - 330 } }).setOrigin(0, 0.5));
+    this.add(new Button(scene, GAME_WIDTH - 150, 90, '▼ 닫기', () => onClose(), { width: 220, height: 90, fontSize: 32, variant: 'gray' }));
 
-    this.status = scene.add.text(GAME_WIDTH / 2, 260, '', { fontSize: '40px', color: COLORS.text, fontFamily: FONT, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
-    this.syn = scene.add.text(GAME_WIDTH / 2, 330, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5);
-    this.compare = scene.add.text(GAME_WIDTH / 2, 1100, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT, align: 'center' }).setOrigin(0.5);
-    this.ledger = scene.add.text(GAME_WIDTH / 2, 1230, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5, 0);
+    this.status = scene.add.text(GAME_WIDTH / 2, 260, '', { fontSize: '40px', color: COLORS.text, fontFamily: FONT.display, ...OUTLINE, align: 'center' }).setOrigin(0.5);
+    this.syn = scene.add.text(GAME_WIDTH / 2, 330, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT.body, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5);
+    this.compare = scene.add.text(GAME_WIDTH / 2, 1100, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT.body, align: 'center' }).setOrigin(0.5);
+    this.ledger = scene.add.text(GAME_WIDTH / 2, 1230, '', { fontSize: '26px', color: COLORS.textDim, fontFamily: FONT.body, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5, 0);
     this.add([this.status, this.syn, this.compare, this.ledger]);
 
     // 미니 필드
@@ -45,11 +45,11 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
       const x = gx + (i % GRID_N) * CELL + CELL / 2;
       const y = gy + Math.floor(i / GRID_N) * CELL + CELL / 2;
       const r = scene.add.rectangle(x, y, CELL - 8, CELL - 8, COLORS.cell).setStrokeStyle(2, COLORS.cellLine);
-      const t = scene.add.text(x, y, '', { fontSize: '30px', color: '#0b0e14', fontFamily: FONT, fontStyle: 'bold' }).setOrigin(0.5);
+      const t = scene.add.text(x, y, '', { fontSize: '30px', color: '#0b0e14', fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
       this.cells.push(r); this.cellText.push(t);
       this.add([r, t]);
     }
-    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '▼ 아래로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT }).setOrigin(0.5));
+    this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '▼ 아래로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT.body }).setOrigin(0.5));
     scene.add.existing(this);
   }
 
