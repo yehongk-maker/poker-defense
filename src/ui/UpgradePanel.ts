@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
-import type { GameLoop, HeroDef } from '../systems/GameLoop.ts';
+import { SHARD_LABEL, type GameLoop, type HeroDef } from '../systems/GameLoop.ts';
+import { HERO_SHARD_TYPES, type HeroShardType } from '../systems/SummonMapper.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { Button } from './Button.ts';
-import { CLASS_NAME, COLORS, FONT, OUTLINE, SUIT_COLOR, SUIT_NAME, SUIT_SYMBOL, SUIT_TEXT_COLOR, hex } from './theme.ts';
+import { CLASS_NAME, COLORS, FONT, OUTLINE, SUIT_COLOR, SUIT_NAME, SUIT_SYMBOL, SUIT_TEXT_COLOR, hex, COLOR } from './theme.ts';
 
 export interface UpgradePanelCallbacks {
   onUpgrade: (suit: Suit) => void;
@@ -22,6 +23,10 @@ export interface TicketInfo {
 }
 
 const SUITS: Suit[] = ['S', 'H', 'D', 'C'];
+/** 조각 게이지 레이아웃 (섹션 2) */
+const SHARD_ROW_Y = 566, SHARD_ROW_H = 44, SHARD_SOCKET_X = 190, SHARD_HERO_X = 340, SHARD_WILD_X = 560;
+/** 조각 종류 색 (DESIGN 토큰): 스트레이트=블루(연결), 플러시=퍼플(군단), 풀하우스=그린(수호), 와일드=골드 */
+const SHARD_COLOR: Record<HeroShardType, number> = { straight: COLOR.blue, flush: COLOR.purple, fullHouse: COLOR.green };
 
 interface HeroCard {
   def: HeroDef;
@@ -38,8 +43,11 @@ interface HeroCard {
 export class UpgradePanel extends Phaser.GameObjects.Container {
   private phaseHint: Phaser.GameObjects.Text;
   private upgradeBtns: Record<Suit, Button>;
-  private shardText: Phaser.GameObjects.Text;
+  private shardGfx: Phaser.GameObjects.Graphics;
+  private shardLabels: Record<HeroShardType, Phaser.GameObjects.Text>;
+  private wildText: Phaser.GameObjects.Text;
   private gradeText: Phaser.GameObjects.Text;
+  private lastShardKey = '';
   private ticketText: Phaser.GameObjects.Text;
   private ticketBtn: Button;
   private heroCards: HeroCard[] = [];
@@ -69,20 +77,37 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       this.add(b);
     });
 
-    // 2) 영웅 토큰 (왼쪽) · 카드 교환권 (오른쪽)
-    this.add(this.section(scene, 500, '영웅 토큰 · 카드 교환권', '토큰: 플러시 이상 달성 시 획득, 3개 = 영웅 소환 1회   ·   교환권: 교환을 다 쓴 카드를 한 번 더 (💎 구매, 계정 보관)'));
-    this.shardText = scene.add.text(40, 570, '', { fontSize: '40px', color: '#f1d17a', fontFamily: FONT.body }).setOrigin(0, 0.5);
-    this.gradeText = scene.add.text(40, 616, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
-    this.ticketText = scene.add.text(GAME_WIDTH - 300, 585, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT.body, align: 'right' }).setOrigin(1, 0.5);
-    this.ticketBtn = new Button(scene, GAME_WIDTH - 150, 585, '', () => cb.onBuyTicket(), { width: 250, height: 84, fontSize: 28, variant: 'purple' });
-    this.add([this.shardText, this.gradeText, this.ticketText, this.ticketBtn]);
+    // 2) 영웅 조각 게이지 3줄 (DESIGN §5-04) · 카드 교환권 (오른쪽)
+    this.add(this.section(scene, 500, '영웅 조각 · 카드 교환권', '스트레이트/플러시/풀하우스 조각 3개 = 그 조각의 영웅 소환 · 와일드는 어느 영웅에든 · 보스 클리어 시 랜덤 조각 2개   ·   교환권: 교환을 다 쓴 카드를 한 번 더'));
+    this.shardGfx = scene.add.graphics();
+    this.add(this.shardGfx);
+    this.shardLabels = {} as Record<HeroShardType, Phaser.GameObjects.Text>;
+    HERO_SHARD_TYPES.forEach((t, i) => {
+      const y = SHARD_ROW_Y + i * SHARD_ROW_H;
+      const label = scene.add.text(40, y, SHARD_LABEL[t], { fontSize: '24px', color: hex(SHARD_COLOR[t]), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5);
+      this.shardLabels[t] = label;
+      this.add(label);
+      // 게이지 옆: 그 조각으로 부르는 영웅 미니 아이콘 (수트 글리프)
+      const owners = loop.allHeroes.filter((h) => h.shardType === t);
+      owners.forEach((h, j) => {
+        const x = SHARD_HERO_X + j * 36;
+        const ic = scene.add.text(x, y, SUIT_SYMBOL[h.suit], { fontSize: '22px', color: hex(SUIT_TEXT_COLOR[h.suit]), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 3 }).setOrigin(0.5);
+        ic.setAlpha(h.unlock === 'basic' ? 1 : 0.45);
+        this.add(ic);
+      });
+    });
+    this.wildText = scene.add.text(SHARD_WILD_X, SHARD_ROW_Y + SHARD_ROW_H, '', { fontSize: '24px', color: hex(COLOR.textOnGold), fontFamily: FONT.display }).setOrigin(0.5);
+    this.gradeText = scene.add.text(40, SHARD_ROW_Y + 3 * SHARD_ROW_H + 2, '', { fontSize: '22px', color: COLORS.textDim, fontFamily: FONT.body }).setOrigin(0, 0.5);
+    this.ticketText = scene.add.text(GAME_WIDTH - 300, 600, '', { fontSize: '30px', color: '#8fe3ff', fontFamily: FONT.body, align: 'right' }).setOrigin(1, 0.5);
+    this.ticketBtn = new Button(scene, GAME_WIDTH - 150, 600, '', () => cb.onBuyTicket(), { width: 250, height: 84, fontSize: 28, variant: 'purple' });
+    this.add([this.wildText, this.gradeText, this.ticketText, this.ticketBtn]);
 
     // 3) 영웅 선택
-    this.add(this.section(scene, 660, '영웅 선택 (판당 1기 · 수트별 기본/메타/대공)', '일찍 소환할수록 강함: 남은 웨이브 20+ = S(×1.5) · 10+ = A · 그 외 B(×0.7). 근접 영웅은 지상만, 대공 영웅은 공중 특화'));
-    // 12종 = 3열(기본/메타/대공 순 아님: 정의 순) × 4행
-    const cols = 3, cw = 328, ch = 262, gapX = 12, gapY = 12;
+    this.add(this.section(scene, 730, '영웅 선택 (판당 1기 · 조각 종류가 맞는 영웅만 소환 가능)', '일찍 소환할수록 강함: 남은 웨이브 20+ = S(×1.5) · 10+ = A · 그 외 B(×0.7). 카드 하단 "종류 n/3(+w)" = 그 조각 n개 + 와일드 w개. 근접 영웅은 지상만, 대공 영웅은 공중 특화'));
+    // 12종 = 3열 × 4행
+    const cols = 3, cw = 328, ch = 250, gapX = 12, gapY = 10;
     const cx0 = (GAME_WIDTH - (cols * cw + (cols - 1) * gapX)) / 2 + cw / 2;
-    const cy0 = 730 + ch / 2;
+    const cy0 = 796 + ch / 2;
     // 수트별로 묶어 한 행에 ♠♥♦♣ 순이 되도록 정렬: 행 = 기본/메타/대공 순서
     const order = [...loop.allHeroes].sort((a, b) => {
       const si = ['S', 'H', 'D', 'C'];
@@ -115,9 +140,7 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
       else b.setLabel(`${SUIT_SYMBOL[s]} ${SUIT_NAME[s]} Lv${lv}\n💰${cost} · +${bonus}%`).setEnabled(manage && loop.gold >= cost);
     }
 
-    const need = 3;
-    const dots = '●'.repeat(Math.min(loop.shards, need)) + '○'.repeat(Math.max(0, need - Math.min(loop.shards, need)));
-    this.shardText.setText(`${dots}  ${loop.shards}/${need}`);
+    this.drawShardGauges(loop);
     const grade = loop.heroGradeNow;
     const drop = loop.heroGradeDrop;
     this.gradeText.setText(loop.hero ? `소환 완료: ${loop.hero.def.name} ${loop.hero.grade}급`
@@ -138,11 +161,53 @@ export class UpgradePanel extends Phaser.GameObjects.Container {
         c.status.setText('판당 1기 제한').setColor(COLORS.textMuted);
         c.btn.setLabel('소환').setEnabled(false);
       } else {
-        const can = manage && loop.canSummonHero;
-        c.status.setText(can ? `소환 가능 · ${grade}급` : loop.canSummonHero ? '정비 페이즈에서 소환' : `영웅 토큰 ${loop.shards}/${need}`).setColor(can ? '#5fcf7a' : COLORS.textDim);
+        // DESIGN §5-07: 조각 종류가 맞는 영웅만 활성, 나머지는 진행도 표시
+        const p = loop.heroProgress.find((p) => p.hero.id === c.def.id);
+        const ready = !!p?.ready;
+        const can = manage && ready;
+        const t = c.def.shardType;
+        // 버튼 왼쪽 공간이 좁아 짧게: "플러시 1/3(+1)" — (+n)은 와일드
+        const progress = p ? `${SHARD_LABEL[t]} ${Math.min(p.need, p.typed)}/${p.need}${p.wild > 0 ? `(+${p.wild})` : ''}` : SHARD_LABEL[t];
+        c.status.setText(can ? `소환 가능 · ${grade}급` : ready ? '정비 페이즈에서 소환' : progress).setColor(can ? '#5fcf7a' : ready ? COLORS.textDim : hex(SHARD_COLOR[t]));
         c.btn.setLabel(`${grade}급 소환`).setEnabled(can);
+        c.bg.setAlpha(ready ? 1 : 0.7);
       }
     }
+  }
+
+  /** 조각 게이지: 종류별 소켓 3칸 (해당 조각 = 종류색, 와일드로 채워지는 칸 = 골드 테두리) + 와일드 뱃지 */
+  private drawShardGauges(loop: GameLoop): void {
+    const sh = loop.shards;
+    const need = loop.heroProgress[0]?.need ?? 3;
+    const free = loop.hasFreeHeroSummon;
+    const key = `${sh.straight}/${sh.flush}/${sh.fullHouse}/${sh.wild}/${need}/${free}`;
+    if (key === this.lastShardKey) return;
+    this.lastShardKey = key;
+    const g = this.shardGfx.clear();
+    HERO_SHARD_TYPES.forEach((t, i) => {
+      const y = SHARD_ROW_Y + i * SHARD_ROW_H;
+      const typed = free ? need : sh[t];
+      const wildFill = free ? 0 : Math.min(sh.wild, Math.max(0, need - typed));
+      for (let k = 0; k < need; k++) {
+        const x = SHARD_SOCKET_X + k * 40;
+        g.fillStyle(COLOR.navyDark).fillCircle(x, y, 16);
+        if (k < typed) {
+          g.fillStyle(SHARD_COLOR[t]).fillCircle(x, y, 13);
+          g.fillStyle(0xffffff, 0.35).fillCircle(x - 4, y - 4, 5);
+        } else if (k < typed + wildFill) {
+          g.fillStyle(COLOR.gold).fillCircle(x, y, 13);
+          g.fillStyle(0xffffff, 0.35).fillCircle(x - 4, y - 4, 5);
+        } else {
+          g.lineStyle(2, COLOR.gray, 0.7).strokeCircle(x, y, 12);
+        }
+      }
+      if (typed + wildFill >= need) g.lineStyle(3, COLOR.textGold, 0.9).strokeRoundedRect(SHARD_SOCKET_X - 24, y - 21, need * 40 + 8, 42, 21);
+    });
+    // 와일드 뱃지
+    const wy = SHARD_ROW_Y + SHARD_ROW_H;
+    g.fillStyle(COLOR.goldDark).fillRoundedRect(SHARD_WILD_X - 60, wy - 20 + 4, 120, 40, 20);
+    g.fillStyle(COLOR.gold).fillRoundedRect(SHARD_WILD_X - 60, wy - 20, 120, 40, 20);
+    this.wildText.setText(`와일드 ${free ? '∞' : sh.wild}`);
   }
 
   private section(scene: Phaser.Scene, y: number, title: string, sub: string): Phaser.GameObjects.Container {

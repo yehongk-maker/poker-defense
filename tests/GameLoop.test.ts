@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GameLoop, type GameData } from '../src/systems/GameLoop.ts';
+import { parseHand } from '../src/systems/PokerEvaluator.ts';
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
 const load = (f: string) => JSON.parse(readFileSync(join(dataDir, f), 'utf8'));
@@ -269,7 +270,7 @@ describe('전투 통합', () => {
   it('배치: 합성 결과와 영웅도 소환 직후 1회 배치 가능', () => {
     const g = new GameLoop(baseData(), seededRng(5));
     g.confirmHand();
-    (g as unknown as { _shards: number })._shards = 3;
+    (g as unknown as { _shards: Record<string, number> })._shards = { straight: 0, flush: 0, fullHouse: 0, wild: 3 };
     g.summonHero(g.unlockedHeroes[0].id);
     expect(g.hero!.unit.placed).toBe(false);
     const to = g.freeSlots[0];
@@ -290,7 +291,7 @@ describe('풀 게임 헤드리스 시뮬레이션 (봇 전략: 즉시 확정, �
       for (const id of g.mergeable) {
         try { g.mergeUnits(id); } catch { /* 동시 합성 경합 무시 */ }
       }
-      if (g.canSummonHero) g.summonHero(g.unlockedHeroes[0].id);
+      if (g.canSummonHero) g.summonHero(g.heroProgress.find((p) => p.ready)!.hero.id);
       while (g.gold > 300 && g.upgradeCost('S') !== null && g.upgradeCost('S')! < g.gold - 300) {
         g.buyUpgrade('S');
       }
@@ -327,5 +328,100 @@ describe('영웅 등급 하락 안내 (heroGradeDrop)', () => {
     const cfg = baseData().config;
     // until 웨이브에서 남은 웨이브 = S 기준, until+1이면 기준 미만
     expect(cfg.totalWaves - drop.until + 1).toBe(cfg.hero.grades.S.minRemainingWaves);
+  });
+});
+
+describe('족보별 영웅 조각 (GDD 3.3)', () => {
+  /** 테스트 전용: 손패를 강제로 교체하고 확정 */
+  const withHand = (g: GameLoop, codes: string) => {
+    (g.cardPhase as unknown as { handCards: unknown[] }).handCards = parseHand(codes);
+    return g.confirmHand();
+  };
+  /** manage → 즉시 다음 카드 페이즈로 (전투를 건너뛰는 헬퍼) */
+  const nextCard = (g: GameLoop) => {
+    (g as unknown as { _phase: string })._phase = 'card';
+    g.cardPhase.start();
+  };
+
+  it('영웅마다 조각 종류가 정해져 있고 3종이 모두 쓰이며, 종류마다 기본 해금 영웅이 있다', () => {
+    const heroes = load('heroes.json').heroes as { shardType: string; unlock: string }[];
+    const types = new Set(heroes.map((h) => h.shardType));
+    expect([...types].sort()).toEqual(['flush', 'fullHouse', 'straight']);
+    for (const t of types) expect(heroes.some((h) => h.shardType === t && h.unlock === 'basic')).toBe(true);
+  });
+
+  it('스트레이트는 스트레이트 조각 1, 풀하우스는 풀하우스 조각 2를 준다', () => {
+    const g = new GameLoop(baseData(), seededRng(300));
+    const r1 = withHand(g, '9S 8H 7D 6C 5S');
+    expect(r1.shardsGained).toEqual({ straight: 1 });
+    nextCard(g);
+    const r2 = withHand(g, 'QS QH QD 5C 5S');
+    expect(r2.shardsGained).toEqual({ fullHouse: 2 });
+    expect(g.shards).toEqual({ straight: 1, flush: 0, fullHouse: 2, wild: 0 });
+  });
+
+  it('조각 종류가 맞아야 소환된다: 스트레이트 3개 → 황금 저격수 O, 수호 현자 X', () => {
+    const g = new GameLoop(baseData(), seededRng(301));
+    for (let i = 0; i < 3; i++) { if (i) nextCard(g); withHand(g, '9S 8H 7D 6C 5S'); }
+    expect(g.canSummon('golden_sniper')).toBe(true);   // straight
+    expect(g.canSummon('guardian_sage')).toBe(false);  // fullHouse
+    expect(g.canSummonHero).toBe(true);
+    expect(() => g.summonHero('guardian_sage')).toThrow(/풀하우스/);
+    g.summonHero('golden_sniper');
+    expect(g.shards.straight).toBe(0);
+  });
+
+  it('포카드는 와일드 조각 3개 — 어느 영웅이든 바로 소환 가능', () => {
+    const g = new GameLoop(baseData(), seededRng(302));
+    withHand(g, '7S 7H 7D 7C KS');
+    expect(g.shards.wild).toBe(3);
+    expect(g.heroProgress.every((p) => p.ready)).toBe(true);
+  });
+
+  it('소환 시 해당 종류 조각을 먼저 쓰고 모자란 만큼만 와일드를 쓴다', () => {
+    const g = new GameLoop(baseData(), seededRng(303));
+    withHand(g, 'AH 9H 7H 5H 2H'); // flush 1
+    nextCard(g);
+    withHand(g, '7S 7H 7D 7C KS');  // wild 3
+    g.summonHero('abyss_overlord');  // flush 영웅: flush 1 + wild 2
+    expect(g.shards.flush).toBe(0);
+    expect(g.shards.wild).toBe(1);
+  });
+
+  it('보스 웨이브를 클리어하면 랜덤 종류 조각 2개를 받고, 일반 웨이브는 주지 않는다', () => {
+    const mk = (boss: boolean, seed: number) => {
+      const data = baseData();
+      data.waves = data.waves.map((w, i) => (i === 0 ? { ...w, boss, hp: 1, groups: [{ type: 'skeleton', count: 1 }] } : w));
+      const g = new GameLoop(data, seededRng(seed));
+      g.confirmHand();
+      g.startCombat();
+      let bossShard: { type: string; amount: number } | undefined;
+      for (let t = 0; t < 60 && g.phase === 'combat'; t += 0.1) bossShard = g.tickCombat(0.1).bossShard ?? bossShard;
+      return { g, bossShard };
+    };
+    const b = mk(true, 304);
+    expect(b.g.wave).toBe(2);
+    expect(b.bossShard).toBeDefined();
+    expect(['straight', 'flush', 'fullHouse']).toContain(b.bossShard!.type);
+    expect(b.bossShard!.amount).toBe(2);
+    expect(b.g.shards[b.bossShard!.type as 'straight']).toBe(2);
+    const n = mk(false, 305);
+    expect(n.bossShard).toBeUndefined();
+    expect(n.g.shards).toEqual({ straight: 0, flush: 0, fullHouse: 0, wild: 0 });
+  });
+
+  it('로열 스트레이트 플러시는 조각 없이 아무 영웅이나 소환 (조각은 그대로 남음)', () => {
+    const g = new GameLoop(baseData(), seededRng(306));
+    const r = withHand(g, 'AS KS QS JS TS');
+    expect(r.freeHeroSummon).toBe(true);
+    expect(g.hasFreeHeroSummon).toBe(true);
+    expect(g.canSummon('guardian_sage')).toBe(true);
+    g.summonHero('guardian_sage');
+    expect(g.shards).toEqual({ straight: 0, flush: 0, fullHouse: 0, wild: 0 });
+  });
+
+  it('행운 드로우 설정(config.drawAssist)이 CardPhase에 전달된다', () => {
+    const g = new GameLoop(baseData(), seededRng(307));
+    expect(g.cardPhase.outWeight).toBe(baseData().config.drawAssist!.outWeight);
   });
 });

@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
     "waves": "node scripts/generate-waves.mjs",
-    "sim": "tsx scripts/simulate.ts"
+    "sim": "tsx scripts/simulate.ts",
+    "shards": "tsx scripts/hero-shard-report.ts",
+    "draw": "tsx scripts/draw-assist-report.ts"
   },
   "dependencies": {
     "phaser": "^4.2.1"

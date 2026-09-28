@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { loadGameData, loadDuelConfig } from '../data/index.ts';
 import { getMeta } from '../meta.ts';
-import { GameLoop, type GameData } from '../systems/GameLoop.ts';
+import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
+import type { ShardKey } from '../systems/SummonMapper.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
 import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
 import { HUD } from '../ui/HUD.ts';
@@ -242,10 +243,15 @@ export class GameScene extends Phaser.Scene {
     if (this.loop.phase === 'combat') {
       const steps = this.speed;
       let leakMsg: string | null = null;
+      let bossMsg: string | null = null;
       for (let i = 0; i < steps && this.loop.phase === 'combat'; i++) {
         const ev = this.loop.tickCombat(dt);
         const b = this.loop.battle;
         if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
+        if (ev.bossShard) {
+          bossMsg = `보스 격파! ${SHARD_LABEL[ev.bossShard.type]} 조각 +${ev.bossShard.amount}`;
+          this.cameras.main.flash(180, 255, 228, 94);
+        }
         if (ev.timeUp && ev.leaked > 0) {
           leakMsg = `시간 초과! 이탈 ${ev.leaked}기 → 하트 -${ev.lifeLost}`;
           this.cameras.main.flash(220, 224, 71, 63);
@@ -270,7 +276,7 @@ export class GameScene extends Phaser.Scene {
         // 클리어 → 카드 / 패배 / 승리
         this.track.clearEnemies();
         if (this.loop.phase === 'card') {
-          this.showToast(leakMsg ?? `라운드 ${this.loop.wave - 1} 클리어! 바로 다음 라운드`);
+          this.showToast(bossMsg ?? leakMsg ?? `라운드 ${this.loop.wave - 1} 클리어! 바로 다음 라운드`);
           this.refreshHand();
         } else if (leakMsg) {
           this.showToast(leakMsg);
@@ -315,8 +321,9 @@ export class GameScene extends Phaser.Scene {
     const lines = [`${HAND_NAME[hr.rank]}!`];
     if (res.deployed.length) lines.push('소환: ' + res.deployed.map((d) => `${SUIT_SYMBOL[d.def.suit]}${d.def.name} T${d.def.tier}`).join(', '));
     if (res.overflowSold.length) lines.push(`슬롯 초과 자동 판매 +💰${res.overflowSold.reduce((s, o) => s + o.gold, 0)}`);
-    if (res.shardsGained) lines.push(`영웅 토큰 +${res.shardsGained}`);
-    if (res.freeHeroSummon) lines.push('로열 스트레이트 플러시! 영웅 즉시 소환 가능');
+    const gained = (Object.entries(res.shardsGained) as [ShardKey, number][]).filter(([, n]) => n > 0).map(([k, n]) => `${SHARD_LABEL[k]} 조각 +${n}`);
+    if (gained.length) lines.push(`영웅 조각: ${gained.join(', ')}`);
+    if (res.freeHeroSummon) lines.push('로열 스트레이트 플러시! 조각 없이 아무 영웅이나 소환 가능');
     this.manage.setSummary(lines.join('\n'));
     this.selectedSlot = -1;
     this.refreshPanels();
@@ -404,7 +411,8 @@ export class GameScene extends Phaser.Scene {
   /** 교환 현황 (카드별 남은 횟수·카운터·교환권) */
   private exchangeStatus(): ExchangeStatus {
     const p = this.loop.cardPhase;
-    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed };
+    const outs = p.outWeight > 0 && p.state === 'choosing' ? p.hand.map((_, i) => p.outsFor(i)) : [];
+    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed, outs };
   }
 
   /** 상점 패널용 교환권 정보 */

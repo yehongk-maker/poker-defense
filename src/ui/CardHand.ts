@@ -24,6 +24,8 @@ export interface ExchangeStatus {
   tickets: number;
   /** 이번 라운드 교환권 사용 횟수 */
   ticketsUsed: number;
+  /** 카드별: 이 카드를 바꾸면 나머지와 어울리는 카드가 덱에 몇 장 (행운 드로우, 보정 꺼져 있으면 빈 배열) */
+  outs?: readonly number[];
 }
 
 const CARD_W = SIZE.cardW;
@@ -47,6 +49,7 @@ interface CardView {
   suit: Phaser.GameObjects.Text;
   tagBg: Phaser.GameObjects.Graphics;
   tag: Phaser.GameObjects.Text;
+  outs: Phaser.GameObjects.Text;
   faceUp: boolean;
   baseY: number;
   /** 현재 앞면에 그려진 카드 (족보 구성 카드 강조용) */
@@ -89,7 +92,9 @@ export class CardHand extends Phaser.GameObjects.Container {
       const suit = scene.add.text(8, 22, '', { fontSize: '76px', fontFamily: FONT.body }).setOrigin(0.5);
       const tagBg = scene.add.graphics();
       const tag = scene.add.text(0, CARD_H / 2 - 20, '', { fontSize: '19px', fontFamily: FONT.display }).setOrigin(0.5);
-      const front = scene.add.container(0, 0, [face, rank, small, suit, tagBg, tag]);
+      // 행운 드로우: 이 카드를 바꾸면 어울리는 카드가 몇 장 남았는지 (우상단)
+      const outs = scene.add.text(CARD_W / 2 - 8, -CARD_H / 2 + 8, '', { fontSize: '16px', fontFamily: FONT.body, fontStyle: '900', color: hex(COLOR.blueDark) }).setOrigin(1, 0);
+      const front = scene.add.container(0, 0, [face, rank, small, suit, tagBg, tag, outs]);
       // 뒷면: navy + 골드 테두리 + 수트 문양
       const bg = scene.add.graphics();
       bg.fillStyle(0x000000, 0.25).fillRoundedRect(-CARD_W / 2, -CARD_H / 2 + 6, CARD_W, CARD_H, SIZE.radiusCard);
@@ -103,7 +108,7 @@ export class CardHand extends Phaser.GameObjects.Container {
       root.on('pointerup', (p: Phaser.Input.Pointer) => {
         if (p.getDistance() < TAP_SLOP && this.busy === 0 && (this.exchangeLeft[i] > 0 || this.status.tickets > 0)) this.cb.onExchange(i);
       });
-      const v: CardView = { root, front, back, face, rank, small, suit, tagBg, tag, faceUp: true, baseY: FAN_DY[i] };
+      const v: CardView = { root, front, back, face, rank, small, suit, tagBg, tag, outs, faceUp: true, baseY: FAN_DY[i] };
       this.drawFace(v, false);
       this.cards.push(v);
       this.add(root);
@@ -139,6 +144,7 @@ export class CardHand extends Phaser.GameObjects.Container {
       const v = this.cards[i];
       this.setFace(v, card);
       this.setTag(v, 'none');
+      v.outs.setText('');
       this.drawFace(v, false);
       v.root.setY(v.baseY);
       this.showSide(v, false);
@@ -165,6 +171,7 @@ export class CardHand extends Phaser.GameObjects.Container {
     this.flip(v, false, () => {
       this.setFace(v, card);
       this.setTag(v, 'none');
+      v.outs.setText('');
       this.flip(v, true, () => {
         this.busy--;
         if (this.busy === 0) this.afterReveal();
@@ -192,6 +199,13 @@ export class CardHand extends Phaser.GameObjects.Container {
     const t = status.tickets;
     this.ticketText.setText(`교환권 ${t}장${status.ticketsUsed > 0 ? ` · 사용 ${status.ticketsUsed}` : ''}`).setColor(hex(t > 0 ? COLOR.textSub : COLOR.gray));
     if (this.busy === 0 && this.lastResult) this.cards.forEach((v, i) => this.setTag(v, this.tagKind(i)));
+  }
+
+  /** 우상단 아웃 수: 교환 가능한 카드에만 */
+  private setOuts(v: CardView, i: number): void {
+    const kind = this.tagKind(i);
+    const n = this.status.outs?.[i];
+    v.outs.setText(kind !== 'done' && n !== undefined && n > 0 ? `아웃 ${n}` : '');
   }
 
   /** 남은 시간 (타이머 링) */
@@ -224,11 +238,13 @@ export class CardHand extends Phaser.GameObjects.Container {
       this.drawFace(v, isCore);
       this.scene.tweens.add({ targets: v.root, y: v.baseY - (isCore ? 18 : 0), duration: 180, ease: 'Back.easeOut' });
       this.setTag(v, this.tagKind(i));
+      this.setOuts(v, i);
     });
     this.setRank(result);
     const st = this.status;
     const left = st.total - st.used;
-    if (left > 0) this.hintText.setText(`카드를 탭하면 그 카드만 교환 · 남은 교환 ${left}회`);
+    const assist = st.outs && st.outs.length ? ' · 행운 드로우: 남긴 카드와 어울리는 카드가 2배 잘 나와요' : '';
+    if (left > 0) this.hintText.setText(`카드를 탭하면 그 카드만 교환 · 남은 ${left}회${assist}`);
     else if (st.tickets > 0) this.hintText.setText(`기본 교환 완료 · 카드를 탭하면 교환권 1장으로 한 번 더 (남은 ${st.tickets}장)`);
     else this.hintText.setText('교환 완료 · 진행하세요 (교환권은 상점에서 다이아로 구매)');
     this.confirmBtn.setEnabled(true);

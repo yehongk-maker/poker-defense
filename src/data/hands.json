@@ -1,13 +1,84 @@
 {
-  "comment": "GDD 3.1 족보 → 소환 결과 테이블. tier: 소환 유닛 티어, jokerShards: 영웅 토큰, heroSummon: 영웅 즉시 소환",
-  "HighCard": { "summonTiers": [1], "jokerShards": 0, "heroSummon": false },
-  "OnePair": { "summonTiers": [1, 1], "jokerShards": 0, "heroSummon": false },
-  "TwoPair": { "summonTiers": [2, 1], "jokerShards": 0, "heroSummon": false },
-  "ThreeOfAKind": { "summonTiers": [2, 2], "jokerShards": 0, "heroSummon": false },
-  "Straight": { "summonTiers": [3], "jokerShards": 0, "heroSummon": false },
-  "Flush": { "summonTiers": [3], "jokerShards": 1, "heroSummon": false },
-  "FullHouse": { "summonTiers": [4], "jokerShards": 0, "heroSummon": false },
-  "FourOfAKind": { "summonTiers": [4], "jokerShards": 1, "heroSummon": false },
-  "StraightFlush": { "summonTiers": [5], "jokerShards": 2, "heroSummon": false },
-  "RoyalStraightFlush": { "summonTiers": [], "jokerShards": 0, "heroSummon": true }
+  "comment": "GDD 3.1 족보 → 소환 결과. summonTiers: 소환 유닛 티어. shards: 이 족보가 주는 영웅 조각 {종류: 개수} — straight/flush/fullHouse(해당 영웅 전용) + wild(어느 영웅에든). heroSummon: 영웅 즉시 소환. 수치 근거: design/hero-shard-report.md",
+  "HighCard": {
+    "summonTiers": [
+      1
+    ],
+    "shards": {},
+    "heroSummon": false
+  },
+  "OnePair": {
+    "summonTiers": [
+      1,
+      1
+    ],
+    "shards": {},
+    "heroSummon": false
+  },
+  "TwoPair": {
+    "summonTiers": [
+      2,
+      1
+    ],
+    "shards": {},
+    "heroSummon": false
+  },
+  "ThreeOfAKind": {
+    "summonTiers": [
+      2,
+      2
+    ],
+    "shards": {},
+    "heroSummon": false
+  },
+  "Straight": {
+    "summonTiers": [
+      3
+    ],
+    "shards": {
+      "straight": 1
+    },
+    "heroSummon": false
+  },
+  "Flush": {
+    "summonTiers": [
+      3
+    ],
+    "shards": {
+      "flush": 1
+    },
+    "heroSummon": false
+  },
+  "FullHouse": {
+    "summonTiers": [
+      4
+    ],
+    "shards": {
+      "fullHouse": 2
+    },
+    "heroSummon": false
+  },
+  "FourOfAKind": {
+    "summonTiers": [
+      4
+    ],
+    "shards": {
+      "wild": 3
+    },
+    "heroSummon": false
+  },
+  "StraightFlush": {
+    "summonTiers": [
+      5
+    ],
+    "shards": {
+      "wild": 3
+    },
+    "heroSummon": false
+  },
+  "RoyalStraightFlush": {
+    "summonTiers": [],
+    "shards": {},
+    "heroSummon": true
+  }
 }

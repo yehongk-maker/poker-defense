@@ -30,7 +30,7 @@ export function baseData(highcardOnly = false): GameData {
     for (const k of Object.keys(hands)) {
       if (k === 'comment') continue;
       // TwoPair는 SummonMapper가 2슬롯을 요구하므로 [1,1] (4.75% 라운드만 2기 — 근사 허용)
-      hands[k] = { summonTiers: k === 'TwoPair' ? [1, 1] : [1], jokerShards: 0, heroSummon: false };
+      hands[k] = { summonTiers: k === 'TwoPair' ? [1, 1] : [1], shards: {}, heroSummon: false };
     }
   }
   return {
@@ -54,7 +54,7 @@ export function seededRng(seed: number): () => number {
 }
 
 export type Bot = 'highcard' | 'naive' | 'smart';
-import { dominantSuit, spendAllOnUpgrades, smartCardPhase } from '../src/systems/bots.ts';
+import { dominantSuit, spendAllOnUpgrades, smartCardPhase, readyHero } from '../src/systems/bots.ts';
 
 export function playGame(bot: Bot, seed: number): GameLoop {
   const g = new GameLoop(baseData(bot === 'highcard'), seededRng(seed));
@@ -69,13 +69,13 @@ export function playGame(bot: Bot, seed: number): GameLoop {
     const shouldMerge = bot !== 'smart' || g.units.length >= 23;
     if (shouldMerge) for (const id of g.mergeable) { try { g.mergeUnits(id); } catch { /* 경합 무시 */ } }
     if (bot === 'naive') {
-      if (g.canSummonHero) g.summonHero(g.unlockedHeroes[0].id);
+      const h = readyHero(g);
+      if (h) g.summonHero(h);
       while (g.gold > 300 && g.upgradeCost('S') !== null && g.upgradeCost('S')! < g.gold - 300) g.buyUpgrade('S');
     } else {
-      if (bot === 'smart' && g.canSummonHero) {
-        const s = dominantSuit(g);
-        const h = g.unlockedHeroes.find((h) => h.suit === s) ?? g.unlockedHeroes[0];
-        g.summonHero(h.id);
+      if (bot === 'smart') {
+        const h = readyHero(g);
+        if (h) g.summonHero(h);
       }
       spendAllOnUpgrades(g, dominantSuit(g));
     }

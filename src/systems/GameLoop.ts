@@ -15,6 +15,10 @@ import { CardPhase, type CardPhaseConfig } from './CardPhase.ts';
 import {
   SummonMapper,
   type UnitDef,
+  type HeroShardType,
+  type ShardKey,
+  type ShardBag,
+  SHARD_KEYS,
   type UnitClass,
   type UnitRace,
   type HandsTable,
@@ -30,6 +34,9 @@ import {
 import { SynergySystem, type SynergiesTable, type SynergyResult } from './SynergySystem.ts';
 import { coverage, type TrackGeometry } from './Geometry.ts';
 
+/** 조각 종류 한글명 (오류 메시지·UI 공용) */
+export const SHARD_LABEL: Record<ShardKey, string> = { straight: '스트레이트', flush: '플러시', fullHouse: '풀하우스', wild: '와일드' };
+
 export type GamePhase = 'card' | 'manage' | 'combat' | 'victory' | 'defeat';
 
 export interface HeroDef {
@@ -37,6 +44,8 @@ export interface HeroDef {
   name: string;
   suit: Suit;
   unlock: 'basic' | 'meta';
+  /** 소환에 필요한 조각 종류 (wild로 대체 가능) — GDD 3.3 */
+  shardType: HeroShardType;
   /** 종족 시너지 카운트 +1 (docs/synergy-design.md) */
   race: UnitRace;
   combat: { baseDps: number; attackInterval: number; attackType: 'melee' | 'ranged' | 'magic'; range: number; targets?: 'ground' | 'air' | 'both' };
@@ -64,8 +73,13 @@ export interface GameConfig {
   sellRatio: number;
   totalWaves: number;
   upgrade: { baseCost: number; costGrowth: number; maxLevel: number; attackPctPerLevel: number };
+  /** 행운 드로우 (GDD 3.1.1). 없으면 순수 확률. 솔로·대전 모두 같은 값 — 대전 공정성 */
+  drawAssist?: { outWeight: number };
   hero: {
+    /** 영웅 1명 소환에 필요한 조각 수 (해당 종류 + wild 합) */
     shardsRequired: number;
+    /** 보스 웨이브 클리어 보상: types 중 랜덤 1종을 amount개 (마지막 웨이브 제외) */
+    bossShards?: { amount: number; types: HeroShardType[] };
     grades: Record<HeroGrade, { minRemainingWaves: number; mult: number }>;
   };
 }
@@ -101,9 +115,27 @@ export interface DeployResult {
   deployed: DeployedUnit[];
   /** 슬롯 초과로 자동 판매된 유닛과 환급 골드 */
   overflowSold: { unit: UnitDef; gold: number }[];
-  shardsGained: number;
-  /** 로열 스트레이트 플러시: 토큰 없이 영웅 선택 가능 상태 */
+  /** 이번 족보로 얻은 영웅 조각 */
+  shardsGained: ShardBag;
+  /** 로열 스트레이트 플러시: 조각 없이 영웅 선택 가능 상태 */
   freeHeroSummon: boolean;
+}
+
+/** 전투 tick 결과 + 보스 처치 조각 보상 */
+export interface CombatTickEvents extends BattleTickEvents {
+  /** 보스 웨이브를 클리어한 tick에만 채워진다 */
+  bossShard?: { type: HeroShardType; amount: number };
+}
+
+/** 영웅별 조각 진행도 (UI 게이지용) */
+export interface HeroProgress {
+  hero: HeroDef;
+  /** 해당 종류 조각 보유량 */
+  typed: number;
+  /** 쓸 수 있는 wild 보유량 */
+  wild: number;
+  need: number;
+  ready: boolean;
 }
 
 export class GameLoop {
@@ -117,7 +149,7 @@ export class GameLoop {
   private _wave = 1;
   private _gold: number;
   private _life: number;
-  private _shards = 0;
+  private _shards: Record<ShardKey, number> = { straight: 0, flush: 0, fullHouse: 0, wild: 0 };
   private _units: DeployedUnit[] = [];
   private _hero: { def: HeroDef; grade: HeroGrade; unit: DeployedUnit } | null = null;
   private freeHero = false;
@@ -141,7 +173,7 @@ export class GameLoop {
     this._life = data.config.startLife;
     this.mapper = new SummonMapper(data.units, data.hands, rng);
     this.synergy = new SynergySystem(data.synergies);
-    this.cardPhase = new CardPhase(data.cardPhase ?? {}, rng);
+    this.cardPhase = new CardPhase({ drawAssist: data.config.drawAssist, ...(data.cardPhase ?? {}) }, rng);
     this.cardPhase.start();
   }
 
@@ -172,7 +204,24 @@ export class GameLoop {
       this.battle_ = null;
     }
   }
-  get shards(): number { return this._shards; }
+  /** 보유 영웅 조각 (종류별 + wild) */
+  get shards(): Readonly<Record<ShardKey, number>> { return this._shards; }
+  /** 해금된 영웅별 조각 진행도 */
+  get heroProgress(): HeroProgress[] {
+    const need = this.data.config.hero.shardsRequired;
+    return this.unlockedHeroes.map((hero) => {
+      const typed = this._shards[hero.shardType];
+      const wild = this._shards.wild;
+      return { hero, typed, wild, need, ready: this.freeHero || typed + wild >= need };
+    });
+  }
+  /** 이 영웅을 지금 소환할 수 있는가 (조각 종류가 맞아야 한다) */
+  canSummon(heroId: string): boolean {
+    if (this._hero !== null) return false;
+    return this.heroProgress.some((p) => p.hero.id === heroId && p.ready);
+  }
+  /** 로열 스트레이트 플러시로 받은 무료 소환권 보유 여부 */
+  get hasFreeHeroSummon(): boolean { return this.freeHero; }
   get units(): readonly DeployedUnit[] { return this._units; }
   get geometry(): TrackGeometry { return { trackLength: this.data.battleConfig.trackLength, gridSize: this.data.battleConfig.gridSize }; }
   /** 영웅 포함, 슬롯에 놓인 유닛 (없으면 null) */
@@ -214,9 +263,9 @@ export class GameLoop {
   get heroSkillReady(): boolean {
     return this._phase === 'combat' && this._hero !== null && this.heroSkillCd <= 0;
   }
+  /** 해금된 영웅 중 하나라도 소환 가능한가 */
   get canSummonHero(): boolean {
-    return this._hero === null &&
-      (this.freeHero || this._shards >= this.data.config.hero.shardsRequired);
+    return this._hero === null && this.heroProgress.some((p) => p.ready);
   }
   get unlockedHeroes(): HeroDef[] {
     return this.data.heroes.filter((h) => this.isHeroUnlocked(h.id));
@@ -256,7 +305,7 @@ export class GameLoop {
     this.roundHandRank = result.rank;
     const outcome = this.mapper.map(result);
 
-    const res: DeployResult = { deployed: [], overflowSold: [], shardsGained: outcome.jokerShards, freeHeroSummon: false };
+    const res: DeployResult = { deployed: [], overflowSold: [], shardsGained: outcome.shards, freeHeroSummon: false };
     for (const s of outcome.units) {
       const def = this.mapper.unitById(s.unitId);
       const slot = this.autoSlot(def.range);
@@ -270,7 +319,7 @@ export class GameLoop {
         res.deployed.push(du);
       }
     }
-    this._shards += outcome.jokerShards;
+    for (const k of SHARD_KEYS) this._shards[k] += outcome.shards[k] ?? 0;
     if (outcome.heroSummon && this._hero === null) {
       this.freeHero = true;
       res.freeHeroSummon = true;
@@ -377,14 +426,22 @@ export class GameLoop {
   summonHero(heroId: string): { def: HeroDef; grade: HeroGrade } {
     this.assertPhase('manage');
     if (this._hero) throw new Error('Hero already summoned');
-    if (!this.canSummonHero) throw new Error('Not enough joker shards');
     const def = this.unlockedHeroes.find((h) => h.id === heroId);
     if (!def) throw new Error(`Hero not unlocked: ${heroId}`);
+    if (!this.canSummon(heroId)) throw new Error(`${SHARD_LABEL[def.shardType]} 조각이 부족합니다 (${def.name})`);
     const slot = this.autoSlot(def.combat.range);
     if (slot === null) throw new Error('No free slot for hero — sell a unit first');
 
-    if (this.freeHero) this.freeHero = false;
-    else this._shards -= this.data.config.hero.shardsRequired;
+    if (this.freeHero) {
+      this.freeHero = false;
+    } else {
+      // 해당 종류 조각을 먼저 쓰고, 모자라면 wild로 채운다
+      let need = this.data.config.hero.shardsRequired;
+      const fromTyped = Math.min(need, this._shards[def.shardType]);
+      this._shards[def.shardType] -= fromTyped;
+      need -= fromTyped;
+      this._shards.wild -= need;
+    }
 
     const grade = this.heroGradeNow;
     const mult = this.data.config.hero.grades[grade].mult;
@@ -441,9 +498,9 @@ export class GameLoop {
   }
 
   /** 전투 프레임 진행. 씬 update()에서 호출 */
-  tickCombat(dt: number): BattleTickEvents {
+  tickCombat(dt: number): CombatTickEvents {
     this.assertPhase('combat');
-    const ev = this.battle_!.tick(dt);
+    const ev: CombatTickEvents = this.battle_!.tick(dt);
     this._gold += ev.goldEarned;
     if (this.heroSkillCd > 0) this.heroSkillCd = Math.max(0, this.heroSkillCd - dt);
     if (ev.leaked > 0) this._gold += ev.leaked * this.lastSynergy!.global.leakGold; // 고블린 5: 이탈 적당 골드 회수
@@ -476,6 +533,13 @@ export class GameLoop {
       if (this._wave >= this.data.config.totalWaves) {
         this._phase = 'victory';
       } else {
+        // 보스 처치 보상: 랜덤 종류 영웅 조각 (마지막 웨이브는 게임이 끝나므로 제외) — GDD 3.3
+        const boss = this.data.config.hero.bossShards;
+        if (boss && this.data.waves[this._wave - 1]?.boss && boss.types.length > 0) {
+          const type = boss.types[Math.min(Math.floor(this.rng() * boss.types.length), boss.types.length - 1)];
+          this._shards[type] += boss.amount;
+          ev.bossShard = { type, amount: boss.amount };
+        }
         this._wave++;
         this._phase = 'card';
         this.cardPhase.start();

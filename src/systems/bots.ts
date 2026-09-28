@@ -44,14 +44,20 @@ export function smartCardPhase(g: GameLoop): void {
   g.confirmHand();
 }
 
+/** 소환 가능한 영웅 중 다수 수트 영웅 우선, 없으면 아무거나 (조각 종류가 맞는 영웅만 ready) */
+export function readyHero(g: GameLoop): string | null {
+  if (!g.canSummonHero || g.freeSlots.length === 0) return null; // 영웅도 슬롯이 필요
+  const ready = g.heroProgress.filter((p) => p.ready);
+  if (ready.length === 0) return null;
+  const s = dominantSuit(g);
+  return (ready.find((p) => p.hero.suit === s) ?? ready[0]).hero.id;
+}
+
 /** smart 정비: 슬롯이 찰 때만 합성, 조각이 모이면 다수 수트 영웅 소환, 골드는 다수 수트 업그레이드에 전부 */
 export function smartManage(g: GameLoop): void {
   if (g.units.length >= 23) for (const id of g.mergeable) { try { g.mergeUnits(id); } catch { /* 경합 무시 */ } }
-  if (g.canSummonHero) {
-    const s = dominantSuit(g);
-    const h = g.unlockedHeroes.find((h) => h.suit === s) ?? g.unlockedHeroes[0];
-    g.summonHero(h.id);
-  }
+  const hero = readyHero(g);
+  if (hero) g.summonHero(hero);
   spendAllOnUpgrades(g, dominantSuit(g));
 }
 

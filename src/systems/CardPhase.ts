@@ -16,6 +16,7 @@ import {
   createDeck,
   evaluateHand,
 } from './PokerEvaluator.ts';
+import { countOuts, pickIndex, type DrawAssistConfig } from './DrawAssist.ts';
 
 export type CardPhaseState = 'idle' | 'choosing' | 'done';
 
@@ -26,6 +27,8 @@ export interface CardPhaseConfig {
   exchangeLimit?: number;
   /** 제한 시간 초 (기본 30, 메타 업그레이드 시 40) */
   timerSeconds?: number;
+  /** 행운 드로우 (GDD §3.1.1). 없거나 outWeight 0이면 순수 확률(덱 순서대로) */
+  drawAssist?: DrawAssistConfig;
 }
 
 export interface TickResult {
@@ -39,6 +42,8 @@ export class CardPhase {
   readonly handSize: number;
   readonly exchangeLimit: number;
   readonly timerSeconds: number;
+  /** 아웃 가중치 보너스 (0 = 보정 없음) */
+  readonly outWeight: number;
 
   private rng: () => number;
   private deck: Card[] = [];
@@ -55,6 +60,7 @@ export class CardPhase {
     this.handSize = config.handSize ?? 5;
     this.exchangeLimit = config.exchangeLimit ?? 1;
     this.timerSeconds = config.timerSeconds ?? 30;
+    this.outWeight = config.drawAssist?.outWeight ?? 0;
     this.rng = rng;
   }
 
@@ -116,6 +122,12 @@ export class CardPhase {
     return this.phaseState === 'choosing' && Number.isInteger(index) && index >= 0 && index < this.handCards.length && this.deck.length > 0;
   }
 
+  /** 이 카드를 바꿀 때 남는 카드(나머지 4장)와 어울리는 카드가 덱에 몇 장인지 — 행운 드로우 UI용 */
+  outsFor(index: number): number {
+    this.assertIndex(index);
+    return countOuts(this.handCards.filter((_, i) => i !== index), this.deck);
+  }
+
   /** 특정 카드의 남은 교환 횟수 */
   exchangesRemainingFor(index: number): number {
     this.assertIndex(index);
@@ -145,8 +157,7 @@ export class CardPhase {
     this.assertChoosing();
     this.assertIndex(index);
     if (this.exchangedCount[index] >= this.exchangeLimit) throw new Error(`Card ${index} has no exchanges left`);
-    if (this.deck.length === 0) throw new Error('Not enough cards in deck');
-    const next = this.deck.shift()!;
+    const next = this.draw(index);
     this.handCards[index] = next;
     this.exchangedCount[index]++;
     return next;
@@ -159,11 +170,19 @@ export class CardPhase {
   exchangeWithTicket(index: number): Card {
     this.assertChoosing();
     this.assertIndex(index);
-    if (this.deck.length === 0) throw new Error('Not enough cards in deck');
-    const next = this.deck.shift()!;
+    const next = this.draw(index);
     this.handCards[index] = next;
     this.ticketCount[index]++;
     return next;
+  }
+
+  /** 덱에서 한 장 뽑기: 보정이 켜져 있으면 남긴 카드(index 제외) 기준 아웃 가중 추첨, 아니면 덱 맨 위 */
+  private draw(index: number): Card {
+    if (this.deck.length === 0) throw new Error('Not enough cards in deck');
+    if (this.outWeight <= 0) return this.deck.shift()!;
+    const kept = this.handCards.filter((_, i) => i !== index);
+    const at = pickIndex(kept, this.deck, this.outWeight, this.rng);
+    return this.deck.splice(at, 1)[0];
   }
 
   /** "진행" 버튼: 족보 확정. 타이머 만료 시에도 내부적으로 호출된다. */

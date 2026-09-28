@@ -54,7 +54,9 @@ export class HUD {
   refresh(loop: GameLoop, totalWaves: number, tokens?: { diamonds: number; heartsMax: number; heroTokensMax: number }): void {
     this.roundText.setText(`라운드 ${loop.wave}/${totalWaves}`);
     if (tokens) {
-      this.tokens.set({ hearts: loop.life, heartsMax: tokens.heartsMax, gold: loop.gold, heroTokens: loop.shards, heroTokensMax: tokens.heroTokensMax, diamonds: tokens.diamonds });
+      // 영웅 조각: 가장 가까운 영웅의 진행도 (해당 종류 + 와일드, 무료 소환권이면 만땅)
+      const best = loop.hasFreeHeroSummon ? tokens.heroTokensMax : Math.max(0, ...loop.heroProgress.map((p) => Math.min(p.need, p.typed + p.wild)));
+      this.tokens.set({ hearts: loop.life, heartsMax: tokens.heartsMax, gold: loop.gold, heroTokens: best, heroTokensMax: tokens.heroTokensMax, diamonds: tokens.diamonds });
     }
     const phase: Record<string, string> = { card: '카드 선택', manage: '정비', combat: '전투 중', victory: '승리!', defeat: '패배' };
     this.phaseText.setText(`${phase[loop.phase] ?? loop.phase}\n유닛 ${loop.units.length}/25`);

@@ -200,7 +200,7 @@ describe('GameLoop.useHeroSkill', () => {
   function withHero(heroId: string): GameLoop {
     const g = new GameLoop(baseData(), seededRng(7));
     g.confirmHand();
-    (g as unknown as { _shards: number })._shards = 3;
+    (g as unknown as { _shards: Record<string, number> })._shards = { straight: 0, flush: 0, fullHouse: 0, wild: 3 };
     g.summonHero(heroId);
     g.startCombat();
     for (let t = 0; t < 1.5; t += 0.1) g.tickCombat(0.1); // 적 스폰
@@ -261,7 +261,7 @@ describe('GameLoop.useHeroSkill', () => {
       data.config = { ...data.config, hero: { ...data.config.hero, grades: { ...data.config.hero.grades, S: { minRemainingWaves: 20, mult: grade === 'S' ? 1.5 : 1.0 } } } };
       const g = new GameLoop(data, seededRng(7));
       g.confirmHand();
-      (g as unknown as { _shards: number })._shards = 3;
+      (g as unknown as { _shards: Record<string, number> })._shards = { straight: 0, flush: 0, fullHouse: 0, wild: 3 };
       g.summonHero('black_archduke');
       g.startCombat();
       for (let t = 0; t < 1.5; t += 0.1) g.tickCombat(0.1);

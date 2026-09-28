@@ -64,7 +64,7 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
   it('하이카드 → T1 유닛 1기', () => {
     const o = outcomeOf('AS 9H 7D 5C 2S');
     expect(o.units.map((u) => u.tier)).toEqual([1]);
-    expect(o.jokerShards).toBe(0);
+    expect(o.shards).toEqual({});
     expect(o.heroSummon).toBe(false);
   });
 
@@ -91,36 +91,36 @@ describe('족보 → 소환 매핑 — GDD 3.1 테이블', () => {
     expect(o.units.map((u) => u.tier)).toEqual([2, 2]);
   });
 
-  it('스트레이트 → T3 1기, 조각 0', () => {
+  it('스트레이트 → T3 1기 + 스트레이트 조각 1', () => {
     const o = outcomeOf('9S 8H 7D 6C 5S');
     expect(o.units.map((u) => u.tier)).toEqual([3]);
-    expect(o.jokerShards).toBe(0);
+    expect(o.shards).toEqual({ straight: 1 });
   });
 
-  it('플러시 → T3 1기 + 조커 조각 1 (수트 = 플러시 수트)', () => {
+  it('플러시 → T3 1기 + 플러시 조각 1 (수트 = 플러시 수트)', () => {
     const o = outcomeOf('AH 9H 7H 5H 2H');
     expect(o.units.map((u) => u.tier)).toEqual([3]);
     expect(o.units[0].unitId).toBe('inquisitor'); // ♥T3 high (A 포함) // ♥T3
-    expect(o.jokerShards).toBe(1);
+    expect(o.shards).toEqual({ flush: 1 });
   });
 
-  it('풀하우스 → T4 1기', () => {
+  it('풀하우스 → T4 1기 + 풀하우스 조각 2', () => {
     const o = outcomeOf('QS QH QD 5C 5S');
     expect(o.units.map((u) => u.tier)).toEqual([4]);
-    expect(o.jokerShards).toBe(0);
+    expect(o.shards).toEqual({ fullHouse: 2 });
   });
 
-  it('포카드 → T4 1기 + 조각 1', () => {
+  it('포카드 → T4 1기 + 와일드 조각 3', () => {
     const o = outcomeOf('7S 7H 7D 7C KS');
     expect(o.units.map((u) => u.tier)).toEqual([4]);
-    expect(o.jokerShards).toBe(1);
+    expect(o.shards).toEqual({ wild: 3 });
   });
 
-  it('스트레이트 플러시 → T5 1기 + 조각 2', () => {
+  it('스트레이트 플러시 → T5 1기 + 와일드 조각 3', () => {
     const o = outcomeOf('9C 8C 7C 6C 5C');
     expect(o.units.map((u) => u.tier)).toEqual([5]);
     expect(o.units[0].unitId).toBe('void_lord'); // ♣T5 high (9 포함) // ♣T5
-    expect(o.jokerShards).toBe(2);
+    expect(o.shards).toEqual({ wild: 3 });
   });
 
   it('변형 규칙: 최고 숫자 8 이하 = low, 9 이상 = high (킥커는 무시)', () => {

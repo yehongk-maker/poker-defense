@@ -2,7 +2,7 @@
  * SummonMapper — 확정된 족보(HandResult)를 소환 결과로 변환
  *
  * GDD 3.1/3.2 근거:
- *  - 족보 → 소환 유닛 티어 목록 + 영웅 토큰 + 영웅 즉시 소환 여부 (hands.json)
+ *  - 족보 → 소환 유닛 티어 목록 + 영웅 조각(종류별) + 영웅 즉시 소환 여부 (hands.json, GDD 3.3)
  *  - 수트가 종족 결정: 소환 유닛은 다수 수트(dominantSuit)의 유닛
  *  - 투페어 예외: T2는 높은 페어의 수트, T1은 낮은 페어의 수트 (페어 내 동수면 rng)
  *  - 카드 숫자 = 변형: 족보 구성 카드의 최고 숫자 2~8 = low, 9~A = high (수트×티어당 2종, 총 40종). 투페어는 각 페어의 숫자로.
@@ -46,9 +46,17 @@ export interface UnitDef {
   desc: string;
 }
 
+/** 영웅 조각 종류. 영웅마다 하나가 정해져 있고(heroes.json shardType), wild는 어느 영웅에든 쓴다 */
+export type HeroShardType = 'straight' | 'flush' | 'fullHouse';
+export type ShardKey = HeroShardType | 'wild';
+export type ShardBag = Partial<Record<ShardKey, number>>;
+export const HERO_SHARD_TYPES: readonly HeroShardType[] = ['straight', 'flush', 'fullHouse'];
+export const SHARD_KEYS: readonly ShardKey[] = ['straight', 'flush', 'fullHouse', 'wild'];
+
 export interface HandOutcomeDef {
   summonTiers: number[];
-  jokerShards: number;
+  /** 이 족보가 주는 영웅 조각 {종류: 개수} */
+  shards: ShardBag;
   heroSummon: boolean;
 }
 
@@ -64,7 +72,8 @@ export interface SummonSpec {
 export interface SummonOutcome {
   handRank: HandRank;
   units: SummonSpec[];
-  jokerShards: number;
+  /** 이번 족보로 얻은 영웅 조각 */
+  shards: ShardBag;
   /** true면 유닛 대신 영웅 선택 소환 (로열 스트레이트 플러시) */
   heroSummon: boolean;
 }
@@ -140,7 +149,7 @@ export class SummonMapper {
     return {
       handRank: result.rank,
       units,
-      jokerShards: def.jokerShards,
+      shards: { ...(def.shards ?? {}) },
       heroSummon: def.heroSummon,
     };
   }

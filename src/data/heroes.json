@@ -1,125 +1,360 @@
 {
-  "comment": "GDD 3.3 영웅 12종 (수트별 3종: 기본/메타 + 대공). race = 종족 시너지 카운트에 +1 (수트/클래스는 제외). combat.range=사거리(셀), combat.targets=공격 대상(ground/air/both) — 근접 영웅은 지상만. 등급 배율(S/A/B)은 config.json. active.id별 구현은 GameLoop.useHeroSkill.",
+  "comment": "GDD 3.3 영웅 12종 (수트별 3종: 기본/메타 + 대공). race = 종족 시너지 카운트에 +1 (수트/클래스는 제외). combat.range=사거리(셀), combat.targets=공격 대상(ground/air/both) — 근접 영웅은 지상만. 등급 배율(S/A/B)은 config.json. active.id별 구현은 GameLoop.useHeroSkill. shardType: 소환에 필요한 조각 종류 (스트레이트=연결·관통·저격·포격, 플러시=같은 깃발의 군단·수트 버프, 풀하우스=왕가의 수호·방벽·정지). 종류마다 기본 해금 영웅이 있어 무과금도 세 루트를 다 쓴다.",
   "heroes": [
     {
       "id": "black_archduke",
       "name": "검은 대공",
       "suit": "S",
       "unlock": "basic",
+      "shardType": "flush",
       "race": "human",
-      "combat": { "baseDps": 120, "attackInterval": 1.0, "attackType": "melee", "range": 2, "targets": "ground" },
-      "passive": { "type": "suit_attack_pct", "suit": "S", "pct": 20 },
-      "active": { "id": "earth_slam", "name": "대지 강타", "cooldownSec": 45, "desc": "트랙 전체 광역 + 기절 1초", "params": { "dmgMult": 3, "stunSec": 1 } }
+      "combat": {
+        "baseDps": 120,
+        "attackInterval": 1.0,
+        "attackType": "melee",
+        "range": 2,
+        "targets": "ground"
+      },
+      "passive": {
+        "type": "suit_attack_pct",
+        "suit": "S",
+        "pct": 20
+      },
+      "active": {
+        "id": "earth_slam",
+        "name": "대지 강타",
+        "cooldownSec": 45,
+        "desc": "트랙 전체 광역 + 기절 1초",
+        "params": {
+          "dmgMult": 3,
+          "stunSec": 1
+        }
+      }
     },
     {
       "id": "steel_annihilator",
       "name": "강철 파멸기",
       "suit": "S",
       "unlock": "meta",
+      "shardType": "flush",
       "race": "monster",
-      "combat": { "baseDps": 140, "attackInterval": 1.6, "attackType": "melee", "range": 2, "targets": "ground" },
-      "passive": { "type": "class_count", "class": "destroyer", "plus": 1 },
-      "active": { "id": "execute_strike", "name": "처형 검격", "cooldownSec": 45, "desc": "최고 HP 적 3체에 초대미지", "params": { "targets": 3, "dmgMult": 8 } }
+      "combat": {
+        "baseDps": 140,
+        "attackInterval": 1.6,
+        "attackType": "melee",
+        "range": 2,
+        "targets": "ground"
+      },
+      "passive": {
+        "type": "class_count",
+        "class": "destroyer",
+        "plus": 1
+      },
+      "active": {
+        "id": "execute_strike",
+        "name": "처형 검격",
+        "cooldownSec": 45,
+        "desc": "최고 HP 적 3체에 초대미지",
+        "params": {
+          "targets": 3,
+          "dmgMult": 8
+        }
+      }
     },
     {
       "id": "guardian_sage",
       "name": "수호 현자",
       "suit": "H",
       "unlock": "basic",
+      "shardType": "fullHouse",
       "race": "human",
-      "combat": { "baseDps": 80, "attackInterval": 1.2, "attackType": "magic", "range": 3, "targets": "both" },
-      "passive": { "type": "global_attack_speed_pct", "pct": 10 },
-      "active": { "id": "sanctuary", "name": "성역", "cooldownSec": 45, "desc": "8초간 하트 피해 완전 무효", "params": { "durationSec": 8 } }
+      "combat": {
+        "baseDps": 80,
+        "attackInterval": 1.2,
+        "attackType": "magic",
+        "range": 3,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "global_attack_speed_pct",
+        "pct": 10
+      },
+      "active": {
+        "id": "sanctuary",
+        "name": "성역",
+        "cooldownSec": 45,
+        "desc": "8초간 하트 피해 완전 무효",
+        "params": {
+          "durationSec": 8
+        }
+      }
     },
     {
       "id": "mountain_warden",
       "name": "태산 수호자",
       "suit": "H",
       "unlock": "meta",
+      "shardType": "fullHouse",
       "race": "monster",
-      "combat": { "baseDps": 70, "attackInterval": 1.5, "attackType": "melee", "range": 2, "targets": "ground" },
-      "passive": { "type": "life_save_chance_pct", "pct": 25 },
-      "active": { "id": "rock_wall", "name": "암석 방벽", "cooldownSec": 45, "desc": "트랙에 장벽 소환, 적 8초 정지", "params": { "durationSec": 8 } }
+      "combat": {
+        "baseDps": 70,
+        "attackInterval": 1.5,
+        "attackType": "melee",
+        "range": 2,
+        "targets": "ground"
+      },
+      "passive": {
+        "type": "life_save_chance_pct",
+        "pct": 25
+      },
+      "active": {
+        "id": "rock_wall",
+        "name": "암석 방벽",
+        "cooldownSec": 45,
+        "desc": "트랙에 장벽 소환, 적 8초 정지",
+        "params": {
+          "durationSec": 8
+        }
+      }
     },
     {
       "id": "golden_sniper",
       "name": "황금 저격수",
       "suit": "D",
       "unlock": "basic",
+      "shardType": "straight",
       "race": "human",
-      "combat": { "baseDps": 110, "attackInterval": 1.4, "attackType": "ranged", "range": 4, "targets": "both" },
-      "passive": { "type": "kill_gold_pct", "pct": 25 },
-      "active": { "id": "golden_bullet", "name": "황금 탄환", "cooldownSec": 45, "desc": "최대 HP 적 즉사 (보스는 20% 피해)", "params": { "bossDmgPct": 20 } }
+      "combat": {
+        "baseDps": 110,
+        "attackInterval": 1.4,
+        "attackType": "ranged",
+        "range": 4,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "kill_gold_pct",
+        "pct": 25
+      },
+      "active": {
+        "id": "golden_bullet",
+        "name": "황금 탄환",
+        "cooldownSec": 45,
+        "desc": "최대 HP 적 즉사 (보스는 20% 피해)",
+        "params": {
+          "bossDmgPct": 20
+        }
+      }
     },
     {
       "id": "tomb_king",
       "name": "도굴왕",
       "suit": "D",
       "unlock": "meta",
+      "shardType": "straight",
       "race": "goblin",
-      "combat": { "baseDps": 90, "attackInterval": 0.8, "attackType": "melee", "range": 2, "targets": "ground" },
-      "passive": { "type": "class_count", "class": "raider", "plus": 1 },
-      "active": { "id": "grand_heist", "name": "대약탈", "cooldownSec": 45, "desc": "화면 전체 적 골드 강탈 + 이속 -30% 5초", "params": { "goldPerEnemy": 2, "slowPct": 30, "durationSec": 5 } }
+      "combat": {
+        "baseDps": 90,
+        "attackInterval": 0.8,
+        "attackType": "melee",
+        "range": 2,
+        "targets": "ground"
+      },
+      "passive": {
+        "type": "class_count",
+        "class": "raider",
+        "plus": 1
+      },
+      "active": {
+        "id": "grand_heist",
+        "name": "대약탈",
+        "cooldownSec": 45,
+        "desc": "화면 전체 적 골드 강탈 + 이속 -30% 5초",
+        "params": {
+          "goldPerEnemy": 2,
+          "slowPct": 30,
+          "durationSec": 5
+        }
+      }
     },
     {
       "id": "abyss_overlord",
       "name": "심연 군주",
       "suit": "C",
       "unlock": "basic",
+      "shardType": "flush",
       "race": "monster",
-      "combat": { "baseDps": 100, "attackInterval": 1.3, "attackType": "magic", "range": 3, "targets": "both" },
-      "passive": { "type": "suit_aoe_radius_pct", "suit": "C", "pct": 20 },
-      "active": { "id": "abyss_summon", "name": "심연 소환", "cooldownSec": 45, "desc": "10초간 유령 포탑 3기 소환", "params": { "turrets": 3, "durationSec": 10, "turretDps": 40 } }
+      "combat": {
+        "baseDps": 100,
+        "attackInterval": 1.3,
+        "attackType": "magic",
+        "range": 3,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "suit_aoe_radius_pct",
+        "suit": "C",
+        "pct": 20
+      },
+      "active": {
+        "id": "abyss_summon",
+        "name": "심연 소환",
+        "cooldownSec": 45,
+        "desc": "10초간 유령 포탑 3기 소환",
+        "params": {
+          "turrets": 3,
+          "durationSec": 10,
+          "turretDps": 40
+        }
+      }
     },
     {
       "id": "storm_tyrant",
       "name": "뇌운 폭군",
       "suit": "C",
       "unlock": "meta",
+      "shardType": "straight",
       "race": "spirit",
-      "combat": { "baseDps": 115, "attackInterval": 1.2, "attackType": "magic", "range": 3, "targets": "both" },
-      "passive": { "type": "chain_targets_plus", "plus": 1 },
-      "active": { "id": "thunder_storm", "name": "천둥 폭풍", "cooldownSec": 45, "desc": "5초간 무작위 낙뢰 연타", "params": { "durationSec": 5, "boltDmg": 200, "boltsPerSec": 4 } }
+      "combat": {
+        "baseDps": 115,
+        "attackInterval": 1.2,
+        "attackType": "magic",
+        "range": 3,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "chain_targets_plus",
+        "plus": 1
+      },
+      "active": {
+        "id": "thunder_storm",
+        "name": "천둥 폭풍",
+        "cooldownSec": 45,
+        "desc": "5초간 무작위 낙뢰 연타",
+        "params": {
+          "durationSec": 5,
+          "boltDmg": 200,
+          "boltsPerSec": 4
+        }
+      }
     },
     {
       "id": "iron_flak",
       "name": "강철 대공포",
       "suit": "S",
       "unlock": "basic",
+      "shardType": "straight",
       "race": "monster",
-      "combat": { "baseDps": 95, "attackInterval": 1.2, "attackType": "ranged", "range": 5, "targets": "both" },
-      "passive": { "type": "air_attack_pct", "scope": "global", "pct": 20 },
-      "active": { "id": "flak_barrage", "name": "대공 탄막", "cooldownSec": 45, "desc": "공중 적 전체에 큰 피해 + 2초 추락(정지)", "params": { "dmgMult": 4, "stunSec": 2 } }
+      "combat": {
+        "baseDps": 95,
+        "attackInterval": 1.2,
+        "attackType": "ranged",
+        "range": 5,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "air_attack_pct",
+        "scope": "global",
+        "pct": 20
+      },
+      "active": {
+        "id": "flak_barrage",
+        "name": "대공 탄막",
+        "cooldownSec": 45,
+        "desc": "공중 적 전체에 큰 피해 + 2초 추락(정지)",
+        "params": {
+          "dmgMult": 4,
+          "stunSec": 2
+        }
+      }
     },
     {
       "id": "sky_warden",
       "name": "천상 파수꾼",
       "suit": "H",
       "unlock": "meta",
+      "shardType": "fullHouse",
       "race": "spirit",
-      "combat": { "baseDps": 130, "attackInterval": 1.0, "attackType": "magic", "range": 6, "targets": "air" },
-      "passive": { "type": "air_slow_pct", "pct": 15 },
-      "active": { "id": "light_of_falling", "name": "추락의 빛", "cooldownSec": 45, "desc": "4초간 공중 적 전체 정지 (스폰되는 공중 적 포함)", "params": { "durationSec": 4 } }
+      "combat": {
+        "baseDps": 130,
+        "attackInterval": 1.0,
+        "attackType": "magic",
+        "range": 6,
+        "targets": "air"
+      },
+      "passive": {
+        "type": "air_slow_pct",
+        "pct": 15
+      },
+      "active": {
+        "id": "light_of_falling",
+        "name": "추락의 빛",
+        "cooldownSec": 45,
+        "desc": "4초간 공중 적 전체 정지 (스폰되는 공중 적 포함)",
+        "params": {
+          "durationSec": 4
+        }
+      }
     },
     {
       "id": "airship_captain",
       "name": "비공정 선장",
       "suit": "D",
       "unlock": "meta",
+      "shardType": "straight",
       "race": "goblin",
-      "combat": { "baseDps": 100, "attackInterval": 1.3, "attackType": "ranged", "range": 5, "targets": "both" },
-      "passive": { "type": "air_kill_gold_mult", "mult": 2 },
-      "active": { "id": "bombard_support", "name": "포격 지원", "cooldownSec": 45, "desc": "HP 높은 공중 적 3체에 초대미지", "params": { "targets": 3, "dmgMult": 6 } }
+      "combat": {
+        "baseDps": 100,
+        "attackInterval": 1.3,
+        "attackType": "ranged",
+        "range": 5,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "air_kill_gold_mult",
+        "mult": 2
+      },
+      "active": {
+        "id": "bombard_support",
+        "name": "포격 지원",
+        "cooldownSec": 45,
+        "desc": "HP 높은 공중 적 3체에 초대미지",
+        "params": {
+          "targets": 3,
+          "dmgMult": 6
+        }
+      }
     },
     {
       "id": "void_falconer",
       "name": "공허 매사냥꾼",
       "suit": "C",
       "unlock": "basic",
+      "shardType": "flush",
       "race": "monster",
-      "combat": { "baseDps": 105, "attackInterval": 1.1, "attackType": "magic", "range": 5, "targets": "both" },
-      "passive": { "type": "air_attack_pct", "scope": "suit", "suit": "C", "pct": 35 },
-      "active": { "id": "void_gale", "name": "공허 돌풍", "cooldownSec": 45, "desc": "5초간 공중 적에게 초당 4발 낙뢰", "params": { "durationSec": 5, "boltDmg": 220, "boltsPerSec": 4 } }
+      "combat": {
+        "baseDps": 105,
+        "attackInterval": 1.1,
+        "attackType": "magic",
+        "range": 5,
+        "targets": "both"
+      },
+      "passive": {
+        "type": "air_attack_pct",
+        "scope": "suit",
+        "suit": "C",
+        "pct": 35
+      },
+      "active": {
+        "id": "void_gale",
+        "name": "공허 돌풍",
+        "cooldownSec": 45,
+        "desc": "5초간 공중 적에게 초당 4발 낙뢰",
+        "params": {
+          "durationSec": 5,
+          "boltDmg": 220,
+          "boltsPerSec": 4
+        }
+      }
     }
   ]
 }
