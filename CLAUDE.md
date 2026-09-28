@@ -27,6 +27,7 @@ src/
                  BetBar(팟 알약 + 베팅 3버튼 폴드/체크·콜/레이즈), Button(UIButton: variant gold/green/purple/red/gray/blue,
                  3D 섀도·눌림·비활성, 라벨 '\n' 뒤는 서브 라벨), ResourcePill·TokenBar(재화 알약), TimerRing, SpeechBubble,
                  WaveBanner, ResultOverlay(승리 광선·리본·별 / 패배), Backdrop(월드 그라디언트·하단 시트·가장자리 핸들),
+                 OpponentMiniMap(필드 우상단 상대 필드·적 축소 표시, 0.5초 갱신, 탭 → 상대 패널),
                  draw(도형 아이콘: 동전·하트·젬·영웅 토큰·교환권·별), theme(DESIGN 토큰 + 구 COLORS 호환) (Phaser)
   data/          units, hands, waves, synergies, heroes, config, duel(판돈 룰·AI 성향) .json
 tests/           vitest. systems/와 1:1 대응

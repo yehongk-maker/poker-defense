@@ -24,6 +24,7 @@ import { SpeechBubble } from '../ui/SpeechBubble.ts';
 import { WaveBanner } from '../ui/WaveBanner.ts';
 import { ResultOverlay, type ResultRow } from '../ui/ResultOverlay.ts';
 import { FIELD } from '../ui/TrackView.ts';
+import { OpponentMiniMap } from '../ui/OpponentMiniMap.ts';
 import { addBackdrop, addBottomSheet, addEdgeHandle } from '../ui/Backdrop.ts';
 import { COLOR, FONT, OUTLINE, HAND_NAME, SIZE, SUIT_SYMBOL, hex } from '../ui/theme.ts';
 
@@ -56,6 +57,7 @@ export class GameScene extends Phaser.Scene {
   private oppDefeatAnnounced = false;
   private betting!: BettingSystem;
   private betBar!: BetBar;
+  private oppMini!: OpponentMiniMap;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
@@ -97,6 +99,8 @@ export class GameScene extends Phaser.Scene {
 
     this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.track = new TrackView(this);
+    // 우상단 상대 진행 미니맵 (탭 → 상대 패널)
+    this.oppMini = new OpponentMiniMap(this, FIELD.x + FIELD.w - 10, FIELD.y + 10, () => this.nav.open('bottom'));
     this.chips = new SynergyChips(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.fx = new HandFx(this);
     addBottomSheet(this, SHEET_TOP);
@@ -300,6 +304,7 @@ export class GameScene extends Phaser.Scene {
       const lead = diff > 0 ? `내가 ${diff} 앞섬` : diff < 0 ? `상대가 ${-diff} 앞섬` : '동률';
       const exch = o.phase === 'card' ? ` · 교환 ${o.cardPhase.exchangesUsed}장` : '';
       this.hud.setOpponent(`R${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''}${exch} · ${lead}`);
+      this.oppMini.refresh(this.opponent, this.data_.battleConfig.trackLength);
       if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
       if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
         this.oppDefeatAnnounced = true;
