@@ -16,7 +16,7 @@ const TYPES = ['straight', 'flush', 'fullHouse'] as const;
 type T = (typeof TYPES)[number];
 const LABEL: Record<string, string> = { straight: '스트레이트', flush: '플러시', fullHouse: '풀하우스', wild: '와일드', hero: '즉시 소환(로열)' };
 const ROUNDS = Number(process.env.REPORT_N ?? 30_000);
-const GAMES = Number(process.env.REPORT_GAMES ?? 20_000);
+const GAMES = Number(process.env.REPORT_GAMES ?? 8_000);
 const REQ: number = config.hero.shardsRequired;
 const BOSS = config.hero.bossShards as { amount: number; types: T[] };
 const TOTAL = config.totalWaves as number;
@@ -91,18 +91,19 @@ for (const target of [...TYPES, 'none'] as const) {
   perRound[target] = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, v / ROUNDS]));
 }
 
-// 2) 소환 시점 시뮬레이션
+// 2) 소환 시점 시뮬레이션 — 판마다 CardPhase 하나를 40라운드 돌린다 (행운 게이지가 라운드를 넘어 쌓이는 효과 포함)
 function simulate(target: T, seed: number) {
   const rng = rngFrom(seed);
-  const pr = perRound[target];
   const res: number[] = [];
   for (let g = 0; g < GAMES; g++) {
+    const p = new CardPhase({ drawAssist: config.drawAssist }, rng);
     let pts = 0;
     let at = 99;
     for (let w = 1; w <= TOTAL; w++) {
-      let roll = rng();
-      let ev: string | null = null;
-      for (const [k, v] of Object.entries(pr)) { if (roll < v) { ev = k; break; } roll -= v; }
+      p.start();
+      const keep = new Set(keepFor(p.hand, target));
+      for (let idx = 0; idx < p.hand.length; idx++) if (!keep.has(idx) && p.canExchange(idx)) p.exchangeCard(idx);
+      const ev = eventOf(p.confirm().rank);
       if (ev === 'hero') { at = w; break; }
       if (ev === target || ev === 'wild') pts += AMOUNT[ev];
       if (pts >= REQ) { at = w; break; }
@@ -121,19 +122,26 @@ function simulate(target: T, seed: number) {
 }
 
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+/** 게이지 배율 표기: 숫자면 ×n, 종류별이면 "스트레이트 ×2 · 플러시 ×2 · 풀하우스 ×1.5" */
+function pityLabel(): string {
+  const m = config.drawAssist.pity?.mult;
+  if (m === undefined) return '없음';
+  if (typeof m === 'number') return `×${m}`;
+  return ([['straight', '스트레이트'], ['flush', '플러시'], ['rank', '풀하우스']] as const).map(([k, l]) => `${l} ×${m[k] ?? 1}`).join(' · ');
+}
 const wv = (x: number) => (x === 99 ? '못 함' : `W${x}`);
 const L: string[] = [];
 L.push('# 영웅 조각 밸런스 리포트');
 L.push(`\n> \`npm run shards\`(scripts/hero-shard-report.ts)로 생성. 조건: 카드별 교환 1회 + 행운 드로우 outWeight ${config.drawAssist.outWeight}, 영웅 1명당 조각 ${REQ}개, 보스(W${BOSS_WAVES.join('/')}) 클리어 시 랜덤 종류 ${BOSS.amount}개.`);
 L.push(`> 조각: ${Object.entries(AMOUNT).map(([k, v]) => `${LABEL[k]} ${v}개`).join(' · ')} (포카드·스트레이트 플러시 = 와일드)\n`);
-L.push(`## 1. 한 라운드에 조각을 얻을 확률 (${ROUNDS.toLocaleString()}라운드)\n`);
+L.push(`## 1. 한 라운드에 조각을 얻을 확률 (${ROUNDS.toLocaleString()}라운드, 행운 게이지 0 기준)\n`);
 L.push('| 노리는 족보 | 스트레이트 조각 | 플러시 조각 | 풀하우스 조각 | 와일드 | 로열(즉시 소환) |');
 L.push('|---|---:|---:|---:|---:|---:|');
 for (const t of [...TYPES, 'none'] as const) {
   const r = perRound[t];
   L.push(`| ${t === 'none' ? '교환 안 함' : LABEL[t]} | ${pct(r.straight)} | ${pct(r.flush)} | ${pct(r.fullHouse)} | ${pct(r.wild)} | ${pct(r.hero)} |`);
 }
-L.push(`\n## 2. 영웅 소환 시점 (한 족보만 노리는 봇 ${GAMES.toLocaleString()}판)\n`);
+L.push(`\n## 2. 영웅 소환 시점 (한 족보만 노리는 봇 ${GAMES.toLocaleString()}판, 행운 게이지 ${pityLabel()} 최대 레벨 ${config.drawAssist.pity?.maxLevel ?? 0})\n`);
 L.push(`| 노리는 조각 | 해당 영웅 | 빠른 25% | 중앙값 | 느린 25% | S급 (W${S_LAST}까지) | A급 이상 (W${A_LAST}까지) | 한 판 안에 소환 |`);
 L.push('|---|---|---:|---:|---:|---:|---:|---:|');
 TYPES.forEach((t, i) => {

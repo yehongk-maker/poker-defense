@@ -6,8 +6,16 @@
   "sellRatio": 0.7,
   "totalWaves": 40,
   "drawAssist": {
-    "comment": "행운 드로우(GDD §3.1.1): 교환 시 남긴 카드와 어울리는 카드(아웃)의 가중치 = 1 + outWeight. 0 = 순수 확률, 1 = 아웃이 2배 잘 나옴. 솔로·대전 공통 (대전 공정성). 판매 금지.",
-    "outWeight": 1
+    "comment": "행운 드로우(GDD §3.1.1): 교환 시 남긴 카드와 어울리는 카드(아웃)의 가중치 = 1 + outWeight. 0 = 순수 확률, 1 = 아웃이 2배. pity(행운 게이지): 노린 족보(rank=같은 숫자·짝 유지/flush/straight)가 안 나오면 다음에 같은 족보를 노릴 때 그 종류의 outWeight가 mult배씩(maxLevel까지, 성공 시 초기화). rank는 아웃이 많아(남긴 모든 숫자) 배율을 낮춘다 — 세 영웅 루트 소환 시점을 맞추는 손잡이(design/hero-shard-report.md). 솔로·대전 공통. 판매 금지.",
+    "outWeight": 1,
+    "pity": {
+      "mult": {
+        "rank": 1.5,
+        "flush": 2,
+        "straight": 2
+      },
+      "maxLevel": 3
+    }
   },
   "upgrade": {
     "baseCost": 50,

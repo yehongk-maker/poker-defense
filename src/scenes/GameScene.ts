@@ -417,7 +417,8 @@ export class GameScene extends Phaser.Scene {
   private exchangeStatus(): ExchangeStatus {
     const p = this.loop.cardPhase;
     const outs = p.outWeight > 0 && p.state === 'choosing' ? p.hand.map((_, i) => p.outsFor(i)) : [];
-    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed, outs };
+    const pity = ([['straight', '스트레이트'], ['flush', '플러시'], ['rank', '풀하우스']] as const).map(([k, label]) => ({ label, mult: p.pityMultiplier(k) }));
+    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed, outs, pity };
   }
 
   /** 상점 패널용 교환권 정보 */

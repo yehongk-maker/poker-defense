@@ -1,6 +1,6 @@
 /** 행운 드로우 (GDD §3.1.1): 아웃 판정·가중 추첨·CardPhase 연동 */
 import { describe, it, expect } from 'vitest';
-import { countOuts, isOut, outSpec, pickIndex } from '../src/systems/DrawAssist.ts';
+import { countOuts, isOut, outSpec, pickIndex, targetsOf } from '../src/systems/DrawAssist.ts';
 import { CardPhase } from '../src/systems/CardPhase.ts';
 import { createDeck, parseCard, parseHand, evaluateHand, HandRank } from '../src/systems/PokerEvaluator.ts';
 
@@ -104,5 +104,75 @@ describe('CardPhase 연동', () => {
   it('같은 시드면 같은 결과 (재현성)', () => {
     const run = () => { const p = new CardPhase({ drawAssist: { outWeight: 1 } }, rng(99)); p.start(); p.exchangeCard(0); p.exchangeCard(3); return p.hand.map((c) => `${c.rank}${c.suit}`).join(' '); };
     expect(run()).toBe(run());
+  });
+});
+
+describe('행운 게이지(피티): 노린 족보가 안 나오면 다음 같은 족보 아웃이 2배씩', () => {
+  const PITY = { outWeight: 1, pity: { mult: 2, maxLevel: 3 } };
+  const setHand = (p: CardPhase, codes: string) => { (p as unknown as { handCards: unknown[] }).handCards = parseHand(codes); };
+  /** 덱에서 손패와 겹치는 카드 제거 + 원하는 카드를 덱 맨 앞에 두지 않도록 셔플은 유지 */
+  const cleanDeck = (p: CardPhase) => {
+    const d = p as unknown as { deck: { rank: number; suit: string }[] };
+    const hand = p.hand;
+    d.deck = d.deck.filter((c) => !hand.some((h) => h.rank === c.rank && h.suit === c.suit));
+  };
+
+  it('남긴 카드로 "노린 종류"를 감지한다: 4장 같은 무늬=flush, 연속=straight, 짝=rank', () => {
+    expect(targetsOf(outSpec(parseHand('AH KH 7H 4H')))).toEqual(['flush']);
+    expect(targetsOf(outSpec(parseHand('9S 8H 7D 6C')))).toEqual(['straight']);
+    expect(targetsOf(outSpec(parseHand('QS QH 5D 2C')))).toEqual(['rank']);
+    expect(targetsOf(outSpec(parseHand('KS 9H 5D 2C')))).toEqual([]); // 아무 루트도 아님
+  });
+
+  it('스트레이트를 노리고 실패하면 straight 레벨만 오르고, 성공하면 0으로 돌아간다 (상한 3)', () => {
+    const p = new CardPhase({ drawAssist: PITY }, rng(41));
+    let fails = 0;
+    for (let round = 0; round < 30 && p.pityLevels.straight < 3; round++) {
+      p.start();
+      setHand(p, '9S 8H 7D 6C KS'); cleanDeck(p);
+      p.exchangeCard(4);
+      expect(p.attemptedTargets).toEqual(['straight']);
+      const r = p.confirm();
+      if (r.rank === HandRank.Straight) { expect(p.pityLevels.straight).toBe(0); fails = 0; }
+      else { fails++; expect(p.pityLevels.straight).toBe(Math.min(3, fails)); }
+      expect(p.pityLevels.flush).toBe(0);
+      expect(p.pityLevels.rank).toBe(0);
+    }
+    expect(p.pityLevels.straight).toBe(3);
+    expect(p.pityMultiplier('straight')).toBe(8);
+    expect(p.outWeights).toEqual({ rank: 1, flush: 1, straight: 8 });
+    // 이제 성공하면 리셋
+    let guard = 0;
+    while (p.pityLevels.straight > 0 && ++guard < 40) { p.start(); setHand(p, '9S 8H 7D 6C KS'); cleanDeck(p); p.exchangeCard(4); p.confirm(); }
+    expect(p.pityLevels.straight).toBe(0);
+  });
+
+  it('게이지가 오르면 그 족보의 드로우 성공률이 실제로 오른다 (양방 스트레이트 1장: 레벨0 ~24% → 레벨3 ~60%)', () => {
+    const rate = (level: number, seed: number) => {
+      const r = rng(seed);
+      let ok = 0;
+      const N = 4000;
+      for (let i = 0; i < N; i++) {
+        const p = new CardPhase({ drawAssist: PITY }, r);
+        (p as unknown as { pityLevel: Record<string, number> }).pityLevel.straight = level;
+        p.start(); setHand(p, '9S 8H 7D 6C KS'); cleanDeck(p);
+        p.exchangeCard(4);
+        if (evaluateHand([...p.hand], () => 0).rank === HandRank.Straight) ok++;
+      }
+      return ok / N;
+    };
+    const l0 = rate(0, 51), l3 = rate(3, 52);
+    expect(l0).toBeGreaterThan(0.19); expect(l0).toBeLessThan(0.29);
+    expect(l3).toBeGreaterThan(0.5); expect(l3).toBeLessThan(0.7);
+  });
+
+  it('교환하지 않은 라운드는 게이지를 바꾸지 않고, maxLevel 0이면 꺼진다', () => {
+    const p = new CardPhase({ drawAssist: PITY }, rng(61));
+    p.start(); p.confirm();
+    expect(p.pityLevels).toEqual({ rank: 0, flush: 0, straight: 0 });
+    const off = new CardPhase({ drawAssist: { outWeight: 1, pity: { mult: 2, maxLevel: 0 } } }, rng(62));
+    for (let i = 0; i < 5; i++) { off.start(); setHand(off, '9S 8H 7D 6C KS'); cleanDeck(off); off.exchangeCard(4); off.confirm(); }
+    expect(off.pityLevels.straight).toBe(0);
+    expect(off.pityMultiplier('straight')).toBe(1);
   });
 });

@@ -26,6 +26,8 @@ export interface ExchangeStatus {
   ticketsUsed: number;
   /** 카드별: 이 카드를 바꾸면 나머지와 어울리는 카드가 덱에 몇 장 (행운 드로우, 보정 꺼져 있으면 빈 배열) */
   outs?: readonly number[];
+  /** 행운 게이지: 종류별 현재 배율 (1보다 클 때만 표시) */
+  pity?: { label: string; mult: number }[];
 }
 
 const CARD_W = SIZE.cardW;
@@ -78,6 +80,7 @@ export class CardHand extends Phaser.GameObjects.Container {
   private infoBg: Phaser.GameObjects.Graphics;
   private countText: Phaser.GameObjects.Text;
   private ticketText: Phaser.GameObjects.Text;
+  private pityText: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, y: number, private cb: CardHandCallbacks) {
     super(scene, 0, y);
@@ -115,6 +118,10 @@ export class CardHand extends Phaser.GameObjects.Container {
     }
     this.rankText = scene.add.text(GAME_WIDTH / 2, -CARD_H / 2 - 42, '', { fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
     this.add(this.rankText);
+    // 행운 게이지 (족보 라벨 오른쪽 위, 게이지가 올라 있을 때만)
+    // 타이머 링 위 빈 공간에 아래→위로 쌓이는 짧은 줄들 (레이즈 버튼·족보 라벨과 안 겹치게)
+    this.pityText = scene.add.text(GAME_WIDTH - SIZE.gutter - 52, -66, '', { fontSize: `${SIZE.tiny}px`, color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 3, align: 'right' }).setOrigin(1, 1);
+    this.add(this.pityText);
 
     // 진행 행: [교환 현황 알약] [진행 → 소환 gold] + 우측 타이머 링(카드 옆)
     this.infoBg = scene.add.graphics();
@@ -198,6 +205,9 @@ export class CardHand extends Phaser.GameObjects.Container {
     this.countText.setText(`교환 ${status.used}/${status.total}${done ? ' ✓' : ''}`).setColor(hex(done ? COLOR.green : COLOR.textMain));
     const t = status.tickets;
     this.ticketText.setText(`교환권 ${t}장${status.ticketsUsed > 0 ? ` · 사용 ${status.ticketsUsed}` : ''}`).setColor(hex(t > 0 ? COLOR.textSub : COLOR.gray));
+    const pity = (status.pity ?? []).filter((p) => p.mult > 1);
+    const fmt = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
+    this.pityText.setText(pity.length ? ['행운 게이지', ...pity.map((p) => `${p.label} ×${fmt(p.mult)}`)].join('\n') : '');
     if (this.busy === 0 && this.lastResult) this.cards.forEach((v, i) => this.setTag(v, this.tagKind(i)));
   }
 

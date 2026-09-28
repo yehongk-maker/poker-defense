@@ -16,7 +16,7 @@ import {
   createDeck,
   evaluateHand,
 } from './PokerEvaluator.ts';
-import { countOuts, pickIndex, type DrawAssistConfig } from './DrawAssist.ts';
+import { OUT_KINDS, countOuts, kindAchieved, outSpec, pickIndex, pityMultOf, targetsOf, type DrawAssistConfig, type OutKind, type OutWeights } from './DrawAssist.ts';
 
 export type CardPhaseState = 'idle' | 'choosing' | 'done';
 
@@ -44,6 +44,12 @@ export class CardPhase {
   readonly timerSeconds: number;
   /** 아웃 가중치 보너스 (0 = 보정 없음) */
   readonly outWeight: number;
+  /** 행운 게이지 설정 (없으면 꺼짐) */
+  readonly pity: { mult: number | Partial<Record<OutKind, number>>; maxLevel: number };
+  /** 행운 게이지 레벨 (종류별, 라운드를 넘어 유지) */
+  private pityLevel: Record<OutKind, number> = { rank: 0, flush: 0, straight: 0 };
+  /** 이번 라운드에 교환하며 노린 종류 */
+  private attempted = new Set<OutKind>();
 
   private rng: () => number;
   private deck: Card[] = [];
@@ -61,6 +67,7 @@ export class CardPhase {
     this.exchangeLimit = config.exchangeLimit ?? 1;
     this.timerSeconds = config.timerSeconds ?? 30;
     this.outWeight = config.drawAssist?.outWeight ?? 0;
+    this.pity = config.drawAssist?.pity ?? { mult: 1, maxLevel: 0 };
     this.rng = rng;
   }
 
@@ -73,7 +80,20 @@ export class CardPhase {
     this.remainingTime = this.timerSeconds;
     this.phaseState = 'choosing';
     this.result = null;
+    this.attempted.clear();
     return this.hand;
+  }
+
+  // ── 행운 게이지 (GDD 3.1.1) ──
+  /** 종류별 게이지 레벨 (0 = 보정 기본값) */
+  get pityLevels(): Readonly<Record<OutKind, number>> { return this.pityLevel; }
+  /** 종류별 현재 배율 (아웃 보너스가 기본의 몇 배인지): mult^level */
+  pityMultiplier(kind: OutKind): number { return Math.pow(pityMultOf(this.pity.mult, kind), this.pityLevel[kind]); }
+  /** 이번 라운드에 교환하며 노린 종류 */
+  get attemptedTargets(): OutKind[] { return [...this.attempted]; }
+  /** 지금 적용되는 종류별 아웃 보너스 */
+  get outWeights(): OutWeights {
+    return { rank: this.outWeight * this.pityMultiplier('rank'), flush: this.outWeight * this.pityMultiplier('flush'), straight: this.outWeight * this.pityMultiplier('straight') };
   }
 
   get state(): CardPhaseState {
@@ -181,7 +201,8 @@ export class CardPhase {
     if (this.deck.length === 0) throw new Error('Not enough cards in deck');
     if (this.outWeight <= 0) return this.deck.shift()!;
     const kept = this.handCards.filter((_, i) => i !== index);
-    const at = pickIndex(kept, this.deck, this.outWeight, this.rng);
+    for (const k of targetsOf(outSpec(kept))) this.attempted.add(k); // 남긴 카드가 말해주는 "노린 족보"
+    const at = pickIndex(kept, this.deck, this.outWeights, this.rng);
     return this.deck.splice(at, 1)[0];
   }
 
@@ -190,6 +211,13 @@ export class CardPhase {
     this.assertChoosing();
     this.result = evaluateHand(this.handCards, this.rng);
     this.phaseState = 'done';
+    // 행운 게이지: 노린 종류가 안 나왔으면 레벨 +1(상한), 나왔으면 0
+    if (this.pity.maxLevel > 0) {
+      for (const k of OUT_KINDS) {
+        if (!this.attempted.has(k)) continue;
+        this.pityLevel[k] = kindAchieved(k, this.result.rank) ? 0 : Math.min(this.pity.maxLevel, this.pityLevel[k] + 1);
+      }
+    }
     return this.result;
   }
 

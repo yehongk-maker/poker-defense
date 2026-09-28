@@ -61,7 +61,7 @@ export class InfoPanel extends Phaser.GameObjects.Container {
       this.handsView.add([box, name, prob, res]);
     });
     this.handsView.add(scene.add.text(GAME_WIDTH / 2, ranks.length * rowH + 30, '수트 = 종족. 혼합 족보는 구성 카드의 다수 수트 (동수면 무작위)', { fontSize: '22px', color: COLORS.textMuted, fontFamily: FONT.body }).setOrigin(0.5));
-    this.handsView.add(scene.add.text(GAME_WIDTH / 2, ranks.length * rowH + 62, '행운 드로우: 카드를 바꾸면 남긴 카드와 어울리는 카드(같은 숫자·플러시·스트레이트 아웃)가 2배 잘 나와요 · 영웅은 조각 3개(해당 종류 + 와일드), 보스 클리어 시 랜덤 조각 2개', { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT.body, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5, 0));
+    this.handsView.add(scene.add.text(GAME_WIDTH / 2, ranks.length * rowH + 62, '행운 드로우: 카드를 바꾸면 남긴 카드와 어울리는 카드(같은 숫자·플러시·스트레이트 아웃)가 2배 잘 나와요 · 행운 게이지: 노린 족보가 안 나오면 다음에 같은 족보를 노릴 때 아웃이 2배씩 더(최대 8배, 나오면 초기화) · 영웅은 조각 3개(해당 종류 + 와일드), 보스 클리어 시 랜덤 조각 2개', { fontSize: '20px', color: COLORS.textDim, fontFamily: FONT.body, align: 'center', wordWrap: { width: GAME_WIDTH - 80 } }).setOrigin(0.5, 0));
 
     // 시너지 도감 (임베드)
     this.codex = new SynergyCodex(scene, () => {}, { embedded: true, top: 340 });
