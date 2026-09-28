@@ -96,5 +96,6 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료: 족보별 영웅 조각·보스 조각·행운 드로우(GDD v1.8, 2026-09-28): DrawAssist + CardPhase 가중 추첨, hands.json shards, heroes.json shardType, 상점 패널 조각 게이지 3줄+와일드 뱃지(DESIGN §5-04), 영웅 카드는 조각 맞는 것만 활성(§5-07), 카드 우상단 아웃 표시, 보스 조각 토스트. 밸런스 재측정: 하이카드 23·무전략 25·최선 32 (JSON 변경 없음).
 - 완료: DESIGN.md 캐주얼 디자인 적용(2026-09-26): 토큰·UIButton·재화 알약·타이머 링·부채꼴 손패·잔디 필드/모래 트랙·유닛 칩·지상/공중 적 표현·데미지 숫자·베팅 3버튼·상대 말풍선·웨이브/위기 배너·결과 화면·로비 탭바. GameLoop.heroGradeDrop(등급 하락 카피).
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
-- 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼, 시너지 도감 UI.
+- 기획(미구현): 싱글 캠페인 / AI 대전 / 온라인 레이즈 듀얼 모드 분리 — docs/mode-design.md (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
+- 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
