@@ -29,6 +29,32 @@
     "callChance": 0.75,
     "callAnyRankChance": 0.25,
     "reserveAntes": 3,
-    "respondSec": [0.8, 2.0]
+    "respondSec": [
+      0.8,
+      2.0
+    ]
+  },
+  "match": {
+    "comment": "온라인/친구 대전 매치 규칙 (docs/mode-design.md §1.2). wavesFile은 npm run waves -- --total 20 ... 으로 생성. hero.grades는 20웨이브 기준 등급 경계, bossShardAmount는 보스(5/10/15) 클리어 조각 수 — 둘 다 npm run shards -- --mode duel 로 검증. ticketsPerMatch = 매치당 카드 교환권 사용 상한(허용하되 제한).",
+    "waves": 20,
+    "wavesFile": "duel-waves.json",
+    "hero": {
+      "grades": {
+        "S": {
+          "minRemainingWaves": 10,
+          "mult": 1.5
+        },
+        "A": {
+          "minRemainingWaves": 5,
+          "mult": 1.0
+        },
+        "B": {
+          "minRemainingWaves": 0,
+          "mult": 0.7
+        }
+      },
+      "bossShardAmount": 2
+    },
+    "ticketsPerMatch": 3
   }
 }

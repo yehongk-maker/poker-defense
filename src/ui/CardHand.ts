@@ -28,6 +28,8 @@ export interface ExchangeStatus {
   outs?: readonly number[];
   /** 행운 게이지: 종류별 현재 배율 (1보다 클 때만 표시) */
   pity?: { label: string; mult: number }[];
+  /** 대전: 이 판 교환권 사용 상한 (used/max) */
+  runCap?: { used: number; max: number };
 }
 
 const CARD_W = SIZE.cardW;
@@ -204,7 +206,9 @@ export class CardHand extends Phaser.GameObjects.Container {
     const done = status.used >= status.total;
     this.countText.setText(`교환 ${status.used}/${status.total}${done ? ' ✓' : ''}`).setColor(hex(done ? COLOR.green : COLOR.textMain));
     const t = status.tickets;
-    this.ticketText.setText(`교환권 ${t}장${status.ticketsUsed > 0 ? ` · 사용 ${status.ticketsUsed}` : ''}`).setColor(hex(t > 0 ? COLOR.textSub : COLOR.gray));
+    const cap = status.runCap ? ` · 이 판 ${status.runCap.used}/${status.runCap.max}` : status.ticketsUsed > 0 ? ` · 사용 ${status.ticketsUsed}` : '';
+    this.ticketText.setText(`교환권 ${t}장${cap}`).setColor(hex(t > 0 ? COLOR.textSub : COLOR.gray));
+    if (this.ticketText.width > 190) this.ticketText.setScale(190 / this.ticketText.width); else this.ticketText.setScale(1);
     const pity = (status.pity ?? []).filter((p) => p.mult > 1);
     const fmt = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
     this.pityText.setText(pity.length ? ['행운 게이지', ...pity.map((p) => `${p.label} ×${fmt(p.mult)}`)].join('\n') : '');

@@ -32,3 +32,19 @@ describe('밸런스 목표 (봇 60판)', () => {
     expect(st.wins / GAMES).toBeLessThanOrEqual(0.2);
   });
 }, 60000);
+
+describe('대전 모드(20웨이브) 밸런스 목표 (봇 60판, docs/mode-design.md §8)', () => {
+  it('하이카드 봇 저지선 7~10, 무전략 11~14, 최선 15~19에 승리 20% 이하', () => {
+    const hc = run('highcard', GAMES, 4000, 'duel');
+    expect(hc.stalls).toBe(0);
+    expect(median(hc.waves)).toBeGreaterThanOrEqual(7);
+    expect(median(hc.waves)).toBeLessThanOrEqual(10);
+    const nv = run('naive', GAMES, 5000, 'duel');
+    expect(median(nv.waves)).toBeGreaterThanOrEqual(11);
+    expect(median(nv.waves)).toBeLessThanOrEqual(14);
+    const sm = run('smart', GAMES, 6000, 'duel');
+    expect(median(sm.waves)).toBeGreaterThanOrEqual(15);
+    expect(median(sm.waves)).toBeLessThanOrEqual(19);
+    expect(sm.wins / GAMES).toBeLessThanOrEqual(0.2);
+  });
+}, 120000);

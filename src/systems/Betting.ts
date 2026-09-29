@@ -17,6 +17,8 @@ export type BetAction = 'check' | 'raise' | 'call' | 'fold';
 export type BetReason = 'fold' | 'life' | 'time' | 'hand' | 'out' | 'carry';
 
 export interface DuelConfig {
+  /** 매치 규칙 (20웨이브 곡선·등급 경계·보스 조각·교환권 상한) — docs/mode-design.md */
+  match: { waves: number; wavesFile: string; hero: { grades: Record<'S' | 'A' | 'B', { minRemainingWaves: number; mult: number }>; bossShardAmount: number }; ticketsPerMatch: number };
   ante: { base: number; perWave: number };
   raise: { base: number; perWave: number; roundTo: number; max: number };
   shortfall: { goldPerLife: number };

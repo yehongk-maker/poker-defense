@@ -425,3 +425,32 @@ describe('족보별 영웅 조각 (GDD 3.3)', () => {
     expect(g.cardPhase.outWeight).toBe(baseData().config.drawAssist!.outWeight);
   });
 });
+
+describe('카드 교환권 매치당 상한 (config.ticketsPerRun — 대전 룰)', () => {
+  it('상한이 없으면 무제한, 있으면 그 횟수까지만 쓰고 이후 throw', () => {
+    const free = new GameLoop(baseData(), seededRng(400));
+    expect(free.ticketsLeftRun).toBe(Infinity);
+    free.exchangeWithTicket(0); free.exchangeWithTicket(0);
+    expect(free.ticketsUsedRun).toBe(2);
+
+    const data = baseData();
+    data.config = { ...data.config, ticketsPerRun: 2 };
+    const g = new GameLoop(data, seededRng(401));
+    expect(g.ticketsLeftRun).toBe(2);
+    g.exchangeWithTicket(1);
+    g.exchangeWithTicket(2);
+    expect(g.ticketsLeftRun).toBe(0);
+    expect(() => g.exchangeWithTicket(3)).toThrow(/교환권/);
+    // 다음 라운드로 넘어가도 매치 누적이라 그대로 0
+    g.confirmHand();
+    (g as unknown as { _phase: string })._phase = 'card';
+    g.cardPhase.start();
+    expect(g.ticketsLeftRun).toBe(0);
+  });
+
+  it('카드 페이즈가 아니면 교환권 교환 불가', () => {
+    const g = new GameLoop(baseData(), seededRng(402));
+    g.confirmHand();
+    expect(() => g.exchangeWithTicket(0)).toThrow(/Invalid phase/);
+  });
+});

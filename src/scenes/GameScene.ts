@@ -78,6 +78,8 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.data_ = getMeta().applyTo(loadGameData()); // 메타 업그레이드(교환 횟수·타이머·시작 골드·해금 영웅) 반영
+    // 대전 룰: 카드 교환권은 허용하되 매치당 상한 (docs/mode-design.md 결정 2)
+    this.data_ = { ...this.data_, config: { ...this.data_.config, ticketsPerRun: loadDuelConfig().match.ticketsPerMatch } };
     this.loop = new GameLoop(this.data_);
     this.selectedSlot = -1;
     this.speed = 1;
@@ -114,10 +116,11 @@ export class GameScene extends Phaser.Scene {
         if (p.canExchange(i)) {
           card = p.exchangeCard(i);
         } else if (getMeta().tickets > 0 && p.canExchangeWithTicket(i)) {
-          // 기본 교환을 다 쓴 카드: 교환권 1장 소모
+          // 기본 교환을 다 쓴 카드: 교환권 1장 소모 (대전은 매치당 상한 — 상한이면 GameLoop이 throw)
+          if (this.loop.ticketsLeftRun <= 0) throw new Error(`이 판의 교환권 사용 ${this.loop.ticketsUsedRun}/${this.data_.config.ticketsPerRun}회를 다 썼어요`);
           getMeta().useTicket();
-          card = p.exchangeWithTicket(i);
-          this.showToast(`🎫 교환권 사용 (남은 ${getMeta().tickets}장)`);
+          card = this.loop.exchangeWithTicket(i);
+          this.showToast(`교환권 사용 (보유 ${getMeta().tickets}장 · 이 판 ${this.loop.ticketsUsedRun}/${this.data_.config.ticketsPerRun ?? '∞'})`);
         } else return;
         const result = evaluateHand([...p.hand], () => 0);
         // 카드가 뒤집혀 새 카드로 오픈된 뒤 족보 갱신
@@ -418,7 +421,7 @@ export class GameScene extends Phaser.Scene {
     const p = this.loop.cardPhase;
     const outs = p.outWeight > 0 && p.state === 'choosing' ? p.hand.map((_, i) => p.outsFor(i)) : [];
     const pity = ([['straight', '스트레이트'], ['flush', '플러시'], ['rank', '풀하우스']] as const).map(([k, label]) => ({ label, mult: p.pityMultiplier(k) }));
-    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: getMeta().tickets, ticketsUsed: p.ticketsUsed, outs, pity };
+    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: this.loop.ticketsLeftRun > 0 ? getMeta().tickets : 0, ticketsUsed: p.ticketsUsed, outs, pity, runCap: this.data_.config.ticketsPerRun !== undefined ? { used: this.loop.ticketsUsedRun, max: this.data_.config.ticketsPerRun } : undefined };
   }
 
   /** 상점 패널용 교환권 정보 */

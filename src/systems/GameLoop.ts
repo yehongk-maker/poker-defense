@@ -10,7 +10,7 @@
  * 영웅 액티브 스킬은 씬/전투 연출 단계에서 구현 (heroes.json에 데이터만 정의됨).
  */
 
-import { type Suit, type HandResult } from './PokerEvaluator.ts';
+import { type Suit, type HandResult, type Card } from './PokerEvaluator.ts';
 import { CardPhase, type CardPhaseConfig } from './CardPhase.ts';
 import {
   SummonMapper,
@@ -75,6 +75,8 @@ export interface GameConfig {
   upgrade: { baseCost: number; costGrowth: number; maxLevel: number; attackPctPerLevel: number };
   /** 행운 드로우 (GDD 3.1.1). 없으면 순수 확률. 솔로·대전 모두 같은 값 — 대전 공정성 */
   drawAssist?: { outWeight: number };
+  /** 한 판(매치)에서 쓸 수 있는 카드 교환권 상한. 없으면 무제한 (캠페인). 대전은 duel.json match.ticketsPerMatch */
+  ticketsPerRun?: number;
   hero: {
     /** 영웅 1명 소환에 필요한 조각 수 (해당 종류 + wild 합) */
     shardsRequired: number;
@@ -160,6 +162,7 @@ export class GameLoop {
   private heroSkillCd = 0;       // 영웅 액티브 남은 쿨타임(초). 전투 중에만 감소, 웨이브를 넘어 유지
   private coverageCache = new Map<number, number[]>(); // range → 슬롯별 트랙 커버리지
   private roundHandRank = 0;
+  private _ticketsUsedRun = 0;
   private roundLifeLost = 0;
   private _lastRound: RoundReport | null = null;
 
@@ -182,6 +185,24 @@ export class GameLoop {
   get wave(): number { return this._wave; }
   get gold(): number { return this._gold; }
   get life(): number { return this._life; }
+  /** 이번 판에서 쓴 카드 교환권 수 */
+  get ticketsUsedRun(): number { return this._ticketsUsedRun; }
+  /** 이번 판 교환권 남은 사용 가능 횟수 (상한 없으면 Infinity) */
+  get ticketsLeftRun(): number {
+    const cap = this.data.config.ticketsPerRun;
+    return cap === undefined ? Infinity : Math.max(0, cap - this._ticketsUsedRun);
+  }
+  /**
+   * 카드 교환권으로 교환 (카드 페이즈). 매치당 상한(config.ticketsPerRun)을 지키고 사용 수를 센다.
+   * 교환권 재고(계정 보유)는 호출 측(MetaProgress)이 차감한다.
+   */
+  exchangeWithTicket(index: number): Card {
+    this.assertPhase('card');
+    if (this.ticketsLeftRun <= 0) throw new Error(`이 판에서는 교환권을 ${this.data.config.ticketsPerRun}회까지만 쓸 수 있습니다`);
+    const c = this.cardPhase.exchangeWithTicket(index);
+    this._ticketsUsedRun++;
+    return c;
+  }
   /** 가장 최근에 끝난 라운드의 성적 (전투가 끝날 때마다 갱신) */
   get lastRound(): RoundReport | null { return this._lastRound; }
 

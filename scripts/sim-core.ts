@@ -23,7 +23,11 @@ const unitsJson = load('units.json');
 const wavesJson = load('waves.json');
 const handsJson = load('hands.json');
 
-export function baseData(highcardOnly = false): GameData {
+export type Mode = 'campaign' | 'duel';
+const duelJson = load('duel.json');
+
+/** 모드별 데이터: duel은 duel.json match 섹션(20웨이브 곡선·등급 경계·보스 조각 수)을 덮어쓴다 */
+export function baseData(highcardOnly = false, mode: Mode = 'campaign'): GameData {
   const hands = structuredClone(handsJson);
   if (highcardOnly) {
     // 모든 족보를 하이카드 결과로 강제 (T1 1기, 조각 0)
@@ -33,15 +37,23 @@ export function baseData(highcardOnly = false): GameData {
       hands[k] = { summonTiers: k === 'TwoPair' ? [1, 1] : [1], shards: {}, heroSummon: false };
     }
   }
+  const config = load('config.json');
+  let wv = wavesJson;
+  if (mode === 'duel') {
+    const m = duelJson.match;
+    wv = load(m.wavesFile);
+    config.totalWaves = m.waves;
+    config.hero = { ...config.hero, grades: m.hero.grades, bossShards: { ...config.hero.bossShards, amount: m.hero.bossShardAmount } };
+  }
   return {
     units: unitsJson.units,
     hands,
     synergies: load('synergies.json'),
     heroes: load('heroes.json').heroes,
-    waves: wavesJson.waves,
-    enemyTypes: wavesJson.enemyTypes,
-    battleConfig: wavesJson.config,
-    config: load('config.json'),
+    waves: wv.waves,
+    enemyTypes: wv.enemyTypes,
+    battleConfig: wv.config,
+    config,
   };
 }
 
@@ -56,8 +68,8 @@ export function seededRng(seed: number): () => number {
 export type Bot = 'highcard' | 'naive' | 'smart';
 import { dominantSuit, spendAllOnUpgrades, smartCardPhase, readyHero } from '../src/systems/bots.ts';
 
-export function playGame(bot: Bot, seed: number): GameLoop {
-  const g = new GameLoop(baseData(bot === 'highcard'), seededRng(seed));
+export function playGame(bot: Bot, seed: number, mode: Mode = 'campaign'): GameLoop {
+  const g = new GameLoop(baseData(bot === 'highcard', mode), seededRng(seed));
   let guard = 0;
   while (g.phase === 'card' || g.phase === 'manage') {
     if (++guard > 200) throw new Error('loop guard');
@@ -91,35 +103,38 @@ export function playGame(bot: Bot, seed: number): GameLoop {
   return g;
 }
 
-export interface Stat { games: number; wins: number; waves: number[]; stalls: number }
+export interface Stat { games: number; wins: number; waves: number[]; stalls: number; total: number }
 
-export function run(bot: Bot, games: number, seed0: number): Stat {
-  const st: Stat = { games, wins: 0, waves: [], stalls: 0 };
+export function run(bot: Bot, games: number, seed0: number, mode: Mode = 'campaign'): Stat {
+  const total = baseData(false, mode).config.totalWaves;
+  const st: Stat = { games, wins: 0, waves: [], stalls: 0, total };
   for (let i = 0; i < games; i++) {
-    const g = playGame(bot, seed0 + i);
+    const g = playGame(bot, seed0 + i, mode);
     if (g.phase === 'victory') st.wins++;
     if (g.phase === 'combat') st.stalls++;
-    st.waves.push(g.phase === 'victory' ? 41 : g.wave);
+    st.waves.push(g.phase === 'victory' ? total + 1 : g.wave);
   }
   return st;
 }
 
 export function report(bot: Bot, st: Stat, csv: boolean): void {
   const n = st.games;
+  const T = st.total;
+  const marks = T === 40 ? [10, 15, 21, 30] : [Math.round(T * 0.25), Math.round(T * 0.4), Math.round(T * 0.55), Math.round(T * 0.75)];
   const reach = (w: number) => (st.waves.filter((x) => x >= w).length / n * 100).toFixed(0) + '%';
-  const avg = (st.waves.reduce((a, b) => a + Math.min(b, 40), 0) / n).toFixed(1);
+  const avg = (st.waves.reduce((a, b) => a + Math.min(b, T), 0) / n).toFixed(1);
   const sorted = [...st.waves].sort((a, b) => a - b);
   const median = sorted[Math.floor(n / 2)];
   if (csv) {
-    console.log([bot, n, st.wins, avg, median, ...[10, 15, 21, 30, 40].map(reach)].join(','));
+    console.log([bot, n, st.wins, avg, median, ...marks.map(reach), reach(T + 1)].join(','));
     return;
   }
-  console.log(`\n[${bot}]  games=${n}  win=${(st.wins / n * 100).toFixed(1)}%  avgWave=${avg}  median=${median === 41 ? 'WIN' : median}  stalls=${st.stalls}`);
-  console.log(`  reach ≥10: ${reach(10)}   ≥15: ${reach(15)}   ≥21: ${reach(21)}   ≥30: ${reach(30)}   clear: ${reach(41)}`);
+  console.log(`\n[${bot}]  games=${n}  total=${T}  win=${(st.wins / n * 100).toFixed(1)}%  avgWave=${avg}  median=${median === T + 1 ? 'WIN' : median}  stalls=${st.stalls}`);
+  console.log(`  reach ${marks.map((m) => `≥${m}: ${reach(m)}`).join('   ')}   clear: ${reach(T + 1)}`);
   const hist = new Map<number, number>();
   for (const w of st.waves) hist.set(w, (hist.get(w) ?? 0) + 1);
   const line = [...hist.entries()].sort((a, b) => a[0] - b[0])
-    .map(([w, c]) => `${w === 41 ? 'WIN' : 'w' + w}:${c}`).join(' ');
+    .map(([w, c]) => `${w === T + 1 ? 'WIN' : 'w' + w}:${c}`).join(' ');
   console.log(`  ended at: ${line}`);
 }
 

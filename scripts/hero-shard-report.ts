@@ -7,9 +7,21 @@ import { CardPhase } from '../src/systems/CardPhase.ts';
 import { evaluateHand, HandRank, type Card } from '../src/systems/PokerEvaluator.ts';
 
 const read = (p: string) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
+const argv = process.argv.slice(2);
+const argOf = (k: string): string | undefined => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
+const MODE = argOf('mode') ?? 'campaign';
 const config = read('../src/data/config.json');
+if (MODE === 'duel') {
+  const m = read('../src/data/duel.json').match;
+  config.totalWaves = m.waves;
+  config.hero = { ...config.hero, grades: m.hero.grades, bossShards: { ...config.hero.bossShards, amount: m.hero.bossShardAmount } };
+}
+// 실험용 덮어쓰기: --bossShards 1 --gradeS 10 --gradeA 5
+if (argOf('bossShards')) config.hero.bossShards.amount = Number(argOf('bossShards'));
+if (argOf('gradeS')) config.hero.grades.S.minRemainingWaves = Number(argOf('gradeS'));
+if (argOf('gradeA')) config.hero.grades.A.minRemainingWaves = Number(argOf('gradeA'));
 const hands = read('../src/data/hands.json');
-const waves = read('../src/data/waves.json').waves as { wave: number; boss: boolean }[];
+const waves = read(MODE === 'duel' ? '../src/data/duel-waves.json' : '../src/data/waves.json').waves as { wave: number; boss: boolean }[];
 const heroes = read('../src/data/heroes.json').heroes as { name: string; unlock: string; shardType: string }[];
 
 const TYPES = ['straight', 'flush', 'fullHouse'] as const;
@@ -131,8 +143,8 @@ function pityLabel(): string {
 }
 const wv = (x: number) => (x === 99 ? '못 함' : `W${x}`);
 const L: string[] = [];
-L.push('# 영웅 조각 밸런스 리포트');
-L.push(`\n> \`npm run shards\`(scripts/hero-shard-report.ts)로 생성. 조건: 카드별 교환 1회 + 행운 드로우 outWeight ${config.drawAssist.outWeight}, 영웅 1명당 조각 ${REQ}개, 보스(W${BOSS_WAVES.join('/')}) 클리어 시 랜덤 종류 ${BOSS.amount}개.`);
+L.push(`# 영웅 조각 밸런스 리포트${MODE === 'duel' ? ' — 대전 모드(20웨이브)' : ''}`);
+L.push(`\n> \`npm run shards${MODE === 'duel' ? ' -- --mode duel' : ''}\`(scripts/hero-shard-report.ts)로 생성. 조건: 총 ${TOTAL}웨이브, 카드별 교환 1회 + 행운 드로우 outWeight ${config.drawAssist.outWeight}, 영웅 1명당 조각 ${REQ}개, 보스(W${BOSS_WAVES.join('/')}) 클리어 시 랜덤 종류 ${BOSS.amount}개.`);
 L.push(`> 조각: ${Object.entries(AMOUNT).map(([k, v]) => `${LABEL[k]} ${v}개`).join(' · ')} (포카드·스트레이트 플러시 = 와일드)\n`);
 L.push(`## 1. 한 라운드에 조각을 얻을 확률 (${ROUNDS.toLocaleString()}라운드, 행운 게이지 0 기준)\n`);
 L.push('| 노리는 족보 | 스트레이트 조각 | 플러시 조각 | 풀하우스 조각 | 와일드 | 로열(즉시 소환) |');
@@ -152,5 +164,5 @@ TYPES.forEach((t, i) => {
 L.push('\n\\* 메타 해금 영웅');
 const out = L.join('\n') + '\n';
 mkdirSync(new URL('../design/', import.meta.url), { recursive: true });
-writeFileSync(new URL('../design/hero-shard-report.md', import.meta.url), out);
+if (!argv.includes('--no-write')) writeFileSync(new URL(MODE === 'duel' ? '../design/hero-shard-report-duel.md' : '../design/hero-shard-report.md', import.meta.url), out);
 console.log(out);

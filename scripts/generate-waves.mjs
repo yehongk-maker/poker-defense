@@ -1,5 +1,5 @@
 // waves.json 생성 스크립트 — GDD 3.5. 수정 후 재실행하면 waves.json 갱신.
-// 실행: npm run waves -- [--timeLimit 30] [--bossTimeLimit 45] [--hpBase 20] [--hpGrowth 1.17] [--countBase 4] [--countPer 0.5] [--countMax 30] [--bossMult 25] [--armoredMult 1.0] [--specialShare 0.7] [--out path]
+// 실행: npm run waves -- [--total 40] [--bossEvery 10] [--clearGoldBase 30] [--clearGoldPerWave 5] [--timeLimit 30] [--bossTimeLimit 45] [--hpBase 20] [--hpGrowth 1.17] [--countBase 4] [--countPer 0.5] [--countMax 30] [--bossMult 25] [--armoredMult 1.0] [--specialShare 0.7] [--out path]
 // 2026-09-20 밸런스: 1.18^w/15~30마리 → 하이카드 봇 98% 웨이브1 사망. 1.15^w/4+0.5w/중갑 hpMult 1.0으로 조정 (근거: npm run sim).
 // 2026-09-21 종족·진형 시너지 추가로 화력 상승 → hpGrowth 1.15→1.16 (봇 기준 하이카드 22 / 무전략 24 / 최선 31 유지).
 // 2026-09-22 유닛 40종(대공·장사거리 다수)으로 화력 상승 → 1.16→1.17 (하이카드 23 / 무전략 24 / 최선 31).
@@ -13,6 +13,11 @@ const optS = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[
 // ── 밸런스 파라미터 (기본값 = 현재 채택값) ──
 const HP_BASE = opt('hpBase', 20);
 const HP_GROWTH = opt('hpGrowth', 1.17);
+const TOTAL = opt('total', 40);              // 대전 모드는 20 (docs/mode-design.md)
+const BOSS_EVERY = opt('bossEvery', TOTAL / 4);
+const SCALE = TOTAL / 40;                    // 등장 게이트·초반 구간을 웨이브 수에 맞춰 압축
+const CLEAR_GOLD_BASE = opt('clearGoldBase', 30);
+const CLEAR_GOLD_PER = opt('clearGoldPerWave', 5);
 const COUNT_BASE = opt('countBase', 4);
 const COUNT_PER = opt('countPer', 0.5);
 const COUNT_MAX = opt('countMax', 30);
@@ -40,7 +45,8 @@ const enemyTypes = {
   specter_dragon:  { name: '망령 드래곤',   movement: 'air',    speedMult: 0.75, physicalResist: 0.2, regenPctPerSec: 0.01, hpMult: BOSS_HP_MULT * 1.2, boss: true },
 };
 // 보스 스케줄: 지상/공중 교대 → 20웨이브 보스가 대공 빌드 체크포인트
-const bosses = { 10: 'bone_golem', 20: 'fallen_seraphim', 30: 'skeleton_lord', 40: 'specter_dragon' };
+const bossOrder = ['bone_golem', 'fallen_seraphim', 'skeleton_lord', 'specter_dragon'];
+const bosses = Object.fromEntries(bossOrder.map((b, i) => [BOSS_EVERY * (i + 1), b]));
 // 특수 타입 순환 + 등장 게이트 (공중은 6웨이브부터 → 대공 유닛 준비 시간)
 const specials = [
   { type: 'wild_hound', gate: 5 },
@@ -53,20 +59,21 @@ const specials = [
   { type: 'fallen_spearman', gate: 15 },
 ];
 
+const gate = (g) => Math.max(1, Math.ceil(g * SCALE));
 const waves = [];
-for (let w = 1; w <= 40; w++) {
-  const boss = w % 10 === 0;
+for (let w = 1; w <= TOTAL; w++) {
+  const boss = w % BOSS_EVERY === 0 && bosses[w] !== undefined;
   const hp = Math.round(HP_BASE * Math.pow(HP_GROWTH, w));
   const count = boss ? 1 : Math.min(COUNT_MAX, Math.round(COUNT_BASE + w * COUNT_PER));
 
   let groups;
   if (boss) {
     groups = [{ type: bosses[w], count: 1 }];
-  } else if (w < 5) {
+  } else if (w < gate(5)) {
     groups = [{ type: 'skeleton', count }];
   } else {
-    const sp = specials[(w - 5) % specials.length];
-    const type = w >= sp.gate ? sp.type : 'skeleton';
+    const sp = specials[(w - gate(5)) % specials.length];
+    const type = w >= gate(sp.gate) ? sp.type : 'skeleton';
     const specialCount = Math.round(count * SPECIAL_SHARE);
     groups =
       type === 'skeleton'
@@ -82,7 +89,7 @@ for (let w = 1; w <= 40; w++) {
 
 const data = {
   comment:
-    `GDD 3.5 웨이브 테이블. hp = ${HP_BASE}×${HP_GROWTH}^wave (보스는 ×hpMult), 마릿수 = ${COUNT_BASE} + ${COUNT_PER}×wave (최대 ${COUNT_MAX}), 제한시간 ${TIME_LIMIT}s(보스 ${BOSS_TIME_LIMIT}s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 하트, rangeDamageMult 사거리(셀)별 공격 배율. enemyTypes.movement: air 적은 targets=ground 유닛이 공격 불가(스플래시·체인도 안 튐). 공중 6웨이브부터, 보스 지상/공중 교대. ` +
+    `GDD 3.5 웨이브 테이블 (총 ${TOTAL}웨이브, 보스 ${Object.keys(bosses).join('/')}). hp = ${HP_BASE}×${HP_GROWTH}^wave (보스는 ×hpMult), 마릿수 = ${COUNT_BASE} + ${COUNT_PER}×wave (최대 ${COUNT_MAX}), 제한시간 ${TIME_LIMIT}s(보스 ${BOSS_TIME_LIMIT}s). config: gridSize 슬롯 격자, lifePerLeak 시간초과 이탈 적당 하트, rangeDamageMult 사거리(셀)별 공격 배율. enemyTypes.movement: air 적은 targets=ground 유닛이 공격 불가(스플래시·체인도 안 튐). 공중 6웨이브부터, 보스 지상/공중 교대. ` +
     '생성: scripts/generate-waves.mjs — 수치 바꾸려면 스크립트 인자로 재생성하거나 이 파일 직접 편집.',
   formula: { hpBase: HP_BASE, hpGrowth: HP_GROWTH, countBase: COUNT_BASE, countPerWave: COUNT_PER, countMax: COUNT_MAX },
   config: {
@@ -91,8 +98,8 @@ const data = {
     baseEnemySpeed: 4,
     baseKillGold: 1,
     bossKillGold: 20,
-    clearGoldBase: 30,
-    clearGoldPerWave: 5,
+    clearGoldBase: CLEAR_GOLD_BASE,
+    clearGoldPerWave: CLEAR_GOLD_PER,
     lifePerLeak: 1,
     bossLifePerLeak: 3,
     rangeDamageMult: { '2': 1.35, '3': 1.0, '4': 0.75, '5': 0.65, '6': 0.55 }
