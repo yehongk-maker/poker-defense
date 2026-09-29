@@ -30,6 +30,8 @@ export interface ResultData {
   continueLabel?: string;
   continueVariant?: 'gold' | 'gray';
   againLabel?: string;
+  /** [계속] 아래에 나란히 놓는 보조 버튼 (친구 추가 등) */
+  extras?: { label: string; variant: 'blue' | 'gray' | 'purple'; onClick: (button: Button) => void }[];
   /**
    * 보상형 광고 버튼 (캠페인 전용, DESIGN §5-05/06). green + ▶ AD, 가장 크고 위.
    * onClick은 결과를 돌려준다: 버튼을 끄고 바꿀 문구(지급 완료 등). null이면 그대로 둔다(광고를 닫음).
@@ -135,6 +137,17 @@ export class ResultOverlay extends Phaser.GameObjects.Container {
       y += SIZE.btnL + 34;
     }
     this.add(new Button(scene, cx, y, d.continueLabel ?? '계속', d.onContinue, { width: GAME_WIDTH - 2 * SIZE.gutter - (d.ad ? 120 : 0), height: d.ad ? SIZE.btnM : SIZE.btnL, fontSize: d.ad ? 40 : 52, variant: d.continueVariant ?? 'gold' }));
+    const extras = d.extras ?? [];
+    if (extras.length > 0) {
+      y += (d.ad ? SIZE.btnM : SIZE.btnL) / 2 + 24 + SIZE.btnS / 2;
+      const gap = 20, bw = Math.min(420, (GAME_WIDTH - 2 * SIZE.gutter - gap * (extras.length - 1)) / extras.length);
+      extras.forEach((e, i) => {
+        const x = cx + (i - (extras.length - 1) / 2) * (bw + gap);
+        const b: Button = new Button(scene, x, y, e.label, () => e.onClick(b), { width: bw, height: SIZE.btnS, fontSize: 34, variant: e.variant });
+        this.add(b);
+      });
+      y -= 10;
+    }
     if (d.onAgain) {
       const onAgain = d.onAgain;
       const again = scene.add.text(cx, y + 110, d.againLabel ?? '한 판 더', { fontSize: '34px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setInteractive({ useHandCursor: true });

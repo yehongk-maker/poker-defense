@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { addBackdrop } from '../ui/Backdrop.ts';
+import { parseInvite } from '../net/roomCode.ts';
 import { COLOR, FONT, OUTLINE, SIZE, hex } from '../ui/theme.ts';
 
 /** 폰트 프리로드(Jua·Noto Sans KR, DESIGN §9) 후 로비로. 네트워크가 없으면 최대 2.5초 뒤 대체 폰트로 진행 */
@@ -20,6 +21,13 @@ export class BootScene extends Phaser.Scene {
       ])
       : Promise.resolve();
     const timeout = new Promise((r) => setTimeout(r, 2500));
-    Promise.race([fonts, timeout]).catch(() => undefined).then(() => this.scene.start(SCENE.Lobby));
+    Promise.race([fonts, timeout]).catch(() => undefined).then(() => {
+      // 초대 링크(/j/K7Q2M4 또는 ?code=)로 들어왔으면 바로 그 방으로
+      const code = typeof location !== 'undefined' ? parseInvite(location.href) : null;
+      if (code) {
+        history.replaceState(null, '', '/');
+        this.scene.start(SCENE.Friend, { code });
+      } else this.scene.start(SCENE.Lobby);
+    });
   }
 }

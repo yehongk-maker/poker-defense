@@ -98,8 +98,23 @@ export class BettingSystem {
   readonly won: Record<BetSide, number> = { player: 0, opponent: 0 };
   readonly history: RoundBetResult[] = [];
   private out: Record<BetSide, boolean> = { player: false, opponent: false };
+  /** 네트워크 상대 쪽 (없으면 로컬 판: 봇·고스트) */
+  readonly remote: BetSide | null;
+  /** 네트워크 상대가 연결을 끊고 돌아오지 않음 */
+  private gone = false;
+  /** 이 기기가 대신 정한 내 폴드(미응답 레이즈) — 상대에게 알려야 한다 */
+  private outbox: { wave: number; action: 'fold' }[] = [];
+  /** 네트워크 판의 이월: 라운드 N의 동률 판돈은 항상 N+1로 간다 */
+  private carryTo: { wave: number; amount: number } | null = null;
 
-  constructor(private cfg: DuelConfig, private wallets: Record<BetSide, BetWallet>) {}
+  /**
+   * @param opts.remote 네트워크 상대 쪽. 그쪽의 앤티·선택은 받은 이벤트 그대로 반영하고(지갑을 건드리지 않음),
+   *   두 기기가 도착 순서와 무관하게 같은 판정을 내도록: 상대의 미응답 레이즈 응답은 상대 기기가 정해 보내 줄 때까지 기다리고,
+   *   라운드는 번호 순으로만 판정하며, 동률 판돈은 바로 다음 번호 라운드로 이월한다.
+   */
+  constructor(private cfg: DuelConfig, private wallets: Record<BetSide, BetWallet>, opts: { remote?: BetSide } = {}) {
+    this.remote = opts.remote ?? null;
+  }
 
   // ── 금액 ──
   anteFor(wave: number, side: BetSide): number {
@@ -125,15 +140,99 @@ export class BettingSystem {
       action: { player: null, opponent: null }, response: { player: null, opponent: null },
       raise: null, report: { player: null, opponent: null }, result: null,
     };
-    this.carry = 0;
+    if (this.remote) {
+      rb.pot = this.carryTo?.wave === wave ? this.carryTo.amount : 0;
+      if (this.carryTo?.wave === wave) { this.carryTo = null; this.carry = 0; }
+    } else {
+      this.carry = 0;
+    }
     this.rounds.set(wave, rb);
     return rb;
+  }
+
+  // ── 네트워크 상대 (받은 이벤트 반영) ──
+  /** 상대가 라운드에 들어와 앤티를 냈다 (금액은 상대 기기가 계산한 값) */
+  enterRemote(wave: number, ante: number): RoundBet {
+    const side = this.requireRemote();
+    const rb = this.openRound(wave);
+    if (rb.entered[side] || rb.result) return rb;
+    rb.entered[side] = true;
+    rb.ante[side] = Math.max(0, ante);
+    rb.pot += rb.ante[side];
+    return rb;
+  }
+
+  /**
+   * 상대의 선택을 반영한다. 골드 검사는 상대 기기가 이미 했으므로 하지 않는다.
+   * 양쪽이 동시에 레이즈했으면(서로의 레이즈를 모르고) 늦게 도착한 레이즈를 콜로 본다 — 두 기기 모두 "양쪽이 같은 금액을 더 걸었다"가 된다.
+   */
+  actRemote(wave: number, action: BetAction, amount?: number): RoundBet {
+    const side = this.requireRemote(), me = other(side);
+    const rb = this.openRound(wave);
+    if (rb.result) return rb;
+    switch (action) {
+      case 'check':
+        if (rb.action[side] === null) rb.action[side] = 'check';
+        break;
+      case 'raise': {
+        if (rb.action[side] === 'raise') break;
+        const amt = amount ?? this.raiseAmount(wave);
+        rb.pot += amt;
+        rb.action[side] = 'raise';
+        if (rb.raise && rb.raise.by === me) rb.response[side] = 'call';
+        else {
+          rb.raise = { by: side, amount: amt };
+          // 나는 이미 판을 마쳐 응답할 수 없다 → 폴드로 알린다
+          if (this.out[me] && rb.response[me] === null) this.autoFold(rb, me);
+        }
+        break;
+      }
+      case 'call':
+        if (rb.raise && rb.raise.by === me && rb.response[side] === null) {
+          rb.pot += rb.raise.amount;
+          rb.response[side] = 'call';
+          if (rb.action[side] === null) rb.action[side] = 'check';
+        }
+        break;
+      case 'fold':
+        if (rb.response[side] === null) rb.response[side] = 'fold';
+        if (rb.action[side] === null) rb.action[side] = 'check';
+        break;
+    }
+    this.tryJudge(rb);
+    return rb;
+  }
+
+  /** 상대가 연결을 끊고 돌아오지 않는다: 남은 라운드는 상대가 진 것으로 */
+  markGone(): void {
+    if (!this.remote || this.gone) return;
+    this.gone = true;
+    this.markOut(this.remote);
+  }
+
+  /** 상대에게 보내야 할 내 자동 폴드 (꺼내면 비워진다) */
+  drainOutbox(): { wave: number; action: 'fold' }[] {
+    const o = this.outbox;
+    this.outbox = [];
+    return o;
+  }
+
+  private requireRemote(): BetSide {
+    if (!this.remote) throw new Error('네트워크 상대가 없는 판입니다');
+    return this.remote;
+  }
+
+  private autoFold(rb: RoundBet, side: BetSide): void {
+    rb.response[side] = 'fold';
+    if (rb.action[side] === null) rb.action[side] = 'check';
+    if (this.remote && side !== this.remote) this.outbox.push({ wave: rb.wave, action: 'fold' });
   }
 
   /** 이 쪽이 라운드의 카드 선택에 들어감: 앤티를 내고 판돈에 넣는다 (한 번만) — 골드 부족분은 하트로 대납 */
   enter(side: BetSide, wave: number): RoundBet {
     const rb = this.openRound(wave);
     if (rb.entered[side] || this.out[side]) return rb;
+    if (side === this.remote) return rb; // 상대 앤티는 enterRemote로만
     const ante = this.anteFor(wave, side);
     this.pay(side, ante);
     rb.entered[side] = true;
@@ -218,7 +317,7 @@ export class BettingSystem {
   markOut(side: BetSide): void {
     if (this.out[side]) return;
     this.out[side] = true;
-    for (const rb of this.rounds.values()) this.tryJudge(rb);
+    for (const w of [...this.rounds.keys()].sort((a, b) => a - b)) this.tryJudge(this.rounds.get(w)!);
   }
 
   /**
@@ -242,10 +341,19 @@ export class BettingSystem {
     if (rb.result) return rb.result;
     const ready = (s: BetSide) => rb.report[s] !== null || this.out[s];
     if (!ready('player') || !ready('opponent')) return null;
+    if (this.remote) {
+      // 번호 순으로만 판정 (이월이 어느 라운드로 가는지가 도착 순서에 좌우되지 않게)
+      const prev = this.rounds.get(rb.wave - 1);
+      if (prev && !prev.result) return null;
+    }
     // 미응답 레이즈 = 폴드
     if (rb.raise) {
       const r = other(rb.raise.by);
-      if (rb.response[r] === null) rb.response[r] = 'fold';
+      if (rb.response[r] === null) {
+        // 네트워크 상대의 응답은 상대 기기가 정한다 — 올 때까지 기다린다 (끊긴 상대는 폴드)
+        if (r === this.remote && !this.gone) return null;
+        this.autoFold(rb, r);
+      }
     }
     const folded = (s: BetSide) => rb.response[s] === 'fold';
     let winner: BetSide | 'carry';
@@ -276,13 +384,22 @@ export class BettingSystem {
       reason = 'carry';
     }
     const result: RoundBetResult = { wave: rb.wave, winner, pot: rb.pot, reason, showdown };
-    if (winner === 'carry') this.carry += rb.pot;
-    else {
-      this.wallets[winner].addGold(rb.pot);
+    if (winner === 'carry') {
+      if (this.remote) {
+        const next = this.rounds.get(rb.wave + 1);
+        if (next) next.pot += rb.pot;
+        else { this.carryTo = { wave: rb.wave + 1, amount: rb.pot }; this.carry = rb.pot; }
+      } else this.carry += rb.pot;
+    } else {
+      if (winner !== this.remote) this.wallets[winner].addGold(rb.pot); // 상대 지갑은 상대 기기가 채운다
       this.won[winner] += rb.pot;
     }
     rb.result = result;
     this.history.push(result);
+    if (this.remote) {
+      const next = this.rounds.get(rb.wave + 1);
+      if (next) this.tryJudge(next);
+    }
     return result;
   }
 

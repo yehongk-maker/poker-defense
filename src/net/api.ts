@@ -15,7 +15,37 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
 export const updateProfile = (nick?: string, avatar?: string) => rpc<Profile>('update_profile', { p_nick: nick ?? null, p_avatar: avatar ?? null });
 export const reportCampaign = (wave: number) => rpc<Profile>('report_campaign', { p_wave: wave });
 
+/** 공개 프로필 (닉·아바타·레이팅) */
+export async function getProfile(id: string): Promise<Profile | null> {
+  const { data } = await getClient().from('profiles').select('*').eq('id', id).maybeSingle();
+  return (data as Profile | null) ?? null;
+}
+
 // ── 친구 대전 방 ──
+export async function getRoom(roomId: string): Promise<Room | null> {
+  const { data } = await getClient().from('rooms').select('*').eq('id', roomId).maybeSingle();
+  return (data as Room | null) ?? null;
+}
+
+/**
+ * 내가 참가한 매치 정보 (친구 방이 live가 되면 room.match_id로 읽는다). RLS로 내 매치만 보인다.
+ * 상대가 어떤 종류인지는 여기에도 없다 — 표시용 닉·레이팅·아바타만.
+ */
+export async function getMatch(matchId: string, me: string): Promise<MatchInfo> {
+  const { data, error } = await getClient().from('matches').select('*').eq('id', matchId).single();
+  if (error || !data) throw new Error('match_not_found');
+  const m = data as { id: string; mode: 'ranked' | 'friend'; seed: string; wave_count: 20 | 40; rules: RoomRules; p1: string; p2: string | null; p2_name: string | null; p2_rating: number | null; p2_avatar: Profile['avatar'] | null; started_at: string; status: MatchInfo['status']; winner: MatchInfo['winner']; reason: string | null; rating_delta_p1: number | null; rating_delta_p2: number | null };
+  const role = m.p1 === me ? 'p1' : 'p2';
+  const oppId = role === 'p1' ? m.p2 : m.p1;
+  const p = oppId ? await getProfile(oppId) : null;
+  return {
+    id: m.id, mode: m.mode, seed: m.seed, waveCount: m.wave_count, rules: m.rules, role,
+    opponent: p ? { id: p.id, name: p.nick, rating: p.rating, avatar: p.avatar } : { id: null, name: m.p2_name ?? '상대', rating: m.p2_rating ?? 1000, avatar: m.p2_avatar ?? 'S' },
+    startedAt: m.started_at, status: m.status, winner: m.winner, reason: m.reason,
+    ratingDelta: role === 'p1' ? m.rating_delta_p1 : m.rating_delta_p2,
+  };
+}
+
 export const createRoom = (rules: Partial<RoomRules> = {}) => rpc<Room>('create_room', { p_rules: rules });
 export const joinRoom = (code: string) => rpc<Room>('join_room', { p_code: normalizeRoomCode(code) });
 export const setRoomRules = (code: string, rules: Partial<RoomRules>) => rpc<Room>('set_room_rules', { p_code: code, p_rules: rules });
@@ -94,6 +124,13 @@ export const listFriends = () => rpc<Friend[]>('list_friends');
 export const inviteFriend = (friendId: string, code: string) => rpc<Invite>('invite_friend', { p_friend: friendId, p_code: code });
 export const answerInvite = (inviteId: string, accept: boolean) => rpc<Invite>('answer_invite', { p_invite: inviteId, p_accept: accept });
 
+/** 아직 답하지 않은, 유효한 초대 (화면에 들어올 때 한 번 읽는다) */
+export async function pendingInvites(myId: string): Promise<Invite[]> {
+  const { data } = await getClient().from('invites').select('*').eq('to_id', myId).eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(3);
+  return (data as Invite[] | null) ?? [];
+}
+
 export function subscribeInvites(myId: string, onInvite: (invite: Invite) => void): Unsubscribe {
   const ch = getClient()
     .channel(`invites:${myId}`)
@@ -108,6 +145,7 @@ export class SupabaseTransport implements MatchTransport {
   private ch: RealtimeChannel | null = null;
   private handlers = new Set<(e: MatchEvent) => void>();
   private presence = new Set<(on: boolean) => void>();
+  private peerOn = false;
 
   constructor(private matchId: string, private me: string) {}
 
@@ -117,7 +155,8 @@ export class SupabaseTransport implements MatchTransport {
       ch.on('broadcast', { event: 'e' }, (msg) => this.handlers.forEach((h) => h(msg.payload as MatchEvent)));
       ch.on('presence', { event: 'sync' }, () => {
         const others = Object.keys(ch.presenceState()).filter((k) => k !== this.me);
-        this.presence.forEach((h) => h(others.length > 0));
+        this.peerOn = others.length > 0;
+        this.presence.forEach((h) => h(this.peerOn));
       });
       ch.subscribe((status) => {
         if (status === 'SUBSCRIBED') { void ch.track({ at: Date.now() }); resolve(); }
@@ -137,8 +176,10 @@ export class SupabaseTransport implements MatchTransport {
     return () => this.handlers.delete(handler);
   }
 
+  /** 등록 즉시 현재 상태를 한 번 알려 준다 (나중에 등록한 쪽이 접속 사실을 놓치지 않게) */
   onPresence(handler: (on: boolean) => void): Unsubscribe {
     this.presence.add(handler);
+    if (this.peerOn) handler(true);
     return () => this.presence.delete(handler);
   }
 

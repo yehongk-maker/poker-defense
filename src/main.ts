@@ -4,6 +4,7 @@ import { BootScene } from './scenes/BootScene.ts';
 import { LobbyScene } from './scenes/LobbyScene.ts';
 import { GameScene } from './scenes/GameScene.ts';
 import { MetaScene } from './scenes/MetaScene.ts';
+import { FriendScene } from './scenes/FriendScene.ts';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -15,7 +16,7 @@ const game = new Phaser.Game({
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
   },
-  scene: [BootScene, LobbyScene, GameScene, MetaScene],
+  scene: [BootScene, LobbyScene, GameScene, MetaScene, FriendScene],
 });
 
 // 개발 편의: 브라우저 콘솔/자동화에서 게임 인스턴스 접근 (수동 스텝 등). 프로덕션 빌드에서는 제외.

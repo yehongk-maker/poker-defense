@@ -10,6 +10,11 @@ import { getMeta } from '../meta.ts';
 import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
 import { randomSeed, seedStreams, type RngStreams } from '../systems/Seed.ts';
 import { InputRecorder, replayMatch, type RoundInput } from '../systems/InputLog.ts';
+import { LiveOpponent, LivePublisher, type LiveContext } from '../net/Live.ts';
+import { addFriend, getMatch, leaveRoom, reportResult, submitLog, subscribeMatch } from '../net/api.ts';
+import { errorText } from '../net/session.ts';
+import type { MatchInfo } from '../net/types.ts';
+import type { FriendSceneInit } from './FriendScene.ts';
 import type { ShardKey } from '../systems/SummonMapper.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
 import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
@@ -50,7 +55,14 @@ export interface GameSceneInit {
   resume?: boolean;
   /** 내 계정 id — 손패 시드 스트림을 가르는 키 (온라인). 없으면 'local' */
   playerId?: string;
+  /** 실시간 매치 (친구 대전·랭크 실시간). opponentSource는 LiveOpponent여야 한다 */
+  live?: LiveContext;
 }
+
+/** 상대 접속이 이만큼(초) 끊기면 판을 중단한다 */
+const DISCONNECT_GRACE_SEC = 30;
+/** 서버 판정을 기다리는 최대 시간(ms). 넘으면 이 기기의 판정으로 표시한다 */
+const VERDICT_WAIT_MS = 6000;
 
 /**
  * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. GameMode가 화면 조각을 켜고 끈다 (docs/mode-design.md §2.1).
@@ -82,6 +94,10 @@ export class GameScene extends Phaser.Scene {
   /** 대전: 입력 로그 기록기와 그 판의 시드 (결과 보고 때 서버로 보낸다) */
   private recorder: InputRecorder | null = null;
   private matchSeed = '';
+  private live: LiveContext | null = null;
+  private publisher: LivePublisher | null = null;
+  private lastFrameAt = 0;
+  private waitingForOpponent = false;
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
@@ -124,6 +140,7 @@ export class GameScene extends Phaser.Scene {
     this.bestRank = -1;
     this.adExchangeWave = 0;
     this.overlay = null;
+    this.live = null; this.publisher = null; this.waitingForOpponent = false;
     this.opponent = null; this.betting = null; this.betBar = null; this.oppMini = null; this.oppPanel = null; this.oppBubble = null; this.campaignBar = null;
     addBackdrop(this, mode.world); // DESIGN §2: 솔로 = 블루 하늘, 듀얼 = 퍼플 월드
 
@@ -133,13 +150,22 @@ export class GameScene extends Phaser.Scene {
       const opp = this.initArgs.opponentSource
         ?? new AIOpponent(buildGameData(src, mode, null), this.initArgs.opponent ?? localBotIdentity(1000), Math.random);
       this.opponent = opp;
+      const remote = opp instanceof LiveOpponent;
       if (mode.betting) {
-        this.betting = new BettingSystem(duelCfg, { player: this.loop, opponent: opp.wallet });
+        this.betting = new BettingSystem(duelCfg, { player: this.loop, opponent: opp.wallet }, remote ? { remote: 'opponent' } : {});
         if (opp instanceof AIOpponent) opp.attachBetting(this.betting, duelCfg);
+        if (opp instanceof LiveOpponent) opp.attachBetting(this.betting);
         this.betting.sync('player', this.loop);
         this.betting.sync('opponent', opp.participant);
       }
+      if (opp instanceof LiveOpponent && this.initArgs.live) {
+        this.live = this.initArgs.live;
+        this.publisher = new LivePublisher(this.live.transport, this.loop, this.data_, this.betting);
+        opp.events.onSkill = () => this.oppBubble?.show('영웅 스킬!', true);
+      }
     }
+    this.lastFrameAt = performance.now();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.closeLive());
     this.oppDefeatAnnounced = false;
     this.oppRefreshAcc = 0;
 
@@ -244,6 +270,7 @@ export class GameScene extends Phaser.Scene {
     // 영웅 액티브 스킬 버튼 (전투 중, 쿨타임 표시)
     this.skillBtn = new Button(this, GAME_WIDTH / 2 - 250, PANEL_Y + 90, '영웅 없음', () => this.safe(() => {
       const r = this.loop.useHeroSkill();
+      this.publisher?.skill(r.id);
       this.showToast(`${r.name}: ${r.text}`);
       this.cameras.main.flash(140, 241, 209, 122);
       const hero = this.loop.hero;
@@ -279,7 +306,35 @@ export class GameScene extends Phaser.Scene {
     this.refreshPanels();
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
+    this.frame(time, delta);
+    const now = performance.now();
+    const wall = Math.min(1, Math.max(0, (now - this.lastFrameAt) / 1000));
+    this.lastFrameAt = now;
+    this.liveFrame(wall);
+  }
+
+  /** 실시간 매치: 내 공개 정보를 보내고, 상대 이탈·내 판 종료 후 대기를 처리한다 */
+  private liveFrame(wallDt: number): void {
+    const opp = this.opponent;
+    if (!this.live || !(opp instanceof LiveOpponent)) return;
+    this.publisher?.tick(wallDt);
+    if (this.ended) return;
+    if (opp.left || opp.offlineFor >= DISCONNECT_GRACE_SEC) {
+      this.abortLive(opp.left ? '상대가 방을 나갔어요' : '상대의 연결이 끊겼어요');
+      return;
+    }
+    const over = this.loop.phase === 'victory' || this.loop.phase === 'defeat';
+    if (!over) return;
+    if (opp.finished) { this.finishRace(opp); return; }
+    if (!this.waitingForOpponent) {
+      this.waitingForOpponent = true;
+      this.nav.close();
+      this.banner.show(`${opp.identity.name}님이 끝날 때까지 기다리는 중…`, { holdMs: 4000 });
+    }
+  }
+
+  private frame(_time: number, delta: number): void {
     if (this.ended) return;
     const dt = Math.min(delta / 1000, 0.1);
     const cfg = this.data_.battleConfig;
@@ -443,7 +498,7 @@ export class GameScene extends Phaser.Scene {
   private confirmHand(): void {
     if (this.loop.phase !== 'card') return;
     // 판돈: 아무것도 안 골랐으면 체크
-    if (this.betting?.options('player', this.loop.wave).includes('check')) { this.betting.act('player', this.loop.wave, 'check'); this.recorder?.bet('check'); }
+    if (this.betting?.options('player', this.loop.wave).includes('check')) { this.betting.act('player', this.loop.wave, 'check'); this.recorder?.bet('check'); this.publisher?.bet(this.loop.wave, 'check'); }
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
     this.bestRank = Math.max(this.bestRank, hr.rank);
@@ -468,6 +523,7 @@ export class GameScene extends Phaser.Scene {
     this.safe(() => {
       betting.act('player', v.wave, a);
       this.recorder?.bet(a);
+      this.publisher?.bet(v.wave, a, a === 'raise' ? v.raiseAmount : undefined);
       const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
       this.showToast(msg[a]);
     });
@@ -605,6 +661,8 @@ export class GameScene extends Phaser.Scene {
   private finishRace(opp: OpponentSource): void {
     const total = this.data_.config.totalWaves;
     let r = raceStatus(sideOf(this.loop), sideOf(opp.view), total);
+    // 네트워크 상대의 판은 대신 굴릴 수 없다 — 상대가 끝낼 때까지 기다린다 (liveFrame)
+    if (!r && opp instanceof LiveOpponent && !opp.finished) return;
     if (!r) {
       opp.fastForward();
       r = raceStatus(sideOf(this.loop), sideOf(opp.view), total) ?? resolveDuel(sideOf(this.loop), sideOf(opp.view), total);
@@ -617,6 +675,76 @@ export class GameScene extends Phaser.Scene {
     if (this.ended || !this.opponent) return;
     this.ended = true;
     this.checkReplay();
+    if (this.live) void this.settleLive(this.live, duel);
+    else this.showDuelResult(duel);
+  }
+
+  /**
+   * 실시간 매치 마무리: 내 성적·입력 로그를 서버에 내고, 서버 판정을 받아 표시한다.
+   * 두 기기의 시계·지연 차이로 "누가 먼저"가 갈릴 수 있으므로 승패는 서버 판정을 따른다 (못 받으면 이 기기의 판정).
+   */
+  private async settleLive(live: LiveContext, local: DuelResult): Promise<void> {
+    this.nav.close();
+    this.banner.show('결과 확인 중…', { holdMs: VERDICT_WAIT_MS });
+    const report = this.publisher!.report;
+    const log = this.matchLog;
+    let info: MatchInfo | null = await reportResult(live.matchId, report).catch(() => null);
+    if (log) void submitLog(live.matchId, log.rounds, log.checksum).catch(() => undefined);
+    if (!info || info.status !== 'done') info = await this.waitVerdict(live) ?? info;
+    if (!this.scene.isActive()) return;
+    let duel = local;
+    if (info && info.status === 'done' && info.winner) {
+      const winner = info.winner === 'draw' ? 'draw' : info.winner === info.role ? 'player' : 'opponent';
+      const known: DuelResult['reason'][] = ['first_clear', 'opponent_out', 'wave', 'life', 'gold', 'draw'];
+      const reason = known.find((k) => k === info!.reason) ?? local.reason;
+      duel = { ...local, winner, reason };
+    }
+    this.showDuelResult(duel, info?.status === 'done');
+  }
+
+  private waitVerdict(live: LiveContext): Promise<MatchInfo | null> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (m: MatchInfo | null) => { if (settled) return; settled = true; off(); clearTimeout(timer); resolve(m); };
+      const read = () => getMatch(live.matchId, live.me).then((m) => (m.status === 'done' ? m : null)).catch(() => null);
+      const off = subscribeMatch(live.matchId, (status) => { if (status === 'done') void read().then((m) => { if (m) finish(m); }); });
+      const timer = setTimeout(() => void read().then(finish), VERDICT_WAIT_MS);
+      // 구독이 붙기 전에 확정됐을 수 있다
+      setTimeout(() => void read().then((m) => { if (m) finish(m); }), 1500);
+    });
+  }
+
+  /** 실시간 매치 중단 (상대 이탈): 결과 없이 끝낸다 — 전적 미기록 (docs/mode-design.md §1.3) */
+  private abortLive(why: string): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.nav.close();
+    this.overlay = new ResultOverlay(this, {
+      outcome: 'draw', title: '대전 중단', caption: `${why}\n이 판은 전적에 기록되지 않아요`, stars: 0, rows: [],
+      continueLabel: '나가기', continueVariant: 'gray',
+      onContinue: () => this.leaveLive(),
+    });
+  }
+
+  private leaveLive(): void {
+    const code = this.live?.roomCode;
+    if (code) void leaveRoom(code).catch(() => undefined);
+    this.scene.start(this.live ? SCENE.Friend : SCENE.Lobby);
+  }
+
+  private closeLive(): void {
+    const live = this.live;
+    if (!live) return;
+    if (!this.ended) { try { this.publisher?.leave(); } catch { /* 이미 닫힘 */ } }
+    if (this.opponent instanceof LiveOpponent) this.opponent.close();
+    this.publisher?.close();
+    live.transport.close();
+    this.live = null;
+    this.publisher = null;
+  }
+
+  private showDuelResult(duel: DuelResult, confirmed = true): void {
+    if (!this.opponent) return;
     const total = this.data_.config.totalWaves;
     const cleared = this.loop.phase === 'victory';
     this.nav.close();
@@ -632,13 +760,31 @@ export class GameScene extends Phaser.Scene {
     const o = this.opponent.view;
     const name = this.opponent.identity.name;
     const rules = this.mode.custom ? ' (커스텀 룰)' : '';
-    const caption = `${this.mode.label}${rules} · ${PATH[duel.reason]}\n나 R${cleared ? `${total} 클리어` : this.loop.wave} ♥${this.loop.life}  vs  ${name} R${o.phase === 'victory' ? `${total} 클리어` : o.wave} ♥${o.life}`;
+    const pending = confirmed ? '' : ' (서버 확인 전)';
+    const caption = `${this.mode.label}${rules} · ${PATH[duel.reason]}${pending}\n나 R${cleared ? `${total} 클리어` : this.loop.wave} ♥${this.loop.life}  vs  ${name} R${o.phase === 'victory' ? `${total} 클리어` : o.wave} ♥${o.life}`;
     const rows: ResultRow[] = [];
     if (this.betting) rows.push({ icon: 'coin', label: `판돈 획득 (나 / ${name})`, value: `${this.betting.won.player} / ${this.betting.won.opponent}` });
     rows.push({ icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true });
     // 별 3개: 승리 / 하트 4+ / 하트 7+ (DESIGN §5-05)
     const stars = outcome === 'win' ? 1 + (this.loop.life >= 4 ? 1 : 0) + (this.loop.life >= 7 ? 1 : 0) : 0;
     const subtitle = outcome === 'lose' ? (this.loop.phase === 'defeat' ? `라운드 ${this.loop.wave}에서 전멸...` : `${name}이(가) 먼저 결승선을 넘었어요`) : undefined;
+    const live = this.live;
+    if (live) {
+      // 친구 대전: 재대결은 방으로 돌아가 다시 준비 (서버가 새 시드를 준다). 광고·부활 없음
+      const friendId = live.opponentId;
+      this.overlay = new ResultOverlay(this, {
+        outcome, caption, subtitle, stars, rows,
+        continueLabel: live.roomCode ? '재대결\n방으로 돌아가 다시 준비' : '계속',
+        onContinue: () => (live.roomCode ? this.scene.start(SCENE.Friend, { code: live.roomCode } satisfies FriendSceneInit) : this.scene.start(SCENE.Lobby)),
+        extras: friendId ? [{
+          label: '친구 추가', variant: 'blue',
+          onClick: (b) => { b.setEnabled(false); void addFriend(friendId).then(() => b.setLabel('친구 추가 완료')).catch((e) => { b.setEnabled(true); this.showToast(errorText(e)); }); },
+        }] : [],
+        againLabel: '나가기',
+        onAgain: () => this.leaveLive(),
+      });
+      return;
+    }
     this.overlay = new ResultOverlay(this, {
       outcome, caption, subtitle, stars, rows,
       onContinue: () => this.scene.start(SCENE.Lobby),

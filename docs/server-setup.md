@@ -97,5 +97,5 @@ npm run fn:deploy
 
 1. **A. 모드 분리**: `GameMode`, `OpponentSource`, 솔로 레이아웃.
 2. **B. 결정론 로그** ✅: `Seed`·`InputLog`(기록 + `replayMatch`) + `verifyMatch`(개연성 + 재생). verify-match 함수는 `npm run fn:deploy`로 다시 올려야 재생 검사가 서버에 반영된다.
-3. **C. 친구 대전 화면**: `FriendScene`(방 만들기/코드 참가/방 화면) + `LiveOpponent`(MatchEvent → OpponentView).
+3. **C. 친구 대전 화면** ✅: `FriendScene` + `src/net/Live.ts`(LivePublisher·LiveOpponent) + 네트워크 판돈. 스키마 변경 없음(매치 정보는 `matches`·`profiles` 조회로 조립). 로컬에서 두 계정으로 시험하려면 `localhost:5180`과 `127.0.0.1:5180`을 각각 연다(출처가 달라 로그인이 따로 저장된다).
 4. 매칭 대기 화면(09) + `findMatch()` 연결, 대체 상대(봇 두뇌·고스트 재생) 연결.

@@ -156,7 +156,7 @@ export class LobbyScene extends Phaser.Scene {
       // 매칭 화면·서버 연결 전까지는 바로 시작한다 (상대는 일반 상대로 보인다)
       this.scene.start(SCENE.Game, { mode: rankedDuel('ai'), opponent: localBotIdentity(1000) } satisfies GameSceneInit);
     }, { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'purple' });
-    const friend = new Button(this, cx, cy + 100, '친구 대전\n초대 코드로 친구와 · 랭크 미반영', () => this.showToast('친구 대전은 준비 중이에요'),
+    const friend = new Button(this, cx, cy + 100, '친구 대전\n초대 코드로 친구와 · 랭크 미반영', () => this.scene.start(SCENE.Friend),
       { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'blue' });
     const close = new Button(this, cx, cy + h / 2 - 80, '닫기', () => this.closeDuelSheet(), { width: 300, height: SIZE.btnS + 8, fontSize: 34, variant: 'gray' });
     c.add([dim, g, title, sub, ranked, friend, close]);

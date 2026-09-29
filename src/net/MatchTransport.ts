@@ -7,7 +7,7 @@ import type { SuitCode } from './types.ts';
 
 /** 상대에게 공개되는 이벤트 */
 export type MatchEvent =
-  | { t: 'enter'; wave: number }                                   // 라운드 카드 선택 진입 (앤티 납부 시점)
+  | { t: 'enter'; wave: number; ante?: number }                    // 라운드 카드 선택 진입 + 낸 앤티 (판돈 없는 방은 ante 없음)
   | { t: 'exchange'; wave: number; count: number }                 // 교환 장수만 (무엇으로 바꿨는지는 비공개)
   | { t: 'confirm'; wave: number; handRank: number }               // 족보 등급 공개
   | { t: 'field'; units: { slot: number; suit: SuitCode; tier: number }[]; hero: { slot: number; suit: SuitCode; id: string; grade: string } | null; life: number; gold: number }
@@ -17,7 +17,8 @@ export type MatchEvent =
   | { t: 'skill'; wave: number; sec: number; id: string }
   | { t: 'report'; wave: number; lifeLost: number; clearSec: number; handRank: number; cleared: boolean }
   | { t: 'finish'; reached: number; life: number; gold: number; clearedSec: number | null }
-  | { t: 'rematch'; ready: boolean };
+  | { t: 'rematch'; ready: boolean }
+  | { t: 'leave' };                                                // 방을 나감 (판 중이면 기권)
 
 export type MatchEventType = MatchEvent['t'];
 export type Unsubscribe = () => void;

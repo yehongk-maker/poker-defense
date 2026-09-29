@@ -13,7 +13,8 @@ UI 디자인 시스템: `DESIGN.md` — 모든 UI는 이 문서의 토큰(`src/u
 src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
-  scenes/        Boot, Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기), Meta  ← Phaser 의존 OK
+  scenes/        Boot(초대 링크 /j/코드 → Friend), Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기, 실시간 매치는 init.live),
+                 Meta, Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
   runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
@@ -36,7 +37,8 @@ src/
                  draw(도형 아이콘: 동전·하트·젬·영웅 토큰·교환권·별), theme(DESIGN 토큰 + 구 COLORS 호환) (Phaser)
   net/           온라인 계층 (Phaser import 금지): supabase(클라이언트·익명 로그인), api(RPC 래퍼·구독·SupabaseTransport),
                  MatchTransport(MatchEvent·LoopbackTransport), roomCode, rules, verify(입력 로그 개연성 검사),
-                 verifyMatch(개연성 + 재생, 순수) · verifyServer(Edge Function 번들 입구, JSON 데이터 포함), types, env
+                 verifyMatch(개연성 + 재생, 순수) · verifyServer(Edge Function 번들 입구, JSON 데이터 포함), types, env,
+                 Live(LivePublisher 내 공개 정보 송신 · LiveOpponent 수신 → OpponentSource · LiveContext), session(로그인 프로필 캐시·오류 문장)
   data/          units, hands, waves, duel-waves, synergies, heroes, config, duel(판돈 룰·AI 성향·매치 규칙) .json
 supabase/        migrations(스키마·RPC·기본 데이터), functions/verify-match(Edge Function), config.toml — docs/server-setup.md
 tests/           vitest. systems/와 1:1 대응
@@ -62,6 +64,13 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 대전 전투는 고정 step(`duel.json match.simStep` = 0.1초 → `config.simStep`). `tickCombat(dt)`가 dt를 모아 step 단위로만 진행하고, 렌더는 `combatAlpha`로 보간(TrackView.updateEnemies). 시뮬레이터·서버·클라이언트가 같은 값이어야 한다.
 - 플레이어 상태를 바꾸는 GameLoop 공개 메서드를 새로 만들면 `emit(op)`로 입력을 알리고 `InputLog`의 `RoundOp`·`apply`·기록기 요약에 추가한다. 전투 중 입력은 step 번호(`combatSteps`)로 기록. 판돈으로 오간 골드·하트는 g/l 외부 입력으로 남는다.
 - `tests/InputLog.test.ts`의 "100판 재생 100% 일치"가 결정론 회귀 테스트다. 로직을 고쳐 이 테스트가 깨지면 난수 호출 순서나 가변 dt가 새로 생긴 것이다.
+
+## 실시간 대전 규칙 (src/net/Live.ts)
+- 각 기기는 자기 보드만 시뮬하고 공개 정보(MatchEvent)만 보낸다. 손패·아웃·행운 게이지는 보내지 않는다.
+- 판돈은 양쪽 기기가 각자 `BettingSystem(…, { remote: 'opponent' })`로 계산한다. 같은 판정이 나오게 하는 규칙: 상대 앤티·레이즈 금액은 이벤트에 실린 값 그대로, 상대 지갑은 건드리지 않음(거울), 동시 레이즈는 늦게 온 쪽을 콜로, 내 레이즈에 대한 상대 응답은 상대 기기가 정해 보낼 때까지 대기, 라운드는 번호 순 판정, 동률 판돈은 N+1로 이월. `tests/Live.test.ts`가 지연·엇갈림에서 양쪽 판정 일치를 고정한다.
+- Realtime broadcast는 지난 이벤트를 다시 주지 않는다: LivePublisher는 판정용 이벤트(enter·confirm·bet·report·finish)를 기록해 상대 접속 시 재전송, LiveOpponent는 중복을 무시하고 판돈 연결 전 이벤트는 보관했다 반영한다. 새 이벤트를 추가하면 받는 쪽을 멱등으로 만든다.
+- 승패는 서버 판정(report_result → finalize_match)을 표시한다. 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
+- 글자 입력(닉네임·방 코드)은 `ui/TextPrompt.askText`(DOM 입력칸) — 한글 조합·붙여넣기 때문. 색·폰트는 DESIGN 토큰.
 
 ## 서버 규칙 (Supabase, docs/server-setup.md)
 - 클라이언트는 테이블에 직접 쓰지 않는다. 쓰기는 전부 SECURITY DEFINER RPC, RLS는 "내 행 조회"만.
@@ -128,6 +137,8 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): A단계 모드 분리 — GameMode·OpponentSource·캠페인 레이아웃(CampaignBar)·광고 스텁 3자리·부활(GameLoop.revive)·이어하기(snapshot/restore)·로비 선택 시트. 랭크 대전은 매칭 화면 전까지 로컬 봇 상대로 바로 시작, 친구 대전은 C단계.
 - 완료(2026-09-29): Supabase 서버 1차 — 스키마 12테이블·RLS·RPC(프로필/방/랭크 매칭+숨김 대체/판정·레이팅/친구·초대)·verify-match Edge Function·src/net 클라이언트 계층. 원격 프로젝트 생성·배포·실서버 스모크 19항목 통과.
 - 완료(2026-09-29): B단계 결정론 입력 로그 — Seed·InputLog·고정 step·렌더 보간·GameScene 기록기(`matchLog`)·dev 빌드 종료 시 자동 재생 점검(`[replay] ok`)·verify-match에 재생 검사 추가(번들만, 함수 재배포는 아직).
+- 완료(2026-09-29): C단계 친구 대전 — FriendScene·LiveOpponent/LivePublisher·네트워크 판돈(remote 모드)·서버 판정 결과 화면·친구 추가/초대·초대 링크·재대결. 실서버에서 두 계정으로 방→준비→대전→판정→전적→재대결 방 복귀 확인.
+- 남은 단계: D 고스트전, E 랭크 실시간(매칭 화면 + 숨김 대체, 양쪽 로그 판돈 교차 검증), F 시즌·랭킹. verify-match 함수 재배포(`npm run fn:deploy`)는 아직 안 함.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

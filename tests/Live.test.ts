@@ -1,0 +1,358 @@
+/** 실시간 대전 (C단계): 두 기기가 각자 자기 판을 굴리고 이벤트만 주고받아도 상대 모습·판돈 판정이 일치한다 */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
+import { buildGameData, friendDuel, RANKED_RULES, type ModeSources } from '../src/systems/GameMode.ts';
+import { BettingSystem, type BetWallet, type DuelConfig } from '../src/systems/Betting.ts';
+import { seededRng, seedStreams } from '../src/systems/Seed.ts';
+import { smartExchange, smartManage } from '../src/systems/bots.ts';
+import { raceStatus, sideOf } from '../src/systems/Duel.ts';
+import { LiveOpponent, LivePublisher } from '../src/net/Live.ts';
+import type { MatchEvent, MatchTransport, Unsubscribe } from '../src/net/MatchTransport.ts';
+
+const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
+const load = (f: string) => JSON.parse(readFileSync(join(dataDir, f), 'utf8'));
+const w = load('waves.json'), dw = load('duel-waves.json');
+const duelCfg: DuelConfig = load('duel.json');
+const base = (): GameData => ({ units: load('units.json').units, hands: load('hands.json'), synergies: load('synergies.json'), heroes: load('heroes.json').heroes, waves: w.waves, enemyTypes: w.enemyTypes, battleConfig: w.config, config: load('config.json') });
+const sources = (): ModeSources => ({ base: base(), duelWaves: { waves: dw.waves, enemyTypes: dw.enemyTypes, battleConfig: dw.config }, duelMatch: duelCfg.match });
+const phaseOf = (g: GameLoop) => g.phase as GamePhase;
+
+/** 지연이 있는 통로: 보낸 이벤트는 lag초 뒤에 (보낸 순서대로) 도착한다. 시간은 테스트가 advance()로 흘린다 */
+class LagEnd implements MatchTransport {
+  peer!: LagEnd;
+  now = 0;
+  private queue: { at: number; e: MatchEvent }[] = [];
+  private handlers = new Set<(e: MatchEvent) => void>();
+  private presence = new Set<(on: boolean) => void>();
+  sent: MatchEvent[] = [];
+  constructor(private lag: () => number) {}
+  static pair(lag: () => number): [LagEnd, LagEnd] { const a = new LagEnd(lag), b = new LagEnd(lag); a.peer = b; b.peer = a; return [a, b]; }
+  async connect(): Promise<void> { /* 항상 연결 */ }
+  send(e: MatchEvent): void {
+    this.sent.push(e);
+    const last = this.peer.queue[this.peer.queue.length - 1];
+    const at = Math.max(this.now + this.lag(), last ? last.at : 0); // 순서 보장
+    this.peer.queue.push({ at, e: JSON.parse(JSON.stringify(e)) });
+  }
+  on(h: (e: MatchEvent) => void): Unsubscribe { this.handlers.add(h); return () => this.handlers.delete(h); }
+  onPresence(h: (on: boolean) => void): Unsubscribe { this.presence.add(h); return () => this.presence.delete(h); }
+  setPeerOnline(on: boolean): void { this.presence.forEach((h) => h(on)); }
+  close(): void { /* noop */ }
+  advance(t: number): void {
+    this.now = t;
+    while (this.queue.length && this.queue[0].at <= t) { const { e } = this.queue.shift()!; this.handlers.forEach((h) => h(e)); }
+  }
+}
+
+/** 한 기기: 내 판 + 판돈 + 보내는 쪽 + 받는 쪽 + 사람 흉내 */
+class Device {
+  loop: GameLoop;
+  betting: BettingSystem | null;
+  pub: LivePublisher;
+  opp: LiveOpponent;
+  private wait = 0;
+  ended = false;
+  constructor(readonly data: GameData, seed: string, player: string, readonly net: LagEnd, private brain: () => number, betting: boolean, private pace: number) {
+    this.loop = new GameLoop(data, seedStreams(seed, { player }));
+    this.opp = new LiveOpponent({ name: 'x', rating: null, avatar: 'S' }, net, data);
+    this.betting = betting ? new BettingSystem(duelCfg, { player: this.loop, opponent: this.opp.wallet }, { remote: 'opponent' }) : null;
+    if (this.betting) this.opp.attachBetting(this.betting);
+    this.pub = new LivePublisher(net, this.loop, data, this.betting);
+  }
+  private act(a: 'check' | 'raise' | 'call' | 'fold', wave: number): void {
+    const rb = this.betting!.act('player', wave, a);
+    this.pub.bet(wave, a, a === 'raise' ? rb.raise!.amount : undefined);
+  }
+  step(t: number, dt: number): void {
+    this.net.advance(t);
+    const g = this.loop, b = this.betting;
+    if (!this.ended) {
+      b?.sync('player', g);
+      b?.sync('opponent', this.opp.participant);
+      // 상대 레이즈에 응답 (어느 페이즈에서든)
+      const pend = b?.pendingResponse('player');
+      if (pend && this.brain() < 0.2) {
+        const o = b!.options('player', pend.wave);
+        if (o.length) this.act(o.includes('call') && this.brain() < 0.6 ? 'call' : 'fold', pend.wave);
+      }
+      this.wait -= dt;
+      if (phaseOf(g) === 'card' && this.wait <= 0) {
+        smartExchange(g);
+        if (b) {
+          const o = b.options('player', g.wave);
+          if (o.includes('raise') && this.brain() < 0.4) this.act('raise', g.wave);
+          else if (o.includes('check')) this.act('check', g.wave);
+        }
+        g.confirmHand();
+        smartManage(g);
+        g.startCombat();
+      } else if (phaseOf(g) === 'combat') {
+        g.tickCombat(dt);
+        if (phaseOf(g) === 'card') this.wait = this.pace * (0.5 + this.brain());
+      }
+      b?.sync('player', g);
+    }
+    this.opp.tick(dt);
+    this.pub.tick(dt);
+  }
+  get over(): boolean { return this.loop.phase === 'victory' || this.loop.phase === 'defeat'; }
+}
+
+function match(seed: string, opt: { betting?: boolean; lag?: number; paceA?: number; paceB?: number } = {}) {
+  const rules = { ...RANKED_RULES, betting: opt.betting ?? true };
+  const data = buildGameData(sources(), friendDuel(rules, seed), null);
+  const jitter = seededRng(77);
+  const [na, nb] = LagEnd.pair(() => (opt.lag ?? 0.15) * (0.5 + jitter()));
+  const A = new Device(data, seed, 'a', na, seededRng(11), rules.betting, opt.paceA ?? 2);
+  const B = new Device(data, seed, 'b', nb, seededRng(22), rules.betting, opt.paceB ?? 3);
+  const total = data.config.totalWaves;
+  let t = 0;
+  const dt = 0.1;
+  // 둘 다 끝나고, 마지막 이벤트가 도착할 때까지
+  for (let i = 0; i < 40000; i++) {
+    t += dt;
+    A.step(t, dt); B.step(t, dt);
+    for (const d of [A, B]) if (!d.ended && raceStatus(sideOf(d.loop), sideOf(d.opp.view), total)) d.ended = true;
+    if (A.ended && B.ended) break;
+    if (A.over && B.over) break;
+  }
+  for (let i = 0; i < 50; i++) { t += dt; A.step(t, dt); B.step(t, dt); } // 남은 이벤트 배달
+  return { A, B, data, total };
+}
+
+describe('LiveOpponent — 받은 이벤트로 만든 상대 모습', () => {
+  it('상대의 라운드·하트·골드·유닛이 실제 판과 같다', () => {
+    const { A, B } = match('live-1', { betting: false });
+    for (const [me, them] of [[A, B], [B, A]] as const) {
+      const v = me.opp.view, g = them.loop;
+      expect(v.life).toBe(g.life);
+      expect(v.gold).toBe(Math.floor(g.gold));
+      expect(v.units.length).toBe(g.units.length);
+      expect(v.units.map((u) => u.slot).sort()).toEqual(g.units.map((u) => u.slot).sort());
+      expect(!!v.hero).toBe(!!g.hero);
+    }
+  });
+
+  it('판을 마친 상대는 finished + 최종 성적을 남긴다', () => {
+    const { A, B, total } = match('live-2', { betting: false });
+    const done = [A, B].filter((d) => d.over);
+    expect(done.length).toBeGreaterThan(0);
+    for (const d of done) {
+      const seen = d === A ? B.opp : A.opp;
+      expect(seen.finished).toBe(true);
+      expect(seen.finalReport).toEqual(d.pub.report);
+      expect(seen.view.phase).toBe(d.loop.phase);
+      expect(d.pub.report.reached).toBe(d.loop.phase === 'victory' ? total + 1 : d.loop.wave);
+    }
+  });
+
+  it('손패는 어떤 이벤트에도 실리지 않는다 (공개 정보만)', () => {
+    const { A } = match('live-3');
+    const text = JSON.stringify(A.net.sent);
+    expect(text).not.toMatch(/"rank":|"suit":"[SHDC]","rank"|hand"\s*:/);
+    const kinds = new Set(A.net.sent.map((e) => e.t));
+    for (const k of ['enter', 'confirm', 'field', 'combat', 'snapshot', 'report', 'bet']) expect(kinds.has(k as MatchEvent['t']), k).toBe(true);
+  });
+
+  it('전투 스냅샷으로 상대 필드의 적이 보인다', () => {
+    const data = buildGameData(sources(), friendDuel(RANKED_RULES, 's'), null);
+    const [na, nb] = LagEnd.pair(() => 0);
+    const A = new Device(data, 's', 'a', na, seededRng(1), false, 0);
+    const seen = new LiveOpponent({ name: 'a', rating: 1000, avatar: 'H' }, nb, data);
+    let t = 0;
+    while (phaseOf(A.loop) !== 'combat' || A.loop.battle!.aliveEnemies.length < 2) { t += 0.1; A.step(t, 0.1); nb.advance(t); }
+    t += 0.6; A.step(t, 0.6); nb.advance(t);
+    expect(seen.view.phase).toBe('combat');
+    expect(seen.view.enemies.length).toBeGreaterThan(0);
+    const e = seen.view.enemies[0];
+    expect(e.pos).toBeGreaterThanOrEqual(0);
+    expect(e.pos).toBeLessThanOrEqual(data.battleConfig.trackLength);
+    expect(e.hpPct).toBeGreaterThan(0);
+  });
+
+  it('접속이 끊기면 끊긴 시간을 센다', () => {
+    const data = buildGameData(sources(), friendDuel(RANKED_RULES, 's'), null);
+    const [, nb] = LagEnd.pair(() => 0);
+    const seen = new LiveOpponent({ name: 'a', rating: 1000, avatar: 'H' }, nb, data);
+    nb.setPeerOnline(false);
+    seen.tick(10); seen.tick(25);
+    expect(seen.online).toBe(false);
+    expect(seen.offlineFor).toBe(35);
+    nb.setPeerOnline(true);
+    expect(seen.offlineFor).toBe(0);
+  });
+});
+
+describe('네트워크 판돈 — 두 기기의 판정이 같다', () => {
+  const mirror = (w: string) => (w === 'player' ? 'opponent' : w === 'opponent' ? 'player' : w);
+
+  it.each([
+    ['지연 0.15초', { lag: 0.15 }],
+    ['지연 1.5초(이벤트가 엇갈림)', { lag: 1.5 }],
+    ['한쪽이 훨씬 빠름', { lag: 0.4, paceA: 0.2, paceB: 6 }],
+  ])('%s: 라운드별 승자·판돈·이유가 거울처럼 일치', (_name, opt) => {
+    for (const seed of ['bet-1', 'bet-2', 'bet-3', 'bet-4']) {
+      const { A, B } = match(seed, opt);
+      const ha = A.betting!.history, hb = B.betting!.history;
+      const n = Math.min(ha.length, hb.length);
+      expect(n, seed).toBeGreaterThan(3);
+      // 먼저 끝난 기기는 뒤 라운드를 판정하지 않았을 수 있다 — 양쪽이 판정한 라운드는 모두 같아야 한다
+      const byWave = new Map(hb.map((r) => [r.wave, r]));
+      let compared = 0;
+      for (const r of ha) {
+        const o = byWave.get(r.wave);
+        if (!o) continue;
+        compared++;
+        expect({ wave: o.wave, winner: mirror(o.winner), pot: o.pot, reason: o.reason }, `${seed} R${r.wave}`).toEqual({ wave: r.wave, winner: r.winner, pot: r.pot, reason: r.reason });
+      }
+      expect(compared).toBeGreaterThan(3);
+      expect(A.betting!.won.player).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('레이즈·콜·폴드가 실제로 섞여 나왔다 (테스트가 비어 있지 않다)', () => {
+    const { A, B } = match('bet-mix', { lag: 1.0 });
+    const all = [...A.net.sent, ...B.net.sent].filter((e) => e.t === 'bet') as Extract<MatchEvent, { t: 'bet' }>[];
+    const kinds = new Set(all.map((e) => e.action));
+    expect(kinds.has('raise')).toBe(true);
+    expect(kinds.has('check')).toBe(true);
+    expect(kinds.has('call') || kinds.has('fold')).toBe(true);
+  });
+});
+
+describe('BettingSystem remote 모드 규칙', () => {
+  class Wallet implements BetWallet {
+    constructor(public gold: number, public life = 10) {}
+    addGold(n: number) { this.gold += n; }
+    spendGold(n: number) { if (this.gold < n) throw new Error('gold'); this.gold -= n; }
+    loseLife(n: number) { this.life = Math.max(0, this.life - n); }
+  }
+  const rep = (wave: number, p = {}) => ({ wave, handRank: 0, lifeLost: 0, clearSec: 20, cleared: true, ...p });
+  const mk = () => { const P = new Wallet(200), O = new Wallet(200); return { P, O, b: new BettingSystem(duelCfg, { player: P, opponent: O }, { remote: 'opponent' }) }; };
+
+  it('상대 앤티는 받은 금액 그대로, 상대 지갑은 건드리지 않는다', () => {
+    const { O, b } = mk();
+    b.enter('player', 1);
+    const rb = b.enterRemote(1, 3);
+    expect(rb.ante.opponent).toBe(3);
+    expect(rb.pot).toBe(rb.ante.player + 3);
+    expect(O.gold).toBe(200);
+    b.enter('opponent', 2); // sync가 불러도 상대 앤티를 만들어 내지 않는다
+    expect(b.round(2)!.entered.opponent).toBe(false);
+  });
+
+  it('동시에 레이즈하면 늦게 도착한 레이즈를 콜로 본다', () => {
+    const { b } = mk();
+    b.enter('player', 1); b.enterRemote(1, 6);
+    b.act('player', 1, 'raise');
+    const amt = b.raiseAmount(1);
+    const rb = b.actRemote(1, 'raise', amt);
+    expect(rb.raise!.by).toBe('player');
+    expect(rb.response.opponent).toBe('call');
+    expect(rb.pot).toBe(12 + amt * 2);
+    expect(b.options('player', 1)).toEqual([]);
+  });
+
+  it('내 레이즈에 대한 상대 응답은 올 때까지 기다린다 (대신 폴드시키지 않는다)', () => {
+    const { P, b } = mk();
+    b.enter('player', 1); b.enterRemote(1, 6);
+    b.act('player', 1, 'raise');
+    b.report('player', rep(1)); b.report('opponent', rep(1, { lifeLost: 2 }));
+    expect(b.round(1)!.result).toBeNull();
+    const gold = P.gold;
+    b.actRemote(1, 'call');
+    const r = b.round(1)!.result!;
+    expect(r).toMatchObject({ winner: 'player', reason: 'life', showdown: true });
+    expect(P.gold).toBe(gold + r.pot);
+  });
+
+  it('상대 레이즈에 내가 답하지 않은 채 판정되면 폴드로 확정하고 상대에게 알릴 목록에 넣는다', () => {
+    const { b } = mk();
+    b.enter('player', 1); b.enterRemote(1, 6);
+    b.actRemote(1, 'raise', 10);
+    b.report('player', rep(1)); b.report('opponent', rep(1));
+    expect(b.round(1)!.result).toMatchObject({ winner: 'opponent', reason: 'fold' });
+    expect(b.drainOutbox()).toEqual([{ wave: 1, action: 'fold' }]);
+    expect(b.drainOutbox()).toEqual([]);
+  });
+
+  it('끊긴 상대는 기다리지 않는다', () => {
+    const { b } = mk();
+    b.enter('player', 1); b.enterRemote(1, 6);
+    b.act('player', 1, 'raise');
+    b.report('player', rep(1));
+    b.markGone();
+    expect(b.round(1)!.result).toMatchObject({ winner: 'player' });
+  });
+
+  it('번호 순으로만 판정하고, 동률 판돈은 바로 다음 라운드로 간다', () => {
+    const { b } = mk();
+    b.enter('player', 1); b.enterRemote(1, 6);
+    b.act('player', 1, 'raise'); // 상대 응답 대기 → 1라운드 판정 보류
+    b.report('player', rep(1)); b.report('opponent', rep(1));
+    b.enter('player', 2); b.enterRemote(2, 7);
+    b.report('player', rep(2, { lifeLost: 1 })); b.report('opponent', rep(2));
+    expect(b.round(2)!.result).toBeNull(); // 1라운드가 먼저
+    b.actRemote(1, 'call'); // 1라운드: 완전 동률 → 이월
+    const r1 = b.round(1)!.result!, r2 = b.round(2)!.result!;
+    expect(r1.winner).toBe('carry');
+    expect(r2.winner).toBe('opponent');
+    expect(r2.pot).toBe(r1.pot + 7 + 7);
+    expect(b.history.map((h) => h.wave)).toEqual([1, 2]);
+  });
+});
+
+describe('늦게 붙은 상대에게 재전송', () => {
+  it('상대가 채널에 붙기 전에 보낸 진입·판돈·성적을 접속 순간 다시 보내고, 받는 쪽은 중복을 무시한다', () => {
+    const data = buildGameData(sources(), friendDuel(RANKED_RULES, 'late'), null);
+    const [na, nb] = LagEnd.pair(() => 0);
+    const A = new Device(data, 'late', 'a', na, seededRng(3), true, 0);
+    // A가 3라운드쯤 진행하는 동안 B는 아직 듣지 못했다 (보낸 것을 버린다)
+    let t = 0;
+    while (A.loop.wave < 4) { t += 0.1; A.step(t, 0.1); }
+    (nb as unknown as { queue: unknown[] }).queue.length = 0;
+
+    const wallet = { gold: 0, life: 10, addGold() { /* */ }, spendGold() { /* */ }, loseLife() { /* */ } };
+    const seen = new LiveOpponent({ name: 'a', rating: null, avatar: 'S' }, nb, data);
+    const bet = new BettingSystem(duelCfg, { player: wallet, opponent: seen.wallet }, { remote: 'opponent' });
+    seen.attachBetting(bet);
+    na.setPeerOnline(true); // B 접속 → A가 재전송
+    nb.advance(t + 1);
+    expect(seen.view.wave).toBe(A.loop.wave);
+    for (let w = 1; w <= 3; w++) {
+      const rb = bet.round(w)!;
+      expect(rb.entered.opponent, `R${w}`).toBe(true);
+      expect(rb.ante.opponent).toBe(A.betting!.round(w)!.ante.player);
+      expect(rb.report.opponent).toEqual(A.betting!.round(w)!.report.player);
+    }
+    // 한 번 더 재전송돼도 판돈이 두 번 쌓이지 않는다
+    const pot = bet.round(1)!.pot;
+    na.setPeerOnline(false); na.setPeerOnline(true);
+    nb.advance(t + 2);
+    expect(bet.round(1)!.pot).toBe(pot);
+    expect(seen.view.wave).toBe(A.loop.wave);
+  });
+});
+
+describe('판돈 시스템 연결 전에 온 이벤트', () => {
+  it('카운트다운 중에 먼저 시작한 상대의 앤티·선택·성적을 연결할 때 반영한다', () => {
+    const data = buildGameData(sources(), friendDuel(RANKED_RULES, 'early'), null);
+    const [na, nb] = LagEnd.pair(() => 0);
+    const seen = new LiveOpponent({ name: 'a', rating: null, avatar: 'S' }, nb, data); // 아직 판돈 미연결
+    const A = new Device(data, 'early', 'a', na, seededRng(5), true, 0);
+    let t = 0;
+    while (A.loop.wave < 3) { t += 0.1; A.step(t, 0.1); nb.advance(t); }
+    const wallet = { gold: 100, life: 10, addGold() { /* */ }, spendGold() { /* */ }, loseLife() { /* */ } };
+    const bet = new BettingSystem(duelCfg, { player: wallet, opponent: seen.wallet }, { remote: 'opponent' });
+    seen.attachBetting(bet);
+    for (const w of [1, 2]) {
+      expect(bet.round(w)!.entered.opponent).toBe(true);
+      expect(bet.round(w)!.ante.opponent).toBe(A.betting!.round(w)!.ante.player);
+      expect(bet.round(w)!.action.opponent).toBe(A.betting!.round(w)!.action.player);
+      expect(bet.round(w)!.report.opponent).toEqual(A.betting!.round(w)!.report.player);
+    }
+  });
+});
