@@ -153,8 +153,7 @@ export class LobbyScene extends Phaser.Scene {
     const title = this.add.text(cx, cy - h / 2 + 70, '레이즈 듀얼', { fontSize: `${SIZE.h1}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
     const sub = this.add.text(cx, cy - h / 2 + 130, '같은 웨이브를 더 잘 막고, 마지막 라운드를 먼저 깨면 승리', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5);
     const ranked = new Button(this, cx, cy - 60, '랭크 대전\n비슷한 실력의 상대와 · 랭크 반영', () => {
-      // 매칭 화면·서버 연결 전까지는 바로 시작한다 (상대는 일반 상대로 보인다)
-      this.scene.start(SCENE.Game, { mode: rankedDuel('ai'), opponent: localBotIdentity(1000) } satisfies GameSceneInit);
+      this.scene.start(SCENE.Match);
     }, { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'purple' });
     const friend = new Button(this, cx, cy + 100, '친구 대전\n초대 코드로 친구와 · 랭크 미반영', () => this.scene.start(SCENE.Friend),
       { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'blue' });

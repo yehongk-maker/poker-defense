@@ -1,14 +1,15 @@
 /**
  * Opponent — 상대 추상화 (docs/mode-design.md §2.1). 순수.
  * UI(상대 바·미니맵·상대 패널)와 판돈·레이스 판정은 OpponentSource만 본다.
- * 구현: AIOpponent(봇 두뇌, 대체 매칭·오프라인) / GhostOpponent(기록 재생, B단계) / LiveOpponent(네트워크, C단계).
+ * 구현: AIOpponent(봇 두뇌 — 고스트 대본을 주면 기록을 따라 친다, 대체 매칭·오프라인) / LiveOpponent(네트워크, src/net/Live.ts).
  * 화면에는 어떤 구현인지 드러내지 않는다 — identity(닉·레이팅·아바타)만 보인다.
  */
 import type { GameData, GamePhase, RoundReport } from './GameLoop.ts';
 import { GameLoop } from './GameLoop.ts';
 import type { Suit } from './PokerEvaluator.ts';
 import type { BetWallet, BettingSystem, DuelConfig } from './Betting.ts';
-import { OpponentAI } from './Duel.ts';
+import { OpponentAI, type OpponentScript } from './Duel.ts';
+import { seedStreams } from './Seed.ts';
 
 export interface OpponentIdentity { name: string; rating: number | null; avatar: Suit }
 
@@ -69,10 +70,18 @@ export class AIOpponent implements OpponentSource {
   readonly loop: GameLoop;
   private ai: OpponentAI;
 
-  constructor(data: GameData, readonly identity: OpponentIdentity, rng: () => number = Math.random, opts: { thinkSec?: [number, number]; manageSec?: [number, number] } = {}) {
-    this.loop = new GameLoop(data, rng);
-    this.ai = new OpponentAI(data, rng, { ...opts, loop: this.loop });
+  /**
+   * @param opts.script 고스트 대본. 있으면 그 판의 시드 스트림으로 판을 만들고 대본을 따라 친다 (끝나면 봇 두뇌가 이어 받음).
+   *   화면에는 대본 유무가 드러나지 않는다 — 봇과 같은 OpponentSource다.
+   */
+  constructor(data: GameData, readonly identity: OpponentIdentity, rng: () => number = Math.random, opts: { thinkSec?: [number, number]; manageSec?: [number, number]; script?: OpponentScript } = {}) {
+    const { script, ...rest } = opts;
+    this.loop = script ? new GameLoop(data, seedStreams(script.seed, { player: script.player })) : new GameLoop(data, rng);
+    this.ai = new OpponentAI(data, rng, { ...rest, loop: this.loop, script: script?.rounds });
   }
+
+  /** 대본을 따라 친 라운드 수 (테스트용) */
+  get scriptedRounds(): number { return this.ai.scriptedRounds; }
 
   /** 판돈 시스템 연결 (양쪽 지갑이 만들어진 뒤에 호출) */
   attachBetting(system: BettingSystem, config: DuelConfig): void {

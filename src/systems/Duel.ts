@@ -11,6 +11,20 @@ import { GameLoop, type GameData } from './GameLoop.ts';
 import { smartCardPhase, smartExchange, smartManage, smartCombatTick } from './bots.ts';
 import { aiOpening, aiResponse, type BettingSystem, type DuelConfig } from './Betting.ts';
 import { evaluateHand } from './PokerEvaluator.ts';
+import type { RoundInput, RoundOp } from './InputLog.ts';
+
+/**
+ * 고스트 대본 = 다른 플레이어가 실제로 친 판의 입력 로그 (docs/mode-design.md §2.2, GDD §10.8).
+ * 같은 시드·같은 플레이어 키로 GameLoop을 만들면 손패가 그 판과 똑같이 나오고, 대본대로 교환·배치·업그레이드·스킬을 따라 한다.
+ * 판돈은 새 상대(나)와 다시 겨루므로 골드가 원래 판과 달라질 수 있다 — 못 하게 된 입력(골드 부족 등)은 건너뛰고,
+ * 대본이 끝났거나 라운드가 어긋나면 그 뒤는 봇 두뇌가 이어 받는다.
+ */
+export interface OpponentScript {
+  seed: string;
+  /** 그 판을 친 플레이어의 키 (손패 시드 스트림) */
+  player: string;
+  rounds: RoundInput[];
+}
 
 export interface OpponentOptions {
   /** 카드 페이즈 생각 시간(초) 범위 */
@@ -21,6 +35,8 @@ export interface OpponentOptions {
   betting?: { system: BettingSystem; config: DuelConfig };
   /** 미리 만든 GameLoop을 쓴다 (베팅 지갑과 같은 인스턴스를 공유할 때) */
   loop?: GameLoop;
+  /** 고스트 대본의 라운드들. loop는 대본의 시드 스트림으로 만든 것이어야 한다 */
+  script?: RoundInput[];
 }
 
 /** 상대 AI: GameLoop 하나를 실시간으로 굴린다 */
@@ -36,12 +52,69 @@ export class OpponentAI {
   private betting: OpponentOptions['betting'];
   private respondTimer = 0;
   private respondWait = 0;
+  private script: Map<number, RoundInput>;
+  /** 이번 라운드에 따르는 대본 (없으면 봇 두뇌) */
+  private plan: RoundInput | null = null;
+  private planWave = 0;
+  private skillSteps: number[] = [];
+  /** 대본을 따라 친 라운드 수 (테스트·통계용) */
+  scriptedRounds = 0;
 
   constructor(data: GameData, private rng: () => number = Math.random, opts: OpponentOptions = {}) {
     this.loop = opts.loop ?? new GameLoop(data, rng);
     this.thinkSec = opts.thinkSec ?? [1.5, 4];
     this.manageSec = opts.manageSec ?? [0.8, 1.8];
     this.betting = opts.betting;
+    this.script = new Map((opts.script ?? []).filter((r) => Array.isArray(r.ops) && r.ops.some((o) => o[0] === 'c')).map((r) => [r.wave, r]));
+  }
+
+  /** 이 라운드의 대본. 카드 페이즈에 들어올 때 한 번 정한다 */
+  private planFor(wave: number): RoundInput | null {
+    if (this.planWave !== wave) {
+      this.planWave = wave;
+      this.plan = this.script.get(wave) ?? null;
+      this.skillSteps = (this.plan?.ops ?? []).filter((o) => o[0] === 'sk').map((o) => o[1] as number);
+      if (this.plan) this.scriptedRounds++;
+    }
+    return this.plan;
+  }
+
+  /** 대본의 입력 하나를 해 본다. 지금 상태에서 못 하는 입력은 건너뛴다 */
+  private tryOp(op: RoundOp): void {
+    const g = this.loop;
+    try {
+      switch (op[0]) {
+        case 'x': if (g.cardPhase.canExchange(op[1])) g.cardPhase.exchangeCard(op[1]); break;
+        case 'xt': if (g.ticketsLeftRun > 0) g.exchangeWithTicket(op[1]); break;
+        case 'mv': g.moveUnit(op[1], op[2]); break;
+        case 'sell': g.sellUnit(op[1]); break;
+        case 'mg': g.mergeUnits(op[1]); break;
+        case 'up': g.buyUpgrade(op[1]); break;
+        case 'hero': g.summonHero(op[1]); break;
+        default: break; // c·go는 흐름이 처리, g·l(옛 판돈)·xb·rv는 쓰지 않는다
+      }
+    } catch { /* 골드·슬롯이 원래 판과 달라짐 */ }
+  }
+
+  private scriptedCard(plan: RoundInput): void {
+    for (const op of plan.ops ?? []) if (op[0] === 'x' || op[0] === 'xt') this.tryOp(op);
+    const opening = plan.bet.find((b) => b.action === 'check' || b.action === 'raise')?.action as 'check' | 'raise' | undefined;
+    this.betOpening(opening ?? 'check');
+    this.loop.confirmHand();
+  }
+
+  private scriptedManage(plan: RoundInput): void {
+    for (const op of plan.ops ?? []) if (op[0] === 'mv' || op[0] === 'sell' || op[0] === 'mg' || op[0] === 'up' || op[0] === 'hero') this.tryOp(op);
+    this.loop.startCombat();
+  }
+
+  private scriptedCombatTick(dt: number): void {
+    const g = this.loop;
+    if (this.skillSteps.length > 0 && g.combatSteps >= this.skillSteps[0]) {
+      if (g.heroSkillReady) { g.useHeroSkill(); this.skillSteps.shift(); }
+      else if (!g.hero) this.skillSteps = [];
+    }
+    g.tickCombat(dt);
   }
 
   get finished(): boolean {
@@ -62,13 +135,20 @@ export class OpponentAI {
       this.lastPhase = g.phase;
       this.timer = 0;
       this.wait = g.phase === 'card' ? this.pick(this.thinkSec) : g.phase === 'manage' ? this.pick(this.manageSec) : 0;
+      if (g.phase === 'card') {
+        // 대본이 있으면 그 사람이 실제로 고민한 시간만큼 (타이머 안쪽으로)
+        const plan = this.planFor(g.wave);
+        if (plan) this.wait = Math.min(Math.max(0.8, plan.confirmedAt), Math.max(1, g.cardPhase.timerSeconds - 1));
+      }
     }
+    const plan = this.planWave === g.wave ? this.plan : null;
     switch (g.phase) {
       case 'card': {
         const r = g.cardPhase.tick(dt);
         this.timer += dt;
         if (r.autoConfirmed || this.timer >= this.wait) {
           if (r.autoConfirmed) { this.betOpening('check'); g.confirmHand(); }
+          else if (plan) this.scriptedCard(plan);
           else if (this.betting) { smartExchange(g); this.betOpening(null); g.confirmHand(); }
           else smartCardPhase(g);
           this.lastHandRank = g.cardPhase.handResult?.rank ?? null;
@@ -78,12 +158,13 @@ export class OpponentAI {
       case 'manage':
         this.timer += dt;
         if (this.timer >= this.wait) {
-          smartManage(g);
-          g.startCombat();
+          if (plan) this.scriptedManage(plan);
+          else { smartManage(g); g.startCombat(); }
         }
         break;
       case 'combat':
-        smartCombatTick(g, dt);
+        if (plan) this.scriptedCombatTick(dt);
+        else smartCombatTick(g, dt);
         break;
     }
   }
@@ -93,9 +174,14 @@ export class OpponentAI {
     const g = this.loop;
     let guard = 0;
     while (!this.finished && ++guard <= maxRounds) {
-      if (g.phase === 'card') { smartCardPhase(g); this.lastHandRank = g.cardPhase.handResult?.rank ?? null; }
-      if (g.phase === 'manage') { smartManage(g); g.startCombat(); }
-      for (let t = 0; t < 600 && g.phase === 'combat'; t += 0.1) smartCombatTick(g, 0.1);
+      if (g.phase === 'card') {
+        const plan = this.planFor(g.wave);
+        if (plan) this.scriptedCard(plan); else smartCardPhase(g);
+        this.lastHandRank = g.cardPhase.handResult?.rank ?? null;
+      }
+      const plan = this.planWave === g.wave ? this.plan : null;
+      if (g.phase === 'manage') { if (plan) this.scriptedManage(plan); else { smartManage(g); g.startCombat(); } }
+      for (let t = 0; t < 600 && g.phase === 'combat'; t += 0.1) { if (plan) this.scriptedCombatTick(0.1); else smartCombatTick(g, 0.1); }
       if (g.phase === 'combat') break; // 교착 방지
     }
   }
@@ -106,7 +192,7 @@ export class OpponentAI {
 
   // ── 판돈 걸기 ──
   /** 카드 확정 직전: 체크/레이즈 (forced가 있으면 그것, 없으면 성향대로) */
-  private betOpening(forced: 'check' | null): void {
+  private betOpening(forced: 'check' | 'raise' | null): void {
     if (!this.betting) return;
     const { system, config } = this.betting;
     const g = this.loop;

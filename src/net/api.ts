@@ -79,7 +79,7 @@ export const enqueue = () => rpc<PollResult>('enqueue');
 export const pollMatch = () => rpc<PollResult>('poll_match');
 export const cancelQueue = () => rpc<void>('cancel_queue');
 /** 대체 상대의 대본(입력 로그). 없으면 null → 클라이언트 봇 두뇌로 진행. 사람 상대면 오류 */
-export const getOpponentScript = (matchId: string) => rpc<{ rounds: RoundInput[]; seed: string } | null>('get_opponent_script', { p_match: matchId });
+export const getOpponentScript = (matchId: string) => rpc<{ rounds: RoundInput[]; seed: string; player: string } | null>('get_opponent_script', { p_match: matchId });
 
 /**
  * 매칭될 때까지 기다린다 (2.5초마다 poll). 대기가 길어지면 서버가 알아서 상대를 붙인다.
@@ -107,6 +107,13 @@ export const reportResult = (matchId: string, report: MatchReport, opponent?: Ma
 export const claimTimeout = (matchId: string) => rpc<MatchInfo>('claim_timeout', { p_match: matchId });
 export const submitLog = (matchId: string, rounds: RoundInput[], checksum?: string) =>
   rpc<void>('submit_log', { p_match: matchId, p_rounds: rounds, p_checksum: checksum ?? null });
+
+/** 로그 검증 요청 (Edge Function verify-match). 결과는 서버에 기록되고, 통과한 랭크 로그는 고스트 후보가 된다 */
+export async function verifyMatch(matchId: string, me: string): Promise<{ ok: boolean; issues: string[]; replayed: boolean } | null> {
+  const { data, error } = await getClient().functions.invoke('verify-match', { body: { matchId } });
+  if (error || !data?.results) return null;
+  return (data.results as Record<string, { ok: boolean; issues: string[]; replayed: boolean }>)[me] ?? null;
+}
 
 /** 매치 확정(상대 보고 도착) 구독 */
 export function subscribeMatch(matchId: string, onDone: (status: string) => void): Unsubscribe {

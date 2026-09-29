@@ -40,8 +40,16 @@ Deno.serve(async (req) => {
       await admin.from('match_logs')
         .update({ verified: r.ok, verify_note: r.ok ? null : r.issues.slice(0, 10).join(',') })
         .eq('match_id', matchId).eq('player_id', l.player_id);
-      // 검증 실패한 로그는 고스트로 쓰지 않는다
-      if (!r.ok) await admin.from('ghosts').delete().eq('match_id', matchId).eq('player_id', l.player_id);
+      // 고스트 = 재생 검사까지 통과한 랭크 로그만 (5라운드 이상). 실패한 로그는 고스트에서 뺀다
+      if (r.ok && r.replayed && m.mode === 'ranked' && Array.isArray(l.rounds) && l.rounds.length >= 5) {
+        const { data: p } = await admin.from('profiles').select('rating').eq('id', l.player_id).single();
+        await admin.from('ghosts').upsert(
+          { player_id: l.player_id, match_id: matchId, rating: p?.rating ?? 1000, wave_count: m.wave_count, seed: m.seed },
+          { onConflict: 'match_id,player_id', ignoreDuplicates: true },
+        );
+      } else if (!r.ok) {
+        await admin.from('ghosts').delete().eq('match_id', matchId).eq('player_id', l.player_id);
+      }
     }
     return json({ matchId, results });
   } catch (e) {

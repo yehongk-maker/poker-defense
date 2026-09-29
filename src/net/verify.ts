@@ -80,7 +80,9 @@ export function verifyLog(input: readonly RoundInput[] | unknown, ctx: VerifyCon
   const last = rounds[rounds.length - 1];
   const expectedReached = last.result.cleared ? rounds.length + 1 : rounds.length;
   if (ctx.report.reached !== Math.min(expectedReached, ctx.waveCount + 1)) issues.push('reached_mismatch');
-  const lifeLost = rounds.reduce((s, r) => s + Math.max(0, r.result.lifeLost), 0);
+  // 잃은 하트 = 전투에서 잃은 것 + 판돈 앤티 대납(ops의 l)
+  const paid = (r: RoundInput) => (r.ops ?? []).reduce((n, o) => n + (o[0] === 'l' ? Math.max(0, Number(o[1]) || 0) : 0), 0);
+  const lifeLost = rounds.reduce((s, r) => s + Math.max(0, r.result.lifeLost) + paid(r), 0);
   if (ctx.report.life < 0 || (lifeLost === 0 && ctx.report.life < 1)) issues.push('life_mismatch');
   if (ctx.report.clearedSec !== null && ctx.report.reached !== ctx.waveCount + 1) issues.push('cleared_without_clear');
 

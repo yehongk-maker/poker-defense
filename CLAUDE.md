@@ -14,7 +14,7 @@ src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
   scenes/        Boot(초대 링크 /j/코드 → Friend), Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기, 실시간 매치는 init.live),
-                 Meta, Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
+                 Meta, Match(랭크 매칭 대기 → 상대 소개 → 대전; 서버가 없으면 이 기기의 상대로), Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
   runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
@@ -69,6 +69,8 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 각 기기는 자기 보드만 시뮬하고 공개 정보(MatchEvent)만 보낸다. 손패·아웃·행운 게이지는 보내지 않는다.
 - 판돈은 양쪽 기기가 각자 `BettingSystem(…, { remote: 'opponent' })`로 계산한다. 같은 판정이 나오게 하는 규칙: 상대 앤티·레이즈 금액은 이벤트에 실린 값 그대로, 상대 지갑은 건드리지 않음(거울), 동시 레이즈는 늦게 온 쪽을 콜로, 내 레이즈에 대한 상대 응답은 상대 기기가 정해 보낼 때까지 대기, 라운드는 번호 순 판정, 동률 판돈은 N+1로 이월. `tests/Live.test.ts`가 지연·엇갈림에서 양쪽 판정 일치를 고정한다.
 - Realtime broadcast는 지난 이벤트를 다시 주지 않는다: LivePublisher는 판정용 이벤트(enter·confirm·bet·report·finish)를 기록해 상대 접속 시 재전송, LiveOpponent는 중복을 무시하고 판돈 연결 전 이벤트는 보관했다 반영한다. 새 이벤트를 추가하면 받는 쪽을 멱등으로 만든다.
+- 고스트(대체 매칭의 기록 상대): `AIOpponent`에 `script`(seed·player·rounds)를 주면 그 판의 시드 스트림으로 판을 만들고 대본대로 친다. 대본의 옛 판돈 증감(g/l)은 쓰지 않고, 못 하게 된 입력은 건너뛰며, 대본이 끝나면 봇 두뇌가 이어 받는다. 화면·OpponentView는 봇·사람과 같다. 고스트는 verify-match가 재생 검사를 통과시킨 랭크 로그(5라운드 이상)만 등록한다.
+- 대체 매칭 매치(`init.online`)는 끝날 때 양쪽 성적을 함께 보고(`report_result`의 p_opponent) → 로그 제출 → 검증 요청.
 - 승패는 서버 판정(report_result → finalize_match)을 표시한다. 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
 - 글자 입력(닉네임·방 코드)은 `ui/TextPrompt.askText`(DOM 입력칸) — 한글 조합·붙여넣기 때문. 색·폰트는 DESIGN 토큰.
 
@@ -138,7 +140,8 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): Supabase 서버 1차 — 스키마 12테이블·RLS·RPC(프로필/방/랭크 매칭+숨김 대체/판정·레이팅/친구·초대)·verify-match Edge Function·src/net 클라이언트 계층. 원격 프로젝트 생성·배포·실서버 스모크 19항목 통과.
 - 완료(2026-09-29): B단계 결정론 입력 로그 — Seed·InputLog·고정 step·렌더 보간·GameScene 기록기(`matchLog`)·dev 빌드 종료 시 자동 재생 점검(`[replay] ok`)·verify-match에 재생 검사 추가(번들만, 함수 재배포는 아직).
 - 완료(2026-09-29): C단계 친구 대전 — FriendScene·LiveOpponent/LivePublisher·네트워크 판돈(remote 모드)·서버 판정 결과 화면·친구 추가/초대·초대 링크·재대결. 실서버에서 두 계정으로 방→준비→대전→판정→전적→재대결 방 복귀 확인.
-- 남은 단계: D 고스트전, E 랭크 실시간(매칭 화면 + 숨김 대체, 양쪽 로그 판돈 교차 검증), F 시즌·랭킹. verify-match 함수 재배포(`npm run fn:deploy`)는 아직 안 함.
+- 완료(2026-09-29): D단계 고스트전 — 고스트 대본 재생(OpponentAI script), MatchScene(매칭 대기·상대 소개), 대체 매칭 결과 보고·레이팅 표시, 마이그레이션 000400(검증된 로그만 고스트·대본에 플레이어 키)·000500(끊긴 랭크 매치 무효), verify-match 재배포. 실서버에서 봇 매치 → 로그 검증 통과 → 다른 계정에 고스트로 등장 확인.
+- 남은 단계: E 랭크 실시간 마무리(사람 상대 매칭 실기기 확인, 이탈 패널티·끊김 봇 대행, 봇 강도 프리셋, 양쪽 로그 판돈 교차 검증), F 시즌·랭킹.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

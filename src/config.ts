@@ -8,4 +8,5 @@ export const SCENE = {
   Game: 'Game',
   Meta: 'Meta',
   Friend: 'Friend',
+  Match: 'Match',
 } as const;

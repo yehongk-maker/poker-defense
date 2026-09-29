@@ -242,10 +242,14 @@ describe('랭크 매칭', () => {
     expect(r.ratingDelta).toBe(expected);
   });
 
-  it('로그를 제출하면 고스트 후보가 되고, 다음 사람의 대체 매칭에 고스트로 쓰인다', async () => {
+  it('검증된 로그만 고스트가 되고, 다음 사람의 대체 매칭에 고스트로 쓰인다', async () => {
     const [{ id }] = await admin<{ id: string }>(`select id from public.matches where p1 = '${users.cat}' order by started_at desc limit 1`);
     const rounds = Array.from({ length: 6 }, (_, i) => ({ wave: i + 1, exchanges: [0], skills: [] }));
     await rpc('cat', 'submit_log', [id, JSON.stringify(rounds), 'abc']);
+    expect((await admin('select 1 from public.ghosts')).length).toBe(0); // 검증 전에는 고스트가 아니다
+    // verify-match(Edge Function, service role)가 재생 검사를 통과시킨 뒤 하는 일
+    await admin(`update public.match_logs set verified = true where match_id = '${id}' and player_id = '${users.cat}'`);
+    await admin(`insert into public.ghosts (player_id, match_id, rating, wave_count, seed) select '${users.cat}', m.id, 1000, m.wave_count, m.seed from public.matches m where m.id = '${id}'`);
     expect((await admin('select 1 from public.ghosts')).length).toBe(1);
     expect((await as('ann', 'select * from public.ghosts')).length).toBe(0); // 클라이언트 접근 불가
 
@@ -256,8 +260,37 @@ describe('랭크 매칭', () => {
     expect(r.status).toBe('matched');
     expect(r.match.opponent.name).toBe('캣츠'); // 고스트 주인의 닉으로 보인다
     expect(r.match.opponent.id).toBeNull();
-    const script = await rpc<{ rounds: unknown[]; seed: string }>('dan', 'get_opponent_script', [r.match.id]);
+    const script = await rpc<{ rounds: unknown[]; seed: string; player: string }>('dan', 'get_opponent_script', [r.match.id]);
     expect(script.rounds.length).toBe(6);
+    expect(script.player).toBe(users.cat); // 손패 시드 스트림의 키
+    const [m] = await admin<{ seed: string }>(`select seed from public.matches where id = '${r.match.id}'`);
+    expect(m.seed).toBe(script.seed); // 같은 웨이브·같은 전투 난수
+  });
+});
+
+describe('끊긴 랭크 매치', () => {
+  it('대체 상대 매치를 끝내지 않고 다시 매칭하면 그 판은 무효가 되고 새로 대기한다', async () => {
+    const [{ id }] = await admin<{ id: string }>(`select id from public.matches where p1 = '${users.dan}' and status = 'live' order by started_at desc limit 1`);
+    const [before] = await admin<{ rating: number }>(`select rating from public.profiles where id = '${users.dan}'`);
+    const r = await rpc<{ status: string }>('dan', 'enqueue', []);
+    expect(r.status).toBe('waiting');
+    const [m] = await admin<{ status: string; reason: string }>(`select status, reason from public.matches where id = '${id}'`);
+    expect(m).toMatchObject({ status: 'void', reason: 'abandoned' });
+    const [after] = await admin<{ rating: number }>(`select rating from public.profiles where id = '${users.dan}'`);
+    expect(after.rating).toBe(before.rating);
+    await rpc('dan', 'cancel_queue', []);
+  });
+
+  it('사람 상대 매치는 최대 시간이 지나기 전에는 그대로 돌려준다', async () => {
+    await admin(`update public.profiles set rating = 1000 where id in ('${users.ann}', '${users.bob}')`);
+    await rpc('ann', 'enqueue', []);
+    const r = await rpc<{ status: string; match: { id: string } }>('bob', 'enqueue', []);
+    expect(r.status).toBe('matched');
+    const again = await rpc<{ status: string; match: { id: string } }>('bob', 'enqueue', []);
+    expect(again.match.id).toBe(r.match.id);
+    await admin(`update public.matches set started_at = now() - interval '2 hours' where id = '${r.match.id}'`);
+    expect((await rpc<{ status: string }>('bob', 'enqueue', [])).status).toBe('waiting');
+    await rpc('bob', 'cancel_queue', []);
   });
 });
 
