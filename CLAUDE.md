@@ -71,7 +71,10 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - Realtime broadcast는 지난 이벤트를 다시 주지 않는다: LivePublisher는 판정용 이벤트(enter·confirm·bet·report·finish)를 기록해 상대 접속 시 재전송, LiveOpponent는 중복을 무시하고 판돈 연결 전 이벤트는 보관했다 반영한다. 새 이벤트를 추가하면 받는 쪽을 멱등으로 만든다.
 - 고스트(대체 매칭의 기록 상대): `AIOpponent`에 `script`(seed·player·rounds)를 주면 그 판의 시드 스트림으로 판을 만들고 대본대로 친다. 대본의 옛 판돈 증감(g/l)은 쓰지 않고, 못 하게 된 입력은 건너뛰며, 대본이 끝나면 봇 두뇌가 이어 받는다. 화면·OpponentView는 봇·사람과 같다. 고스트는 verify-match가 재생 검사를 통과시킨 랭크 로그(5라운드 이상)만 등록한다.
 - 대체 매칭 매치(`init.online`)는 끝날 때 양쪽 성적을 함께 보고(`report_result`의 p_opponent) → 로그 제출 → 검증 요청.
-- 승패는 서버 판정(report_result → finalize_match)을 표시한다. 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
+- 랭크 이탈 = 기권패: 매치 중 10초마다 `heartbeat`, 도중에 나가면(씬 종료·다시 매칭) `forfeit_match`/`enqueue`가 바로 확정(상대 승리). 상대가 30초 안 보이면 `claim_absent` — 서버가 마지막 heartbeat(25초)로 확인한 뒤에만 기권 처리. 남은 쪽은 매치 행이 done이 되면 결과 화면(상대 기권).
+- 봇 강도: `duel.json ai.presets`(easy/normal/hard, 상대 레이팅 구간) → `pickPreset` → `AIOpponent({ preset })`. 수치는 JSON만 고친다.
+- 판돈 검증: `net/verifyBets`가 로그의 g/l 증감을 넉넉한 경계(낸 것 하한·받은 것 상한)로 검사, 사람 상대면 상대 로그의 라운드 성적으로 상한을 좁힌다. 판돈 선택 기록에는 걸린 라운드(`bet.wave`)를 남긴다.
+- 승패는 서버 판정(report_result → finalize_match)을 표시한다. 친구 대전의 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
 - 글자 입력(닉네임·방 코드)은 `ui/TextPrompt.askText`(DOM 입력칸) — 한글 조합·붙여넣기 때문. 색·폰트는 DESIGN 토큰.
 
 ## 서버 규칙 (Supabase, docs/server-setup.md)
@@ -141,7 +144,8 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): B단계 결정론 입력 로그 — Seed·InputLog·고정 step·렌더 보간·GameScene 기록기(`matchLog`)·dev 빌드 종료 시 자동 재생 점검(`[replay] ok`)·verify-match에 재생 검사 추가(번들만, 함수 재배포는 아직).
 - 완료(2026-09-29): C단계 친구 대전 — FriendScene·LiveOpponent/LivePublisher·네트워크 판돈(remote 모드)·서버 판정 결과 화면·친구 추가/초대·초대 링크·재대결. 실서버에서 두 계정으로 방→준비→대전→판정→전적→재대결 방 복귀 확인.
 - 완료(2026-09-29): D단계 고스트전 — 고스트 대본 재생(OpponentAI script), MatchScene(매칭 대기·상대 소개), 대체 매칭 결과 보고·레이팅 표시, 마이그레이션 000400(검증된 로그만 고스트·대본에 플레이어 키)·000500(끊긴 랭크 매치 무효), verify-match 재배포. 실서버에서 봇 매치 → 로그 검증 통과 → 다른 계정에 고스트로 등장 확인.
-- 남은 단계: E 랭크 실시간 마무리(사람 상대 매칭 실기기 확인, 이탈 패널티·끊김 봇 대행, 봇 강도 프리셋, 양쪽 로그 판돈 교차 검증), F 시즌·랭킹.
+- 완료(2026-09-29): E단계 랭크 실시간 — 사람 대 사람 매칭 실서버 확인, 기권패·heartbeat·claim_absent(마이그레이션 000600), 봇 강도 프리셋, 판돈 교차 검증, verify-match 재배포. 기획의 '끊김 후 봇 대행'은 '부재 = 기권패'로 단순화.
+- 남은 단계: F 시즌·랭킹. 그 밖: 대전 중 기권 버튼 없음(앱을 닫아야 나감), 재접속 이어하기 없음.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
