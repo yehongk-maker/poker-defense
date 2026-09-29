@@ -329,6 +329,75 @@ describe('랭크 이탈 = 기권패', () => {
   });
 });
 
+describe('시즌·랭킹', () => {
+  type Row = { rank: number; id: string; name: string; rating: number; seasonPoints: number; me: boolean };
+  type Board = { kind: string; rows: Row[]; me: Row | null; total: number };
+
+  it('리더보드: 랭크 대전을 한 사람만, 시즌 포인트 순, 내 순위 포함', async () => {
+    await admin(`update public.profiles set season_points = 120, rating = 1010, wins = 6, losses = 1 where id = '${users.ann}'`);
+    await admin(`update public.profiles set season_points = 340, rating = 990, wins = 17, losses = 0 where id = '${users.bob}'`);
+    const b = await rpc<Board>('ann', 'leaderboard', ['season', 50]);
+    expect(b.kind).toBe('season');
+    expect(b.rows[0]).toMatchObject({ rank: 1, id: users.bob, seasonPoints: 340, me: false });
+    expect(b.me).toMatchObject({ id: users.ann, me: true });
+    expect(b.rows.every((r, i) => i === 0 || b.rows[i - 1].seasonPoints >= r.seasonPoints)).toBe(true);
+    const [{ n }] = await admin<{ n: number }>('select count(*)::int as n from public.profiles where wins + losses + draws > 0');
+    expect(b.total).toBe(n);
+    expect(JSON.stringify(b)).not.toMatch(/bot|ghost|opponent_kind/i);
+  });
+
+  it('레이팅 순 리더보드와 상한', async () => {
+    const b = await rpc<Board>('ann', 'leaderboard', ['rating', 1]);
+    expect(b.kind).toBe('rating');
+    expect(b.rows.length).toBe(1);
+    const [{ top }] = await admin<{ top: number }>('select max(rating)::int as top from public.profiles where wins + losses + draws > 0');
+    expect(b.rows[0].rating).toBe(top);
+    expect(b.me).not.toBeNull(); // 목록 밖이어도 내 순위는 온다
+  });
+
+  it('내 시즌 현황: 시즌 기간·보상 구간·내 포인트', async () => {
+    const m = await rpc<{ season: { name: string; endsAt: string; rewards: { minPoints: number; diamonds: number }[] }; me: { seasonPoints: number }; unclaimed: unknown[] }>('ann', 'my_season', []);
+    expect(m.season.name).toBe('시즌 1');
+    expect(new Date(m.season.endsAt).getTime()).toBeGreaterThan(Date.now());
+    expect(m.season.rewards.map((r) => r.minPoints)).toEqual([100, 300, 600]);
+    expect(m.me.seasonPoints).toBe(120);
+    expect(m.unclaimed).toEqual([]);
+  });
+
+  it('시즌이 끝나면: 결과 기록 → 포인트 0 · 레이팅은 1000 쪽으로 절반 → 다음 시즌', async () => {
+    await admin(`update public.profiles set rating = 1200 where id = '${users.bob}'`);
+    await admin(`update public.seasons set starts_at = now() - interval '29 days', ends_at = now() - interval '1 hour'`);
+    const m = await rpc<{ season: { name: string; endsAt: string }; me: { seasonPoints: number; rating: number }; unclaimed: { seasonId: number; rank: number; points: number; diamonds: number; name: string }[] }>('bob', 'my_season', []);
+    expect(m.season.name).toBe('시즌 2');
+    expect(new Date(m.season.endsAt).getTime()).toBeGreaterThan(Date.now() + 27 * 86400e3);
+    expect(m.me).toMatchObject({ seasonPoints: 0, rating: 1100 });
+    expect(m.unclaimed).toEqual([expect.objectContaining({ name: '시즌 1', rank: 1, points: 340, diamonds: 150 })]);
+    // 다시 불러도 한 번만 넘어간다
+    await rpc('ann', 'my_season', []);
+    expect((await admin('select 1 from public.seasons')).length).toBe(2);
+    const ann = await rpc<{ unclaimed: { diamonds: number }[] }>('ann', 'my_season', []);
+    expect(ann.unclaimed).toEqual([expect.objectContaining({ points: 120, diamonds: 50 })]);
+  });
+
+  it('보상은 한 번만 받는다. 남의 결과는 보이지 않는다', async () => {
+    const [{ id }] = await admin<{ id: number }>(`select id from public.seasons where name = '시즌 1'`);
+    expect(await rpc<number>('bob', 'claim_season_reward', [id])).toBe(150);
+    await expect(rpc('bob', 'claim_season_reward', [id])).rejects.toThrow(/reward_not_found/);
+    expect((await rpc<{ unclaimed: unknown[] }>('bob', 'my_season', [])).unclaimed).toEqual([]);
+    const seen = await as<{ player_id: string }>('ann', 'select player_id from public.season_results');
+    expect(seen.every((r) => r.player_id === users.ann)).toBe(true);
+    // 보상 구간에 못 미친 사람은 받을 것이 없다
+    await expect(rpc('dan', 'claim_season_reward', [id])).rejects.toThrow(/reward_not_found/);
+  });
+
+  it('클라이언트는 시즌 결과·시즌을 직접 고칠 수 없다', async () => {
+    await as('ann', `update public.season_results set diamonds = 9999 where player_id = '${users.ann}'`).catch(() => undefined);
+    const [r] = await admin<{ diamonds: number }>(`select diamonds from public.season_results where player_id = '${users.ann}'`);
+    expect(r.diamonds).toBe(50);
+    await expect(rpc('ann', 'ensure_season', [])).rejects.toThrow();
+  });
+});
+
 describe('판정·레이팅 순수 함수', () => {
   const decide = async (a: object, b: object) =>
     (await admin<{ r: { winner: string; reason: string } }>('select public.decide_winner($1::jsonb, $2::jsonb) as r', [JSON.stringify(a), JSON.stringify(b)]))[0].r;

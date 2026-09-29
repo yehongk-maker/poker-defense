@@ -9,4 +9,5 @@ export const SCENE = {
   Meta: 'Meta',
   Friend: 'Friend',
   Match: 'Match',
+  Rank: 'Rank',
 } as const;

@@ -11,6 +11,8 @@ import type { GameData } from '../systems/GameLoop.ts';
 import type { DuelConfig } from '../systems/Betting.ts';
 import type { ModeSources, WaveSet } from '../systems/GameMode.ts';
 import type { RewardedAdsConfig } from '../systems/Ads.ts';
+import type { RankingConfig } from '../systems/Ranking.ts';
+import rankingJson from './ranking.json';
 
 /** 모드별 데이터 조립 재료 (GameMode.buildGameData 입력): 캠페인 기본 데이터 + 대전 20웨이브 곡선 + 매치 규칙 */
 export function loadModeSources(): ModeSources {
@@ -25,6 +27,11 @@ export function loadModeSources(): ModeSources {
 /** 보상형 광고 수치 (config.json monetization.rewardedAds) */
 export function loadRewardedAds(): RewardedAdsConfig {
   return (configJson as unknown as { monetization: { rewardedAds: RewardedAdsConfig } }).monetization.rewardedAds;
+}
+
+/** 랭크 티어·리더보드 표시 규칙 (ranking.json) */
+export function loadRanking(): RankingConfig {
+  return rankingJson as unknown as RankingConfig;
 }
 
 /** 1:1 판돈 걸기 설정 (duel.json) */

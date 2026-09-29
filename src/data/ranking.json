@@ -1,0 +1,12 @@
+{
+  "comment": "랭크 티어 (레이팅 구간)와 시즌 표시 규칙. 시즌 보상 구간·다이아는 서버 seasons.rewards가 기준이고, 여기 값은 화면 표시용. 레이팅·시즌 포인트 식은 src/systems/Rating.ts (서버 finalize_match와 같아야 한다).",
+  "tiers": [
+    { "id": "bronze", "name": "브론즈", "minRating": 0, "color": "gray" },
+    { "id": "silver", "name": "실버", "minRating": 900, "color": "blue" },
+    { "id": "gold", "name": "골드", "minRating": 1050, "color": "gold" },
+    { "id": "platinum", "name": "플래티넘", "minRating": 1200, "color": "green" },
+    { "id": "diamond", "name": "다이아", "minRating": 1400, "color": "purple" }
+  ],
+  "leaderboardSize": 50,
+  "seasonSoftReset": { "center": 1000, "keep": 0.5 }
+}

@@ -76,7 +76,7 @@ export class LobbyScene extends Phaser.Scene {
     bg.fillStyle(COLOR.gold).fillRect(gx - 9, gy - 54, 18, 28);
     bg.fillStyle(COLOR.gold).fillTriangle(gx, gy - 54, gx - 34, gy - 78, gx - 26, gy - 50).fillTriangle(gx, gy - 54, gx + 34, gy - 78, gx + 26, gy - 50);
     this.add.text(cx - bw / 2 + 40, by - 28, '시즌 1 · 레이즈 듀얼', { fontSize: '42px', color: hex(COLOR.textMain), fontFamily: FONT.display, stroke: hex(COLOR.purpleDark), strokeThickness: 6 }).setOrigin(0, 0.5);
-    this.add.text(cx - bw / 2 + 40, by + 30, '판돈을 걸고 40라운드를 먼저 깨라!', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0, 0.5).setAlpha(0.9);
+    this.add.text(cx - bw / 2 + 40, by + 30, '판돈을 걸고 20라운드를 먼저 깨라!', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0, 0.5).setAlpha(0.9);
 
     this.add.text(cx, 1130, `${st.runs}판 · 승리 ${st.wins} · 최고 라운드 ${st.bestWave} · 누적 다이아 ${st.totalGemsEarned}`, { fontSize: `${SIZE.caption}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700', ...OUTLINE, strokeThickness: 3 }).setOrigin(0.5).setAlpha(0.9);
 
@@ -110,7 +110,7 @@ export class LobbyScene extends Phaser.Scene {
       { id: 'hero', label: '영웅', go: () => this.scene.start(SCENE.Meta) },
       { id: 'battle', label: '전투', go: () => this.scene.start(SCENE.Game, { mode: CAMPAIGN, resume: !!loadRun() } satisfies GameSceneInit) },
       { id: 'upgrade', label: '강화', go: () => this.scene.start(SCENE.Meta) },
-      { id: 'rank', label: '랭킹' },
+      { id: 'rank', label: '랭킹', go: () => this.scene.start(SCENE.Rank) },
     ];
     const tw = GAME_WIDTH / tabs.length;
     tabs.forEach((t, i) => {

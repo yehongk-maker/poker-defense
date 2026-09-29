@@ -2,7 +2,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getClient } from './supabase.ts';
 import { normalizeRoomCode } from './roomCode.ts';
-import type { Friend, Invite, MatchInfo, MatchReport, PollResult, Profile, Room, RoomRules, RoundInput } from './types.ts';
+import type { Friend, Invite, Leaderboard, LeaderboardKind, MatchInfo, MatchReport, PollResult, Profile, Room, RoomRules, RoundInput, SeasonInfo } from './types.ts';
 import type { MatchEvent, MatchTransport, Unsubscribe } from './MatchTransport.ts';
 
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -129,6 +129,12 @@ export function subscribeMatch(matchId: string, onDone: (status: string) => void
     .subscribe();
   return () => { void getClient().removeChannel(ch); };
 }
+
+// ── 시즌·랭킹 ──
+export const getLeaderboard = (kind: LeaderboardKind, limit = 50) => rpc<Leaderboard>('leaderboard', { p_kind: kind, p_limit: limit });
+export const getMySeason = () => rpc<SeasonInfo>('my_season');
+/** 지난 시즌 보상 수령 (서버에 1회 기록). 받은 다이아 수 */
+export const claimSeasonReward = (seasonId: number) => rpc<number>('claim_season_reward', { p_season: seasonId });
 
 // ── 친구 ──
 export const addFriend = (otherId: string) => rpc<void>('add_friend', { p_other: otherId });

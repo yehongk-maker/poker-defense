@@ -89,5 +89,27 @@ export interface Invite {
   created_at: string;
 }
 
+export interface LeaderboardRow {
+  rank: number;
+  id: string;
+  name: string;
+  avatar: SuitCode;
+  rating: number;
+  seasonPoints: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  me: boolean;
+}
+export type LeaderboardKind = 'season' | 'rating';
+export interface Leaderboard { kind: LeaderboardKind; rows: LeaderboardRow[]; me: LeaderboardRow | null; total: number }
+
+export interface SeasonInfo {
+  season: { id: number; name: string; startsAt: string; endsAt: string; rewards: { minPoints: number; diamonds: number }[] };
+  me: { rating: number; seasonPoints: number; wins: number; losses: number; draws: number; placementLeft: number };
+  /** 아직 받지 않은 지난 시즌 보상 */
+  unclaimed: { seasonId: number; name: string; rank: number; points: number; diamonds: number }[];
+}
+
 /** 한 라운드의 입력 로그 — 결정론 재생·검증의 재료. 정의는 src/systems/InputLog.ts */
 export type { RoundInput, RoundOp } from '../systems/InputLog.ts';
