@@ -29,7 +29,10 @@ src/
                  WaveBanner, ResultOverlay(승리 광선·리본·별 / 패배), Backdrop(월드 그라디언트·하단 시트·가장자리 핸들),
                  OpponentMiniMap(필드 우상단 상대 필드·적 축소 표시, 0.5초 갱신, 탭 → 상대 패널),
                  draw(도형 아이콘: 동전·하트·젬·영웅 토큰·교환권·별), theme(DESIGN 토큰 + 구 COLORS 호환) (Phaser)
-  data/          units, hands, waves, synergies, heroes, config, duel(판돈 룰·AI 성향) .json
+  net/           온라인 계층 (Phaser import 금지): supabase(클라이언트·익명 로그인), api(RPC 래퍼·구독·SupabaseTransport),
+                 MatchTransport(MatchEvent·LoopbackTransport), roomCode, rules, verify(입력 로그 개연성 검사), types, env
+  data/          units, hands, waves, duel-waves, synergies, heroes, config, duel(판돈 룰·AI 성향·매치 규칙) .json
+supabase/        migrations(스키마·RPC·기본 데이터), functions/verify-match(Edge Function), config.toml — docs/server-setup.md
 tests/           vitest. systems/와 1:1 대응
 scripts/         generate-waves.mjs, simulate(sim-core), hero-shard-report(npm run shards), draw-assist-report(npm run draw)
 design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.md)
@@ -41,6 +44,13 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 버튼 색은 역할로만: gold=진행·핵심 CTA, purple=베팅·다이아 가격, blue=일반(체크·콜·배속·탭), gray=보조·닫기, red=위험(판매·초기화), green=광고 보상(▶ AD 필수, 1:1 대결에서는 금지).
 - 매 프레임 호출되는 UI 갱신은 값이 바뀔 때만 다시 그린다 (Button.setLabel/setEnabled/setVariant는 같은 값이면 무시).
 - 이모지는 임시 아이콘: HUD·알약·결과 화면은 도형 아이콘으로 교체 완료, 토스트·일부 라벨 문자열에 남은 💰💎 등은 스프라이트 도입 때 교체.
+
+## 서버 규칙 (Supabase, docs/server-setup.md)
+- 클라이언트는 테이블에 직접 쓰지 않는다. 쓰기는 전부 SECURITY DEFINER RPC, RLS는 "내 행 조회"만.
+- 상대가 사람/고스트/봇인지는 `match_internal`에만 있고 어떤 RPC 응답에도 넣지 않는다.
+- 스키마를 바꾸면 새 마이그레이션 파일을 추가하고 `tests/SupabaseSchema.test.ts`(pglite)를 같이 고친다. 서버 식(레이팅·규칙 정규화)은 `src/systems/Rating.ts`·`src/net/rules.ts`와 같아야 한다.
+- 원격 프로젝트 생성·`db push`·함수 배포는 사용자 확인 후에만. 기존 Supabase 프로젝트(샐러리 등)에 연결하지 않는다.
+- service_role key는 저장소·클라이언트 금지. `.env*`는 커밋하지 않는다(`.env.example`만).
 
 ## 절대 규칙
 1. **게임 로직은 `src/systems/`에 순수 함수/클래스로.** Phaser·DOM 의존 금지. 난수는 `rng` 주입(테스트 재현성).
@@ -96,6 +106,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료: 족보별 영웅 조각·보스 조각·행운 드로우(GDD v1.8, 2026-09-28): DrawAssist + CardPhase 가중 추첨, hands.json shards, heroes.json shardType, 상점 패널 조각 게이지 3줄+와일드 뱃지(DESIGN §5-04), 영웅 카드는 조각 맞는 것만 활성(§5-07), 카드 우상단 아웃 표시, 보스 조각 토스트. 밸런스 재측정: 하이카드 23·무전략 25·최선 32 (JSON 변경 없음).
 - 완료: DESIGN.md 캐주얼 디자인 적용(2026-09-26): 토큰·UIButton·재화 알약·타이머 링·부채꼴 손패·잔디 필드/모래 트랙·유닛 칩·지상/공중 적 표현·데미지 숫자·베팅 3버튼·상대 말풍선·웨이브/위기 배너·결과 화면·로비 탭바. GameLoop.heroGradeDrop(등급 하락 카피).
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
-- 기획(미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
+- 완료(2026-09-29): Supabase 서버 1차 — 스키마 12테이블·RLS·RPC(프로필/방/랭크 매칭+숨김 대체/판정·레이팅/친구·초대)·verify-match Edge Function·src/net 클라이언트 계층. 원격 프로젝트는 미생성(사용자 확인 필요).
+- 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
