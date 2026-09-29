@@ -67,7 +67,7 @@ export class LivePublisher {
     });
   }
 
-  private static readonly CRITICAL: ReadonlySet<MatchEvent['t']> = new Set(['enter', 'confirm', 'bet', 'report', 'finish']);
+  private static readonly CRITICAL: ReadonlySet<MatchEvent['t']> = new Set(['enter', 'confirm', 'bet', 'report', 'finish', 'surrender']);
 
   private emit(e: MatchEvent): void {
     if (LivePublisher.CRITICAL.has(e.t)) this.critical.push(e);
@@ -178,6 +178,31 @@ export class LivePublisher {
   }
 
   rematch(ready: boolean): void { this.transport.send({ t: 'rematch', ready }); }
+  surrender(): void { this.emit({ t: 'surrender' }); }
+
+  /**
+   * 재접속 이어하기: 입력 로그와 판돈 상태로 "이미 보낸 판정용 이벤트"를 다시 만든다.
+   * 상대는 대부분 이미 받았지만(중복은 무시된다), 끊기기 직전 것을 놓쳤을 수 있어 붙자마자 한 번 다시 보낸다.
+   */
+  restore(rounds: readonly { wave: number; partial?: boolean; bet: { action: BetAction; wave?: number }[]; ops?: unknown[]; result: { lifeLost: number; clearSec: number; handRank: number; cleared: boolean } }[]): void {
+    this.critical = [];
+    for (const r of rounds) {
+      const rb = this.betting?.round(r.wave);
+      const confirmed = (r.ops ?? []).some((o) => Array.isArray(o) && o[0] === 'c');
+      if (this.betting ? rb?.entered.player : true) {
+        this.critical.push(this.betting ? { t: 'enter', wave: r.wave, ante: rb!.ante.player } : { t: 'enter', wave: r.wave });
+        this.enteredWave = r.wave;
+      }
+      for (const b of r.bet) {
+        const w = b.wave ?? r.wave;
+        const amount = b.action === 'raise' ? this.betting?.round(w)?.raise?.amount : undefined;
+        this.critical.push(amount === undefined ? { t: 'bet', wave: w, action: b.action } : { t: 'bet', wave: w, action: b.action, amount });
+      }
+      if (confirmed) { this.critical.push({ t: 'confirm', wave: r.wave, handRank: r.result.handRank }); this.confirmedWave = r.wave; }
+      if (!r.partial) { this.critical.push({ t: 'report', wave: r.wave, ...r.result }); this.reportedWave = r.wave; }
+    }
+    if (this.peerOnline) this.resend();
+  }
   leave(): void { this.transport.send({ t: 'leave' }); }
 
   private fieldEvent(): MatchEvent {
@@ -219,6 +244,7 @@ export class LiveOpponent implements OpponentSource {
   private _online = true;
   private offlineSec = 0;
   private _left = false;
+  private _surrendered = false;
   private _rematch = false;
   private _final: MatchReport | null = null;
   events: LiveOpponentEvents = {};
@@ -253,6 +279,8 @@ export class LiveOpponent implements OpponentSource {
   get offlineFor(): number { return this._online ? 0 : this.offlineSec; }
   /** 상대가 방을 나갔다 */
   get left(): boolean { return this._left; }
+  /** 상대가 기권했다 */
+  get surrendered(): boolean { return this._surrendered; }
   get wantsRematch(): boolean { return this._rematch; }
   /** 상대가 보낸 최종 성적 (판을 마친 뒤) */
   get finalReport(): MatchReport | null { return this._final; }
@@ -340,6 +368,9 @@ export class LiveOpponent implements OpponentSource {
       case 'rematch':
         this._rematch = e.ready;
         this.events.onRematch?.(e.ready);
+        break;
+      case 'surrender':
+        this._surrendered = true;
         break;
       case 'leave':
         this._left = true;

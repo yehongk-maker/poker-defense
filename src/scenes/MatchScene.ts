@@ -129,8 +129,9 @@ export class MatchScene extends Phaser.Scene {
     } else {
       const script = await getOpponentScript(info.id).catch(() => null);
       const usable = script && Array.isArray(script.rounds) && script.rounds.length > 0 ? script : undefined;
-      const opponent: OpponentSource = new AIOpponent(data, identity, Math.random, { script: usable, preset: pickPreset(loadDuelConfig().ai.presets, identity.rating) });
-      init = { mode, opponentSource: opponent, playerId: me.id, online: { matchId: info.id, me: me.id } };
+      const preset = pickPreset(loadDuelConfig().ai.presets, identity.rating);
+      const opponent: OpponentSource = new AIOpponent(data, identity, Math.random, { script: usable, preset });
+      init = { mode, opponentSource: opponent, playerId: me.id, online: { matchId: info.id, me: me.id }, opponentSave: { script: usable ?? null, presetId: preset?.id ?? null } };
     }
     if (!this.alive) { init.live?.transport.close(); return; }
     this.reveal(identity.name, identity.rating, identity.avatar, () => this.scene.start(SCENE.Game, init));
@@ -161,8 +162,9 @@ export class MatchScene extends Phaser.Scene {
     this.found = true;
     const id = localBotIdentity(1000);
     const mode = rankedDuel('ai');
-    const opponent = new AIOpponent(buildGameData(loadModeSources(), mode, null), id, Math.random, { preset: pickPreset(loadDuelConfig().ai.presets, id.rating) });
-    const init: GameSceneInit = { mode, opponentSource: opponent };
+    const preset = pickPreset(loadDuelConfig().ai.presets, id.rating);
+    const opponent = new AIOpponent(buildGameData(loadModeSources(), mode, null), id, Math.random, { preset });
+    const init: GameSceneInit = { mode, opponentSource: opponent, opponentSave: { script: null, presetId: preset?.id ?? null } };
     this.reveal(id.name, id.rating, id.avatar, () => this.scene.start(SCENE.Game, init));
   }
 

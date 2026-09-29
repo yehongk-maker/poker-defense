@@ -18,7 +18,8 @@ export type MatchEvent =
   | { t: 'report'; wave: number; lifeLost: number; clearSec: number; handRank: number; cleared: boolean }
   | { t: 'finish'; reached: number; life: number; gold: number; clearedSec: number | null }
   | { t: 'rematch'; ready: boolean }
-  | { t: 'leave' };                                                // 방을 나감 (판 중이면 기권)
+  | { t: 'leave' }
+  | { t: 'surrender' };                                            // 기권: 받은 쪽이 바로 이긴다                                                // 방을 나감 (판 중이면 기권)
 
 export type MatchEventType = MatchEvent['t'];
 export type Unsubscribe = () => void;

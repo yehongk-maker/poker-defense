@@ -11,6 +11,9 @@ import { addBackdrop } from '../ui/Backdrop.ts';
 import { coinIcon, glossTop, starPath, tokenIcon } from '../ui/draw.ts';
 import { COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, hex } from '../ui/theme.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
+import { clearMatch, loadMatch } from '../matchSave.ts';
+import { abandonSaved, prepareResume } from './resumeMatch.ts';
+import type { SavedMatch } from '../systems/MatchResume.ts';
 
 type Tab = 'shop' | 'hero' | 'battle' | 'upgrade' | 'rank';
 
@@ -97,6 +100,57 @@ export class LobbyScene extends Phaser.Scene {
 
     this.add.text(cx, GAME_HEIGHT - SIZE.tabbarH - 30, 'v0.3.0 · 저장: localStorage', { fontSize: `${SIZE.tiny}px`, color: hex(COLOR.textMain), fontFamily: FONT.body }).setOrigin(0.5).setAlpha(0.6);
     this.toast = this.add.text(cx, 1650, '', { fontSize: '34px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setAlpha(0);
+
+    // 끊겼던 대전이 있으면 먼저 묻는다 (이어하기 / 기권)
+    const match = loadMatch();
+    if (match) this.openResumeSheet(match);
+  }
+
+  /** 진행 중이던 대전 안내 (모달). 닫을 수 없다 — 이어 하거나 기권해야 다른 대전을 시작할 수 있다 */
+  private openResumeSheet(saved: SavedMatch): void {
+    if (this.sheet) return;
+    const cx = GAME_WIDTH / 2, cy = 1000, w = GAME_WIDTH - 2 * SIZE.gutter, h = 700;
+    const c = this.add.container(0, 0).setDepth(40);
+    const dim = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, 0.72).setInteractive();
+    const g = this.add.graphics();
+    g.fillStyle(COLOR.navyDark).fillRoundedRect(cx - w / 2, cy - h / 2 + 8, w, h, SIZE.radiusPanel);
+    g.fillStyle(COLOR.navy).fillRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    g.lineStyle(2, COLOR.modalBorder).strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    const last = saved.rounds[saved.rounds.length - 1];
+    const title = this.add.text(cx, cy - h / 2 + 80, '진행 중인 대전이 있어요', { fontSize: `${SIZE.h2 + 8}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
+    const ranked = saved.mode.id === 'ranked_duel';
+    const info = this.add.text(cx, cy - h / 2 + 190, `${saved.mode.label} · ${saved.identity.name}\n라운드 ${last?.wave ?? 1} / ${saved.mode.waves}`, { fontSize: `${SIZE.body + 6}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700', align: 'center' }).setOrigin(0.5);
+    const state = this.add.text(cx, cy + 250, '', { fontSize: `${SIZE.body}px`, color: hex(COLOR.textGold), fontFamily: FONT.body, fontStyle: '700', align: 'center' }).setOrigin(0.5);
+    let busy = false;
+    const close = () => { c.destroy(); this.sheet = null; };
+    const resume = new Button(this, cx, cy - 10, '이어하기\n끊긴 곳에서 다시', () => {
+      if (busy) return;
+      busy = true;
+      state.setText('연결 중…');
+      void prepareResume(saved).then((r) => {
+        if (!this.scene.isActive()) { if (r.ok) r.init.live?.transport.close(); return; }
+        if (r.ok) { this.scene.start(SCENE.Game, r.init); return; }
+        busy = false;
+        if (r.reason === 'offline') { state.setText('연결하지 못했어요. 다시 눌러 주세요'); return; }
+        clearMatch();
+        close();
+        this.showToast(r.reason === 'finished' ? '대전이 이미 끝났어요' : '이어 할 수 없는 대전이에요');
+      });
+    }, { width: w - 80, height: SIZE.btnL + 16, fontSize: 56, variant: 'gold' });
+    const quit = new Button(this, cx, cy + 150, ranked ? '기권\n패배로 기록돼요' : '기권\n이 대전을 포기해요', () => {
+      if (busy) return;
+      busy = true;
+      state.setText('처리 중…');
+      void abandonSaved(saved).catch(() => undefined).then(() => {
+        clearMatch();
+        if (!this.scene.isActive()) return;
+        close();
+        this.showToast('대전을 포기했어요');
+      });
+    }, { width: w - 200, height: SIZE.btnM + 8, fontSize: 40, variant: 'red' });
+    c.add([dim, g, title, info, resume, quit, state]);
+    this.sheet = c;
+    this.toast.setDepth(50);
   }
 
   /** 하단 탭바 5탭 (DESIGN §5-01): 활성=흰색, 비활성=textSub. 전투 탭은 골드 원형으로 14px 솟음 */

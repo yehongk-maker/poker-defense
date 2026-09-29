@@ -73,8 +73,12 @@ export class InputRecorder implements LoopListener {
   private list: RoundInput[] = [];
   private readonly step: number;
 
-  constructor(private loop: GameLoop, simStep = 0.1) {
+  /**
+   * @param earlier 이어하기: 이미 기록된 라운드들 (그 로그로 loop를 되돌린 뒤에 붙인다)
+   */
+  constructor(private loop: GameLoop, simStep = 0.1, earlier: readonly RoundInput[] = []) {
     this.step = simStep;
+    this.list = earlier.map((r) => ({ ...r, ops: [...(r.ops ?? [])], bet: [...r.bet], manage: { ...r.manage, moves: [...r.manage.moves], sells: [...r.manage.sells], merges: [...r.manage.merges], upgrades: [...r.manage.upgrades] }, skills: [...r.skills], exchanges: [...r.exchanges] }));
     loop.listener = this;
     this.round(loop.wave);
   }
@@ -167,9 +171,19 @@ const EPS = 1e-6;
  * @param streams 그 플레이어의 시드 스트림 (Seed.seedStreams)
  */
 export function replayMatch(data: GameData, streams: RngStreams, rounds: readonly RoundInput[]): ReplayResult {
+  const loop = new GameLoop(data, streams);
+  const { issues, reports } = replayInto(loop, data, rounds);
+  const reached = loop.phase === 'victory' ? data.config.totalWaves + 1 : loop.wave;
+  return { ok: issues.length === 0, issues, reports, final: { reached, life: loop.life, gold: loop.gold, phase: loop.phase } };
+}
+
+/**
+ * 새로 만든 loop에 로그를 재생해 그 시점의 판으로 되돌린다 (검증·재접속 이어하기 공용).
+ * 마지막 라운드가 partial이면 그 라운드의 입력과 전투 step까지만 진행한 상태로 남는다.
+ */
+export function replayInto(loop: GameLoop, data: GameData, rounds: readonly RoundInput[]): { issues: string[]; reports: RoundReport[] } {
   const issues: string[] = [];
   const reports: RoundReport[] = [];
-  const loop = new GameLoop(data, streams);
   const over = () => loop.phase === 'victory' || loop.phase === 'defeat';
   const runTo = (step: number) => { while (loop.phase === 'combat' && loop.combatSteps < step) loop.stepCombat(); };
 
@@ -219,9 +233,7 @@ export function replayMatch(data: GameData, streams: RngStreams, rounds: readonl
     if (r.steps !== undefined && r.steps !== Math.round(done.clearSec / (data.config.simStep ?? 0.1))) issues.push(`${tag}:steps_mismatch`);
     if (over() && i < rounds.length - 1) { issues.push(`${tag}:rounds_after_end`); break; }
   }
-
-  const reached = loop.phase === 'victory' ? data.config.totalWaves + 1 : loop.wave;
-  return { ok: issues.length === 0, issues, reports, final: { reached, life: loop.life, gold: loop.gold, phase: loop.phase } };
+  return { issues, reports };
 }
 
 function apply(loop: GameLoop, op: RoundOp): void {

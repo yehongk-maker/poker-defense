@@ -581,7 +581,7 @@ export class GameLoop {
   }
 
   /** 저장된 판을 복원한다. 데이터(웨이브 수·유닛 id)가 맞지 않으면 throw → 호출 측이 저장을 버린다 */
-  static restore(data: GameData, snap: RunSnapshot, rng: () => number = Math.random): GameLoop {
+  static restore(data: GameData, snap: RunSnapshot, rng: (() => number) | RngStreams = Math.random): GameLoop {
     if (snap.version !== 1) throw new Error('unknown snapshot version');
     if (!Number.isInteger(snap.wave) || snap.wave < 1 || snap.wave > data.config.totalWaves) throw new Error('snapshot wave out of range');
     const g = new GameLoop(data, rng);
@@ -605,6 +605,8 @@ export class GameLoop {
     g.heroSkillCd = Math.max(0, snap.heroSkillCd ?? 0);
     g._ticketsUsedRun = Math.max(0, snap.ticketsUsedRun ?? 0);
     g._revivesUsed = Math.max(0, snap.revivesUsed ?? 0);
+    // 시드 스트림이면 복원한 라운드의 손패 난수로 패를 다시 받는다 (그 라운드의 원래 패와 같다)
+    if (g.streams) g.beginRound();
     g.cardPhase.restorePity(snap.pity ?? {});
     g.recalcSynergy();
     return g;

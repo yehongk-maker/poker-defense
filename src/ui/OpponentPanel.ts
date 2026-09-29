@@ -21,7 +21,8 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
   private compare: Phaser.GameObjects.Text;
   private ledger: Phaser.GameObjects.Text;
 
-  constructor(scene: Phaser.Scene, onClose: () => void) {
+  /** @param onSurrender 있으면 패널 아래에 [기권] 버튼 (대전 전용, 실수로 누르지 않게 이 패널 안에만 둔다) */
+  constructor(scene: Phaser.Scene, onClose: () => void, onSurrender?: () => void) {
     super(scene, 0, GAME_HEIGHT);
     const bg = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLORS.bg).setInteractive();
     this.add(bg);
@@ -50,6 +51,7 @@ export class OpponentPanel extends Phaser.GameObjects.Container {
       this.add([r, t]);
     }
     this.add(scene.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 36, '▼ 아래로 스와이프하면 게임 화면', { fontSize: '24px', color: COLORS.textMuted, fontFamily: FONT.body }).setOrigin(0.5));
+    if (onSurrender) this.add(new Button(scene, GAME_WIDTH / 2, GAME_HEIGHT - 150, '기권\n이 판을 포기해요', () => onSurrender(), { width: 420, height: 110, fontSize: 40, variant: 'red' }));
     scene.add.existing(this);
   }
 

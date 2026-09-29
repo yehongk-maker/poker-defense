@@ -15,6 +15,8 @@ import { DEFAULT_RULES, isCustom, normalizeRules } from '../net/rules.ts';
 import { LiveOpponent, type LiveContext } from '../net/Live.ts';
 import type { Friend, Invite, Profile, Room, RoomRules } from '../net/types.ts';
 import type { Unsubscribe } from '../net/MatchTransport.ts';
+import { clearMatch, loadMatch } from '../matchSave.ts';
+import { prepareResume } from './resumeMatch.ts';
 
 export interface FriendSceneInit {
   /** 이 코드의 방으로 바로 들어간다 (초대 링크·재대결) */
@@ -376,6 +378,14 @@ export class FriendScene extends Phaser.Scene {
   private async startMatch(room: Room, matchId: string): Promise<void> {
     this.starting = true;
     const me = this.me!;
+    // 이 매치를 하다가 끊겼던 것이면 이어서
+    const saved = loadMatch();
+    if (saved && saved.matchId === matchId) {
+      const r = await prepareResume(saved);
+      if (!this.alive) { if (r.ok) r.init.live?.transport.close(); return; }
+      if (r.ok) { this.scene.start(SCENE.Game, r.init); return; }
+      clearMatch();
+    }
     try {
       const info = await getMatch(matchId, me.id);
       const rules = normalizeRules({ ...info.rules, waves: info.waveCount });

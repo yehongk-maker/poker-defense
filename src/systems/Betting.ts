@@ -107,6 +107,17 @@ export interface BetView {
   result: RoundBetResult | null;
 }
 
+export interface BettingSnapshot {
+  version: 1;
+  rounds: RoundBet[];
+  carry: number;
+  won: Record<BetSide, number>;
+  history: RoundBetResult[];
+  out: Record<BetSide, boolean>;
+  gone: boolean;
+  carryTo: { wave: number; amount: number } | null;
+}
+
 export const other = (s: BetSide): BetSide => (s === 'player' ? 'opponent' : 'player');
 
 const roundTo = (v: number, unit: number): number => Math.round(v / unit) * unit;
@@ -135,6 +146,29 @@ export class BettingSystem {
    */
   constructor(private cfg: DuelConfig, private wallets: Record<BetSide, BetWallet>, opts: { remote?: BetSide } = {}) {
     this.remote = opts.remote ?? null;
+  }
+
+  // ── 저장/복원 (재접속 이어하기) ──
+  /** 지금까지의 판돈 상태. 지갑(골드·하트)은 담지 않는다 — 각자의 GameLoop이 따로 복원한다 */
+  snapshot(): BettingSnapshot {
+    return JSON.parse(JSON.stringify({
+      version: 1, rounds: [...this.rounds.values()], carry: this.carry, won: this.won, history: this.history,
+      out: this.out, gone: this.gone, carryTo: this.carryTo,
+    })) as BettingSnapshot;
+  }
+
+  /** 저장된 상태로 되돌린다. 이미 판정된 라운드는 다시 지급하지 않는다 */
+  restore(s: BettingSnapshot): void {
+    if (!s || s.version !== 1 || !Array.isArray(s.rounds)) throw new Error('unknown betting snapshot');
+    this.rounds = new Map(s.rounds.map((r) => [r.wave, r]));
+    this.carry = s.carry;
+    this.won.player = s.won.player; this.won.opponent = s.won.opponent;
+    this.history.length = 0;
+    this.history.push(...s.history);
+    this.out = { ...s.out };
+    this.gone = s.gone;
+    this.carryTo = s.carryTo;
+    this.outbox = [];
   }
 
   // ── 금액 ──
