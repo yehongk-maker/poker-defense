@@ -1,6 +1,11 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
-import { loadGameData, loadDuelConfig } from '../data/index.ts';
+import { loadDuelConfig, loadModeSources, loadRewardedAds } from '../data/index.ts';
+import { getAds } from '../ads.ts';
+import { clearRun, loadRun, saveRun } from '../runSave.ts';
+import { CAMPAIGN, buildGameData, isDuel, type GameMode } from '../systems/GameMode.ts';
+import { AIOpponent, localBotIdentity, type OpponentIdentity, type OpponentSource } from '../systems/Opponent.ts';
+import { CampaignBar } from '../ui/CampaignBar.ts';
 import { getMeta } from '../meta.ts';
 import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
 import type { ShardKey } from '../systems/SummonMapper.ts';
@@ -15,7 +20,7 @@ import { SwipeNav } from '../ui/SwipeNav.ts';
 import { InfoPanel } from '../ui/InfoPanel.ts';
 import { OpponentPanel } from '../ui/OpponentPanel.ts';
 import { SynergyChips } from '../ui/SynergyChips.ts';
-import { OpponentAI, raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
+import { raceStatus, resolveDuel, sideOf, type DuelResult } from '../systems/Duel.ts';
 import { BettingSystem, REASON_TEXT, type BetAction } from '../systems/Betting.ts';
 import { BetBar } from '../ui/BetBar.ts';
 import { Button } from '../ui/Button.ts';
@@ -32,8 +37,21 @@ const PANEL_Y = 1530; // 정비/전투 패널 기준 y (베팅 행 아래)
 const HAND_Y = 1490;  // 손패 카드 중심 y
 const SHEET_TOP = FIELD.y + FIELD.h + 12; // 하단 조작 시트 시작
 
+/** 씬 시작 인자: scene.start(SCENE.Game, { mode, opponent, opponentSource, resume }) */
+export interface GameSceneInit {
+  mode?: GameMode;
+  /** 대전 상대 표시 정보 (없으면 로컬 닉 풀에서) */
+  opponent?: OpponentIdentity;
+  /** 이미 만들어진 상대 (네트워크·고스트). 없으면 봇 두뇌로 만든다 */
+  opponentSource?: OpponentSource;
+  /** 캠페인 이어하기 */
+  resume?: boolean;
+}
+
 /**
- * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. 1:1 대결: 상대 AI(OpponentAI)를 매 프레임 같이 진행.
+ * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. GameMode가 화면 조각을 켜고 끈다 (docs/mode-design.md §2.1).
+ *  캠페인: 상대·판돈·미니맵 없음, 그 자리에 웨이브 예고 + 광고 보상(교환 +1·부활·보상 2배), 라운드마다 자동 저장
+ *  대전: 상대(OpponentSource)를 매 프레임 같이 진행, 판돈 걸기, 레이스 판정
  *  card   : CardHand 표시, cardPhase.tick → 자동 확정
  *  manage : ManagePanel 표시 (합성/판매/전투 시작)
  *  combat : tickCombat → TrackView에 적/타격 그리기
@@ -48,23 +66,28 @@ export class GameScene extends Phaser.Scene {
   private manage!: ManagePanel;
   private shop!: UpgradePanel;
   private info!: InfoPanel;
-  private oppPanel!: OpponentPanel;
+  private oppPanel: OpponentPanel | null = null;
+  private mode: GameMode = CAMPAIGN;
+  private initArgs: GameSceneInit = {};
+  private campaignBar: CampaignBar | null = null;
+  private adExchangeWave = 0; // 광고 교환을 쓴 라운드 (라운드당 1회)
+  private overlay: ResultOverlay | null = null;
   private nav!: SwipeNav;
   private fx!: HandFx;
-  private opponent!: OpponentAI;
+  private opponent: OpponentSource | null = null;
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
-  private betting!: BettingSystem;
-  private betBar!: BetBar;
-  private oppMini!: OpponentMiniMap;
+  private betting: BettingSystem | null = null;
+  private betBar: BetBar | null = null;
+  private oppMini: OpponentMiniMap | null = null;
   private combatPanel!: Phaser.GameObjects.Container;
   private combatText!: Phaser.GameObjects.Text;
   private speedBtn!: Button;
   private skillBtn!: Button;
   private toast!: Phaser.GameObjects.Text;
   private combatTimer!: TimerRing;
-  private oppBubble!: SpeechBubble;
+  private oppBubble: SpeechBubble | null = null;
   private banner!: WaveBanner;
   private seenOppActions = new Set<string>();
   private bestRank = -1;
@@ -76,33 +99,47 @@ export class GameScene extends Phaser.Scene {
     super(SCENE.Game);
   }
 
+  init(data?: GameSceneInit): void {
+    this.initArgs = data ?? {};
+    this.mode = this.initArgs.mode ?? CAMPAIGN;
+  }
+
   create(): void {
-    this.data_ = getMeta().applyTo(loadGameData()); // 메타 업그레이드(교환 횟수·타이머·시작 골드·해금 영웅) 반영
-    // 대전 룰: 카드 교환권은 허용하되 매치당 상한 (docs/mode-design.md 결정 2)
-    this.data_ = { ...this.data_, config: { ...this.data_.config, ticketsPerRun: loadDuelConfig().match.ticketsPerMatch } };
-    this.loop = new GameLoop(this.data_);
+    const mode = this.mode;
+    const src = loadModeSources();
+    const meta = getMeta();
+    this.data_ = buildGameData(src, mode, meta.effects); // 모드 규칙 + (적용 모드만) 메타 업그레이드
+    this.loop = this.startLoop();
     this.selectedSlot = -1;
     this.speed = 1;
     this.ended = false;
     this.seenOppActions = new Set();
     this.bestRank = -1;
-    addBackdrop(this, 'duel'); // DESIGN §2: 듀얼 = 퍼플 월드
+    this.adExchangeWave = 0;
+    this.overlay = null;
+    this.opponent = null; this.betting = null; this.betBar = null; this.oppMini = null; this.oppPanel = null; this.oppBubble = null; this.campaignBar = null;
+    addBackdrop(this, mode.world); // DESIGN §2: 솔로 = 블루 하늘, 듀얼 = 퍼플 월드
 
-    // 1:1 대결 상대 (메타 업그레이드 없는 기본 설정, smart 봇) + 판돈 걸기
-    const oppData = loadGameData();
-    const duelCfg = loadDuelConfig();
-    const oppLoop = new GameLoop(oppData);
-    this.betting = new BettingSystem(duelCfg, { player: this.loop, opponent: oppLoop });
-    this.opponent = new OpponentAI(oppData, Math.random, { betting: { system: this.betting, config: duelCfg }, loop: oppLoop });
+    // 대전: 상대는 메타 없이 같은 규칙. 사람·고스트는 밖에서 만들어 넘기고, 없으면 봇 두뇌
+    if (isDuel(mode)) {
+      const duelCfg = loadDuelConfig();
+      const opp = this.initArgs.opponentSource
+        ?? new AIOpponent(buildGameData(src, mode, null), this.initArgs.opponent ?? localBotIdentity(1000), Math.random);
+      this.opponent = opp;
+      if (mode.betting) {
+        this.betting = new BettingSystem(duelCfg, { player: this.loop, opponent: opp.wallet });
+        if (opp instanceof AIOpponent) opp.attachBetting(this.betting, duelCfg);
+        this.betting.sync('player', this.loop);
+        this.betting.sync('opponent', opp.participant);
+      }
+    }
     this.oppDefeatAnnounced = false;
     this.oppRefreshAcc = 0;
-    this.betting.sync('player', this.loop);
-    this.betting.sync('opponent', oppLoop);
 
-    this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); });
+    this.hud = new HUD(this, () => { this.nav.open('right'); this.info.show('synergy'); }, this.opponent ? this.opponent.identity.avatar : null);
     this.track = new TrackView(this);
     // 우상단 상대 진행 미니맵 (탭 → 상대 패널)
-    this.oppMini = new OpponentMiniMap(this, FIELD.x + FIELD.w - 10, FIELD.y + 10, () => this.nav.open('bottom'));
+    if (this.opponent) this.oppMini = new OpponentMiniMap(this, FIELD.x + FIELD.w - 10, FIELD.y + 10, () => this.nav.open('bottom'));
     this.chips = new SynergyChips(this, () => { this.nav.open('right'); this.info.show('synergy'); });
     this.fx = new HandFx(this);
     addBottomSheet(this, SHEET_TOP);
@@ -115,6 +152,9 @@ export class GameScene extends Phaser.Scene {
         let card;
         if (p.canExchange(i)) {
           card = p.exchangeCard(i);
+        } else if (p.bonusExchanges > 0) {
+          card = p.exchangeWithBonus(i); // 광고 보상 교환 (교환권보다 먼저)
+          this.showToast(`광고 보상 교환 사용 (남은 ${p.bonusExchanges}회)`);
         } else if (getMeta().tickets > 0 && p.canExchangeWithTicket(i)) {
           // 기본 교환을 다 쓴 카드: 교환권 1장 소모 (대전은 매치당 상한 — 상한이면 GameLoop이 throw)
           if (this.loop.ticketsLeftRun <= 0) throw new Error(`이 판의 교환권 사용 ${this.loop.ticketsUsedRun}/${this.data_.config.ticketsPerRun}회를 다 썼어요`);
@@ -170,27 +210,30 @@ export class GameScene extends Phaser.Scene {
       onClose: () => this.nav.close(),
     }, this.data_.config.upgrade.attackPctPerLevel).setDepth(10);
     this.info = new InfoPanel(this, this.data_.hands, () => this.nav.close()).setDepth(10);
-    this.oppPanel = new OpponentPanel(this, () => this.nav.close()).setDepth(10);
-    this.nav = new SwipeNav(this, { left: this.shop, right: this.info, bottom: this.oppPanel }, (side) => {
+    if (this.opponent) this.oppPanel = new OpponentPanel(this, () => this.nav.close()).setDepth(10);
+    this.nav = new SwipeNav(this, { left: this.shop, right: this.info, ...(this.oppPanel ? { bottom: this.oppPanel } : {}) }, (side) => {
       if (side === 'left') this.shop.refresh(this.loop, this.ticketInfo());
       if (side === 'right') this.info.refresh(this.loop);
-      if (side === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
+      if (side === 'bottom') this.refreshOpponentPanel();
     });
     // 가장자리 핸들 (탭으로도 열기). 왼쪽 위는 시너지 뱃지가 차지하므로 핸들은 손패 높이에
     addEdgeHandle(this, 22, HAND_Y, 40, 230, '상점 · 영웅 ▶', 90, () => this.nav.open('left'));
     addEdgeHandle(this, GAME_WIDTH - 22, HAND_Y, 40, 230, '◀ 족보 · 시너지', -90, () => this.nav.open('right'));
-    addEdgeHandle(this, GAME_WIDTH / 2, GAME_HEIGHT - 26, 380, 40, '▲ 상대 진행 상황', 0, () => this.nav.open('bottom'));
-
-    // 판돈 걸기: 팟 알약 + 베팅 3버튼 (필드 바로 아래)
-    this.betBar = new BetBar(this, (a) => this.bet(a));
-    this.oppBubble = new SpeechBubble(this, this.hud.opponentAnchor.x, this.hud.opponentAnchor.y + 24).setDepth(16);
+    if (this.opponent) {
+      addEdgeHandle(this, GAME_WIDTH / 2, GAME_HEIGHT - 26, 380, 40, '▲ 상대 진행 상황', 0, () => this.nav.open('bottom'));
+      this.oppBubble = new SpeechBubble(this, this.hud.opponentAnchor.x, this.hud.opponentAnchor.y + 24).setDepth(16);
+    }
+    // 필드 바로 아래 행: 대전 = 판돈(팟 알약 + 베팅 3버튼), 캠페인 = 웨이브 예고 + 광고 교환
+    if (this.betting) this.betBar = new BetBar(this, (a) => this.bet(a));
+    else if (!this.opponent) this.campaignBar = new CampaignBar(this, () => void this.adExchange(), mode.ads && loadRewardedAds().extraExchange.enabled);
 
     // 전투 패널
     this.combatText = this.add.text(GAME_WIDTH / 2 - 60, PANEL_Y - 30, '', { fontSize: '36px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE, align: 'center' }).setOrigin(0.5);
     this.speedBtn = new Button(this, GAME_WIDTH / 2, PANEL_Y + 90, '배속 ×1', () => {
-      this.speed = this.speed >= 3 ? 1 : this.speed + 1;
+      this.speed = this.speed >= this.mode.maxSpeed ? 1 : this.speed + 1;
       this.speedBtn.setLabel(`배속 ×${this.speed}`);
     }, { width: 280, height: SIZE.btnM, fontSize: 36, variant: 'blue' });
+    this.speedBtn.setVisible(mode.maxSpeed > 1); // 랭크 대전은 배속 고정 → 버튼 숨김
     // 영웅 액티브 스킬 버튼 (전투 중, 쿨타임 표시)
     this.skillBtn = new Button(this, GAME_WIDTH / 2 - 250, PANEL_Y + 90, '영웅 없음', () => this.safe(() => {
       const r = this.loop.useHeroSkill();
@@ -233,11 +276,13 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const dt = Math.min(delta / 1000, 0.1);
     const cfg = this.data_.battleConfig;
-    // 실시간 레이스: 배속(⏩)은 양쪽에 같은 시간 배율로 적용
-    this.tickOpponent(dt * this.speed);
-    this.syncBetting();
-    const race = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), this.data_.config.totalWaves);
-    if (race) { this.showEnd(race); return; }
+    if (this.opponent) {
+      // 실시간 레이스: 배속은 양쪽에 같은 시간 배율로 적용
+      this.tickOpponent(this.opponent, dt * this.speed);
+      this.syncBetting();
+      const race = raceStatus(sideOf(this.loop), sideOf(this.opponent.view), this.data_.config.totalWaves);
+      if (race) { this.showEnd(race); return; }
+    }
 
     if (this.loop.phase === 'card') {
       const r = this.loop.cardPhase.tick(dt * this.speed);
@@ -289,26 +334,29 @@ export class GameScene extends Phaser.Scene {
           this.showToast(leakMsg);
         }
         this.refreshPanels();
-        if (this.loop.phase === 'victory' || this.loop.phase === 'defeat') this.finishRace();
+        if (this.loop.phase === 'victory' || this.loop.phase === 'defeat') {
+          if (this.opponent) this.finishRace(this.opponent);
+          else this.finishCampaign();
+        }
       }
       return;
     }
     this.track.update(dt);
   }
 
-  /** 상대 AI 실시간 진행 + 상대 패널/HUD 갱신 (0.5초마다) */
-  private tickOpponent(dt: number): void {
-    this.opponent.tick(dt);
+  /** 상대 실시간 진행 + 상대 바·미니맵·패널 갱신 (0.5초마다) */
+  private tickOpponent(opp: OpponentSource, dt: number): void {
+    opp.tick(dt);
     this.oppRefreshAcc += dt;
     if (this.oppRefreshAcc >= 0.5) {
       this.oppRefreshAcc = 0;
-      const o = this.opponent.loop;
+      const o = opp.view;
       const diff = this.loop.wave - o.wave;
       const lead = diff > 0 ? `내가 ${diff} 앞섬` : diff < 0 ? `상대가 ${-diff} 앞섬` : '동률';
-      const exch = o.phase === 'card' ? ` · 교환 ${o.cardPhase.exchangesUsed}장` : '';
-      this.hud.setOpponent(`R${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''}${exch} · ${lead}`);
-      this.oppMini.refresh(this.opponent, this.data_.battleConfig.trackLength);
-      if (this.nav.openSide === 'bottom') this.oppPanel.refresh(this.opponent, this.loop, this.data_.config.totalWaves, this.betting);
+      const exch = o.phase === 'card' ? ` · 교환 ${o.exchangeCount}장` : '';
+      this.hud.setOpponent(`${opp.identity.name} · R${o.wave} ♥${o.life}${o.phase === 'defeat' ? ' 탈락' : ''}${exch} · ${lead}`);
+      this.oppMini?.refresh(o, this.data_.battleConfig.trackLength);
+      if (this.nav.openSide === 'bottom') this.refreshOpponentPanel();
       if (o.phase === 'defeat' && !this.oppDefeatAnnounced) {
         this.oppDefeatAnnounced = true;
         this.showToast(`상대 탈락! (라운드 ${o.wave}) — 라운드 ${o.wave + 1}에 들어가면 승리`);
@@ -316,11 +364,54 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private refreshOpponentPanel(): void {
+    if (this.opponent && this.oppPanel) this.oppPanel.refresh(this.opponent.view, this.opponent.identity, this.loop, this.data_.config.totalWaves, this.betting);
+  }
+
+  /** 새 판 또는 이어하기 (캠페인). 저장이 맞지 않으면 버리고 새로 시작 */
+  private startLoop(): GameLoop {
+    if (this.mode.resumable && this.initArgs.resume) {
+      const snap = loadRun();
+      if (snap) {
+        try { return GameLoop.restore(this.data_, snap); } catch { clearRun(); }
+      }
+    }
+    if (this.mode.resumable) clearRun();
+    return new GameLoop(this.data_);
+  }
+
+  /** 캠페인 광고 보상: 이번 라운드 교환 +N (라운드당 1회) */
+  private async adExchange(): Promise<void> {
+    if (this.loop.phase !== 'card' || this.adExchangeWave === this.loop.wave || this.hand.isAnimating) return;
+    const wave = this.loop.wave;
+    const ok = await getAds().show('extra_exchange');
+    if (!ok || this.ended || this.loop.phase !== 'card' || this.loop.wave !== wave) return;
+    this.adExchangeWave = wave;
+    this.loop.cardPhase.grantBonusExchange(loadRewardedAds().extraExchange.grantExchanges);
+    this.hand.setStatus(this.exchangeStatus());
+    this.showToast('교환 +1! 다 쓴 카드를 한 번 더 바꿀 수 있어요');
+    this.refreshCampaignBar();
+  }
+
+  private refreshCampaignBar(): void {
+    if (!this.campaignBar) return;
+    const w = this.data_.waves[this.loop.wave - 1];
+    const parts = w ? w.groups.map((g) => {
+      const t = this.data_.enemyTypes[g.type];
+      return `${t?.name ?? g.type} ${g.count}${t?.movement === 'air' ? '(공중)' : ''}`;
+    }) : [];
+    const preview = w ? `${w.boss ? '보스 · ' : ''}${parts.join(' · ')} · 제한 ${w.timeLimit}초` : '';
+    this.campaignBar.refresh({
+      wave: this.loop.wave, total: this.data_.config.totalWaves, preview, best: getMeta().stats.bestWave,
+      canAd: this.loop.phase === 'card', adUsed: this.adExchangeWave === this.loop.wave,
+    });
+  }
+
   // ── 페이즈 처리 ──────────────────────────────────────────
   private confirmHand(): void {
     if (this.loop.phase !== 'card') return;
     // 판돈: 아무것도 안 골랐으면 체크
-    if (this.betting.options('player', this.loop.wave).includes('check')) this.betting.act('player', this.loop.wave, 'check');
+    if (this.betting?.options('player', this.loop.wave).includes('check')) this.betting.act('player', this.loop.wave, 'check');
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
     this.bestRank = Math.max(this.bestRank, hr.rank);
@@ -339,9 +430,11 @@ export class GameScene extends Phaser.Scene {
 
   // ── 판돈 걸기 ──
   private bet(a: BetAction): void {
-    const v = this.betting.view('player', this.loop.wave);
+    const betting = this.betting;
+    if (!betting) return;
+    const v = betting.view('player', this.loop.wave);
     this.safe(() => {
-      this.betting.act('player', v.wave, a);
+      betting.act('player', v.wave, a);
       const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
       this.showToast(msg[a]);
     });
@@ -349,7 +442,9 @@ export class GameScene extends Phaser.Scene {
 
   /** 양쪽 GameLoop 상태를 판돈 시스템에 반영하고, 새 판정이 나면 알린다 */
   private syncBetting(): void {
-    const results = [...this.betting.sync('player', this.loop), ...this.betting.sync('opponent', this.opponent.loop)];
+    const betting = this.betting, opp = this.opponent;
+    if (!betting || !opp) return;
+    const results = [...betting.sync('player', this.loop), ...betting.sync('opponent', opp.participant)];
     for (const r of results) {
       if (r.winner === 'player') { this.showToast(`💰 라운드 ${r.wave} 판돈 💰${r.pot} 획득! (${REASON_TEXT[r.reason]})`); this.cameras.main.flash(120, 241, 209, 122); }
       else if (r.winner === 'opponent') this.showToast(`라운드 ${r.wave} 판돈 💰${r.pot}은 상대에게 (${r.reason === 'fold' ? '내가 폴드' : r.reason === 'life' ? '상대가 하트를 덜 잃음' : r.reason === 'time' ? '상대가 더 빨리 클리어' : r.reason === 'hand' ? '상대 족보가 더 높음' : '내가 탈락'})`);
@@ -358,24 +453,26 @@ export class GameScene extends Phaser.Scene {
     }
     this.announceOpponentBets();
     // 상대 선택이 바뀌었을 수 있으니 바는 매 프레임 갱신 (텍스트 setText는 같은 값이면 비용 없음)
-    this.betBar.refresh(this.betting.view('player', this.loop.wave), this.loop.phase);
+    this.betBar?.refresh(betting.view('player', this.loop.wave), this.loop.phase);
   }
 
   /** 상대 베팅 액션을 말풍선으로 (DESIGN §4 SpeechBubble, 강조어 red) */
   private announceOpponentBets(): void {
-    const o = this.opponent.loop;
+    const betting = this.betting, opp = this.opponent, bubble = this.oppBubble;
+    if (!betting || !opp || !bubble) return;
+    const o = opp.view;
     for (const w of new Set([o.wave, o.wave - 1, this.loop.wave])) {
-      const rb = this.betting.round(w);
+      const rb = betting.round(w);
       if (!rb) continue;
       const a = rb.action.opponent, r = rb.response.opponent;
       if (a && !this.seenOppActions.has(`${w}:a`)) {
         this.seenOppActions.add(`${w}:a`);
-        if (a === 'raise') this.oppBubble.show(`레이즈 +${rb.raise?.amount ?? ''}!`, true);
-        else if (!rb.raise || rb.raise.by !== 'player') this.oppBubble.show('체크');
+        if (a === 'raise') bubble.show(`레이즈 +${rb.raise?.amount ?? ''}!`, true);
+        else if (!rb.raise || rb.raise.by !== 'player') bubble.show('체크');
       }
       if (r && !this.seenOppActions.has(`${w}:r`)) {
         this.seenOppActions.add(`${w}:r`);
-        this.oppBubble.show(r === 'call' ? '콜! 받아친다' : '폴드…', r === 'call');
+        bubble.show(r === 'call' ? '콜! 받아친다' : '폴드…', r === 'call');
       }
     }
   }
@@ -421,7 +518,7 @@ export class GameScene extends Phaser.Scene {
     const p = this.loop.cardPhase;
     const outs = p.outWeight > 0 && p.state === 'choosing' ? p.hand.map((_, i) => p.outsFor(i)) : [];
     const pity = ([['straight', '스트레이트'], ['flush', '플러시'], ['rank', '풀하우스']] as const).map(([k, label]) => ({ label, mult: p.pityMultiplier(k) }));
-    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: this.loop.ticketsLeftRun > 0 ? getMeta().tickets : 0, ticketsUsed: p.ticketsUsed, outs, pity, runCap: this.data_.config.ticketsPerRun !== undefined ? { used: this.loop.ticketsUsedRun, max: this.data_.config.ticketsPerRun } : undefined };
+    return { left: p.hand.map((_, i) => p.exchangesRemainingFor(i)), used: p.exchangesUsed, total: p.exchangesTotal, tickets: this.loop.ticketsLeftRun > 0 ? getMeta().tickets : 0, ticketsUsed: p.ticketsUsed, outs, pity, bonus: p.bonusExchanges, runCap: this.data_.config.ticketsPerRun !== undefined ? { used: this.loop.ticketsUsedRun, max: this.data_.config.ticketsPerRun } : undefined };
   }
 
   /** 상점 패널용 교환권 정보 */
@@ -439,6 +536,8 @@ export class GameScene extends Phaser.Scene {
     this.hand.deal(p.hand, this.exchangeStatus(), result);
     this.hand.setTimer(p.timeRemaining, p.timerSeconds);
     this.announceWave();
+    // 캠페인: 라운드 시작마다 자동 저장 (이어하기)
+    if (this.mode.resumable) saveRun(this.loop.snapshot());
   }
 
   private refreshPanels(): void {
@@ -453,6 +552,8 @@ export class GameScene extends Phaser.Scene {
     this.info.refresh(this.loop);
     this.chips.refresh(this.loop);
     this.hud.refresh(this.loop, this.data_.config.totalWaves, this.tokenMeta());
+    if (!this.opponent) this.hud.setOpponent(getMeta().stats.bestWave > 0 ? `내 최고 R${getMeta().stats.bestWave}` : '싱글 캠페인');
+    this.refreshCampaignBar();
   }
 
   /** manage 액션 공통: 실행 후 패널 갱신, 오류는 토스트 */
@@ -468,51 +569,129 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** 플레이어 판 종료(승리/패배) 시: 레이스 판정이 아직 안 났으면 상대를 끝까지 돌려 비교 */
-  private finishRace(): void {
+  private finishRace(opp: OpponentSource): void {
     const total = this.data_.config.totalWaves;
-    let r = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), total);
+    let r = raceStatus(sideOf(this.loop), sideOf(opp.view), total);
     if (!r) {
-      this.opponent.fastForward();
-      r = raceStatus(sideOf(this.loop), sideOf(this.opponent.loop), total) ?? resolveDuel(sideOf(this.loop), sideOf(this.opponent.loop), total);
+      opp.fastForward();
+      r = raceStatus(sideOf(this.loop), sideOf(opp.view), total) ?? resolveDuel(sideOf(this.loop), sideOf(opp.view), total);
     }
     this.showEnd(r);
   }
 
+  /** 대전 결과 (DESIGN §5-05). 광고·부활 없음 (§10.5) */
   private showEnd(duel: DuelResult): void {
-    if (this.ended) return;
+    if (this.ended || !this.opponent) return;
     this.ended = true;
     const total = this.data_.config.totalWaves;
     const cleared = this.loop.phase === 'victory';
     this.nav.close();
     const outcome = duel.winner === 'draw' ? 'draw' : duel.winner === 'player' ? 'win' : 'lose';
     const PATH: Record<string, string> = {
-      first_clear: '1:1 레이스 · 마지막 라운드 먼저 클리어',
-      opponent_out: '1:1 레이스 · 상대 탈락 후 라운드 앞섬',
-      wave: '1:1 레이스 · 도달 라운드 판정',
-      life: '1:1 레이스 · 남은 하트 판정',
-      gold: '1:1 레이스 · 골드 판정',
-      draw: '1:1 레이스 · 완전 동률',
+      first_clear: '마지막 라운드 먼저 클리어',
+      opponent_out: '상대 탈락 후 라운드 앞섬',
+      wave: '도달 라운드 판정',
+      life: '남은 하트 판정',
+      gold: '골드 판정',
+      draw: '완전 동률',
     };
-    const o = this.opponent.loop;
-    const caption = `${PATH[duel.reason]}\n나 R${cleared ? '40 클리어' : this.loop.wave} ♥${this.loop.life}  vs  상대 R${o.phase === 'victory' ? '40 클리어' : o.wave} ♥${o.life}`;
+    const o = this.opponent.view;
+    const name = this.opponent.identity.name;
+    const rules = this.mode.custom ? ' (커스텀 룰)' : '';
+    const caption = `${this.mode.label}${rules} · ${PATH[duel.reason]}\n나 R${cleared ? `${total} 클리어` : this.loop.wave} ♥${this.loop.life}  vs  ${name} R${o.phase === 'victory' ? `${total} 클리어` : o.wave} ♥${o.life}`;
+    const rows: ResultRow[] = [];
+    if (this.betting) rows.push({ icon: 'coin', label: `판돈 획득 (나 / ${name})`, value: `${this.betting.won.player} / ${this.betting.won.opponent}` });
+    rows.push({ icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true });
+    // 별 3개: 승리 / 하트 4+ / 하트 7+ (DESIGN §5-05)
+    const stars = outcome === 'win' ? 1 + (this.loop.life >= 4 ? 1 : 0) + (this.loop.life >= 7 ? 1 : 0) : 0;
+    const subtitle = outcome === 'lose' ? (this.loop.phase === 'defeat' ? `라운드 ${this.loop.wave}에서 전멸...` : `${name}이(가) 먼저 결승선을 넘었어요`) : undefined;
+    this.overlay = new ResultOverlay(this, {
+      outcome, caption, subtitle, stars, rows,
+      onContinue: () => this.scene.start(SCENE.Lobby),
+      onAgain: () => this.scene.restart({ ...this.initArgs, opponentSource: undefined, opponent: undefined }),
+    });
+  }
+
+  // ── 캠페인 종료 ───────────────────────────────────────────
+  private finishCampaign(): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.nav.close();
+    const rv = loadRewardedAds().revive;
+    const canRevive = this.loop.phase === 'defeat' && this.mode.ads && rv.enabled && this.loop.revivesUsed < rv.maxPerRun;
+    if (canRevive) this.showReviveOffer(rv.restoreLife, rv.maxPerRun);
+    else this.showCampaignResult();
+  }
+
+  /** 패배·부활 제안 (DESIGN §5-06): 카운트다운 5초 + 사실 기반 아까움 문구. 판당 1회 */
+  private showReviveOffer(restoreLife: number, maxPerRun: number): void {
+    const wave = this.loop.wave;
+    const nextBoss = this.data_.waves.find((w) => w.boss && w.wave >= wave);
+    const bossName = nextBoss ? this.data_.enemyTypes[nextBoss.groups[0]?.type]?.name ?? '보스' : null;
+    const note = nextBoss ? (nextBoss.wave === wave ? `${bossName}만 넘기면 됐어요` : `${bossName}까지 ${nextBoss.wave - wave}라운드 남았어요`) : undefined;
+    this.overlay = new ResultOverlay(this, {
+      outcome: 'lose', title: '패배', subtitle: `라운드 ${wave}에서 전멸...`, stars: 0,
+      caption: '부활하면 하트를 회복하고 이 라운드를 다시 시작해요 (판당 1회)',
+      rows: [
+        { icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true },
+        { icon: 'coin', label: '보유 골드', value: `${Math.floor(this.loop.gold)}` },
+      ],
+      countdownSec: 5, countdownNote: note,
+      ad: {
+        label: `부활하기 ♥${restoreLife} 회복`,
+        onClick: async () => {
+          const ok = await getAds().show('revive');
+          if (!ok) return null;
+          this.loop.revive(restoreLife, maxPerRun);
+          this.overlay?.destroy();
+          this.overlay = null;
+          this.ended = false;
+          this.track.clearEnemies();
+          this.refreshHand();
+          this.refreshPanels();
+          this.showToast(`부활! 하트 ${restoreLife} · 라운드 ${this.loop.wave} 다시 도전`);
+          return null;
+        },
+      },
+      continueLabel: '포기하고 보상 받기', continueVariant: 'gray',
+      onContinue: () => { this.overlay?.destroy(); this.overlay = null; this.showCampaignResult(); },
+    });
+  }
+
+  /** 캠페인 최종 결과: 기록·다이아 지급 + [보상 2배 받기 ▶AD] */
+  private showCampaignResult(): void {
+    const total = this.data_.config.totalWaves;
+    const cleared = this.loop.phase === 'victory';
+    clearRun();
     // 메타 진행 기록 + 다이아 지급 (localStorage 저장)
     const reward = getMeta().recordRun({ wave: cleared ? total : this.loop.wave, victory: cleared });
     const rows: ResultRow[] = [
       { icon: 'gem', label: '다이아', value: `+${reward.gemsGained}` },
-      { icon: 'coin', label: '판돈 획득 (나 / 상대)', value: `${this.betting.won.player} / ${this.betting.won.opponent}` },
       { icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true },
+      { icon: 'coin', label: '도달 라운드', value: cleared ? `${total} 클리어` : `${this.loop.wave} / ${total}` },
     ];
     if (reward.newMilestones.length || reward.newBest) {
       rows.push({ icon: 'token', label: reward.newMilestones.length ? `라운드 ${reward.newMilestones.join('·')} 최초 달성` : '최고 기록', value: reward.newBest ? '갱신!' : '달성!' });
     }
-    // 별 3개: 승리 / 하트 4+ / 하트 7+ (DESIGN §5-05)
-    const stars = outcome === 'win' ? 1 + (this.loop.life >= 4 ? 1 : 0) + (this.loop.life >= 7 ? 1 : 0) : 0;
-    const subtitle = outcome === 'lose' ? (this.loop.phase === 'defeat' ? `라운드 ${this.loop.wave}에서 전멸...` : '상대가 먼저 결승선을 넘었어요') : undefined;
-    new ResultOverlay(this, {
-      outcome, caption, subtitle, stars, rows,
+    const dbl = loadRewardedAds().doubleClearGold;
+    const stars = cleared ? 1 + (this.loop.life >= 4 ? 1 : 0) + (this.loop.life >= 7 ? 1 : 0) : 0;
+    this.overlay = new ResultOverlay(this, {
+      outcome: cleared ? 'win' : 'lose',
+      caption: cleared ? `싱글 캠페인 · ${total}라운드 클리어` : '싱글 캠페인',
+      subtitle: cleared ? undefined : `라운드 ${this.loop.wave}에서 전멸...`,
+      stars, rows,
+      ad: this.mode.ads && dbl.enabled && reward.gemsGained > 0 ? {
+        label: `보상 ${dbl.multiplier}배 받기`,
+        onClick: async () => {
+          const ok = await getAds().show('double_reward');
+          if (!ok) return null;
+          const extra = reward.gemsGained * (dbl.multiplier - 1);
+          getMeta().addGems(extra);
+          return `다이아 +${extra} 더 받음`;
+        },
+      } : undefined,
       onContinue: () => this.scene.start(SCENE.Lobby),
-      onAgain: () => this.scene.restart(),
+      onAgain: () => this.scene.restart({ mode: this.mode }),
     });
   }
-
 }

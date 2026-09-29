@@ -48,6 +48,11 @@ export class OpponentAI {
     return this.loop.phase === 'victory' || this.loop.phase === 'defeat';
   }
 
+  /** 판돈 시스템을 나중에 연결 (지갑이 만들어진 뒤) */
+  setBetting(b: NonNullable<OpponentOptions['betting']>): void {
+    this.betting = b;
+  }
+
   /** 실시간 진행 (씬 update에서 호출) */
   tick(dt: number): void {
     const g = this.loop;
@@ -182,4 +187,5 @@ export function raceStatus(player: DuelSide, opponent: DuelSide, totalWaves: num
   return null;
 }
 
-export const sideOf = (g: GameLoop): DuelSide => ({ phase: g.phase, wave: g.wave, life: g.life, gold: g.gold });
+/** GameLoop 또는 상대 공개 정보(OpponentView) → 판정용 요약 */
+export const sideOf = (g: { phase: string; wave: number; life: number; gold: number }): DuelSide => ({ phase: g.phase, wave: g.wave, life: g.life, gold: g.gold });

@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { getMeta } from '../meta.ts';
+import { loadRun } from '../runSave.ts';
+import { CAMPAIGN, rankedDuel } from '../systems/GameMode.ts';
+import { localBotIdentity } from '../systems/Opponent.ts';
+import type { GameSceneInit } from './GameScene.ts';
 import { Button } from '../ui/Button.ts';
 import { ResourcePill } from '../ui/ResourcePill.ts';
 import { addBackdrop } from '../ui/Backdrop.ts';
@@ -12,11 +16,12 @@ type Tab = 'shop' | 'hero' | 'battle' | 'upgrade' | 'rank';
 
 /**
  * 로비 (DESIGN §5-01): 상단 알약(좌 기록 / 우 다이아·교환권) → 로고 + 수트 카드 4장 부채꼴 → 시즌 배너
- * → [전투 시작] gold L + [메타 강화] purple M → 하단 탭바 5탭(전투 = 중앙 골드 원형 솟음).
- * 상점·랭킹 탭은 아직 준비 중 (강제 팝업 없음, 탭 안내만).
+ * → [전투 시작] gold L(싱글 캠페인, 저장이 있으면 이어하기) + [⚔ 레이즈 듀얼] purple M(랭크/친구 선택 시트) → 하단 탭바 5탭.
+ * 메타 강화는 탭바의 영웅·강화 탭. 상점·랭킹 탭은 아직 준비 중 (강제 팝업 없음, 탭 안내만).
  */
 export class LobbyScene extends Phaser.Scene {
   private toast!: Phaser.GameObjects.Text;
+  private sheet: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super(SCENE.Lobby);
@@ -75,14 +80,23 @@ export class LobbyScene extends Phaser.Scene {
 
     this.add.text(cx, 1130, `${st.runs}판 · 승리 ${st.wins} · 최고 라운드 ${st.bestWave} · 누적 다이아 ${st.totalGemsEarned}`, { fontSize: `${SIZE.caption}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700', ...OUTLINE, strokeThickness: 3 }).setOrigin(0.5).setAlpha(0.9);
 
-    // 메인 CTA
-    new Button(this, cx, 1310, '전투 시작\n1:1 레이스 · 라운드 40 · 판돈 걸기', () => this.scene.start(SCENE.Game), { width: GAME_WIDTH - 2 * SIZE.gutter, height: SIZE.btnL + 16, fontSize: 56, variant: 'gold' });
-    new Button(this, cx, 1470, '메타 강화\n다이아로 영구 업그레이드 · 영웅 해금', () => this.scene.start(SCENE.Meta), { width: GAME_WIDTH - 2 * SIZE.gutter - 120, height: SIZE.btnM + 8, fontSize: 40, variant: 'purple' });
+    // 메인 CTA: 싱글 캠페인 (저장된 판이 있으면 이어하기)
+    this.sheet = null;
+    const saved = loadRun();
+    const startCampaign = (resume: boolean) => this.scene.start(SCENE.Game, { mode: CAMPAIGN, resume } satisfies GameSceneInit);
+    new Button(this, cx, 1310, saved ? `이어하기\n싱글 캠페인 · 라운드 ${saved.wave}부터` : '전투 시작\n싱글 캠페인 · 라운드 40', () => startCampaign(!!saved),
+      { width: GAME_WIDTH - 2 * SIZE.gutter, height: SIZE.btnL + 16, fontSize: 56, variant: 'gold' });
+    new Button(this, cx, 1470, '⚔ 레이즈 듀얼\n1:1 레이스 · 라운드 20 · 판돈 걸기', () => this.openDuelSheet(), { width: GAME_WIDTH - 2 * SIZE.gutter - 120, height: SIZE.btnM + 8, fontSize: 40, variant: 'purple' });
+    if (saved) {
+      const fresh = this.add.text(cx, 1568, '처음부터 새로 시작', { fontSize: '30px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      fresh.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) startCampaign(false); });
+      this.add.rectangle(cx, 1590, fresh.width, 3, COLOR.textMain);
+    }
 
     this.tabBar('battle');
 
     this.add.text(cx, GAME_HEIGHT - SIZE.tabbarH - 30, 'v0.3.0 · 저장: localStorage', { fontSize: `${SIZE.tiny}px`, color: hex(COLOR.textMain), fontFamily: FONT.body }).setOrigin(0.5).setAlpha(0.6);
-    this.toast = this.add.text(cx, 1590, '', { fontSize: '34px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setAlpha(0);
+    this.toast = this.add.text(cx, 1650, '', { fontSize: '34px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setAlpha(0);
   }
 
   /** 하단 탭바 5탭 (DESIGN §5-01): 활성=흰색, 비활성=textSub. 전투 탭은 골드 원형으로 14px 솟음 */
@@ -94,7 +108,7 @@ export class LobbyScene extends Phaser.Scene {
     const tabs: { id: Tab; label: string; go?: () => void }[] = [
       { id: 'shop', label: '상점' },
       { id: 'hero', label: '영웅', go: () => this.scene.start(SCENE.Meta) },
-      { id: 'battle', label: '전투', go: () => this.scene.start(SCENE.Game) },
+      { id: 'battle', label: '전투', go: () => this.scene.start(SCENE.Game, { mode: CAMPAIGN, resume: !!loadRun() } satisfies GameSceneInit) },
       { id: 'upgrade', label: '강화', go: () => this.scene.start(SCENE.Meta) },
       { id: 'rank', label: '랭킹' },
     ];
@@ -123,6 +137,38 @@ export class LobbyScene extends Phaser.Scene {
         if (t.go) t.go(); else this.showToast(`${t.label}은 준비 중이에요`);
       });
     });
+  }
+
+  /** 레이즈 듀얼 선택 시트 (모달): [랭크 대전] [친구 대전]. 바깥을 누르거나 닫기로 닫는다 */
+  private openDuelSheet(): void {
+    if (this.sheet) return;
+    const cx = GAME_WIDTH / 2, cy = 1180, w = GAME_WIDTH - 2 * SIZE.gutter, h = 640;
+    const c = this.add.container(0, 0).setDepth(40);
+    const dim = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, 0.72).setInteractive();
+    dim.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP && Math.abs(p.y - cy) > h / 2) this.closeDuelSheet(); });
+    const g = this.add.graphics();
+    g.fillStyle(COLOR.navyDark).fillRoundedRect(cx - w / 2, cy - h / 2 + 8, w, h, SIZE.radiusPanel);
+    g.fillStyle(COLOR.navy).fillRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    g.lineStyle(2, COLOR.modalBorder).strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    const title = this.add.text(cx, cy - h / 2 + 70, '레이즈 듀얼', { fontSize: `${SIZE.h1}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
+    const sub = this.add.text(cx, cy - h / 2 + 130, '같은 웨이브를 더 잘 막고, 마지막 라운드를 먼저 깨면 승리', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5);
+    const ranked = new Button(this, cx, cy - 60, '랭크 대전\n비슷한 실력의 상대와 · 랭크 반영', () => {
+      // 매칭 화면·서버 연결 전까지는 바로 시작한다 (상대는 일반 상대로 보인다)
+      this.scene.start(SCENE.Game, { mode: rankedDuel('ai'), opponent: localBotIdentity(1000) } satisfies GameSceneInit);
+    }, { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'purple' });
+    const friend = new Button(this, cx, cy + 100, '친구 대전\n초대 코드로 친구와 · 랭크 미반영', () => this.showToast('친구 대전은 준비 중이에요'),
+      { width: w - 80, height: SIZE.btnL + 10, fontSize: 50, variant: 'blue' });
+    const close = new Button(this, cx, cy + h / 2 - 80, '닫기', () => this.closeDuelSheet(), { width: 300, height: SIZE.btnS + 8, fontSize: 34, variant: 'gray' });
+    c.add([dim, g, title, sub, ranked, friend, close]);
+    c.setAlpha(0);
+    this.tweens.add({ targets: c, alpha: 1, duration: 180 });
+    this.sheet = c;
+    this.toast.setDepth(50);
+  }
+
+  private closeDuelSheet(): void {
+    this.sheet?.destroy();
+    this.sheet = null;
   }
 
   private showToast(msg: string): void {

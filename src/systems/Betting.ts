@@ -10,7 +10,10 @@
  *  - 판정(양쪽 다 그 라운드 전투를 끝냈을 때): 폴드한 쪽 패 → 잃은 하트 적은 쪽 → 빨리 깬 쪽 → 족보 높은 쪽 → 전부 같으면 다음 라운드로 이월.
  *  - 판돈은 승자의 매치 골드로. 골드는 판 밖으로 나가지 않는다.
  */
-import type { GameLoop, RoundReport } from './GameLoop.ts';
+import type { RoundReport } from './GameLoop.ts';
+
+/** 판돈 시스템이 보는 진행 상태 (GameLoop·네트워크 상대 공통) */
+export interface BetProgress { readonly phase: string; readonly wave: number; readonly lastRound: RoundReport | null }
 
 export type BetSide = 'player' | 'opponent';
 export type BetAction = 'check' | 'raise' | 'call' | 'fold';
@@ -222,7 +225,7 @@ export class BettingSystem {
    * GameLoop 상태를 보고 라운드 개설·성적 보고·종료 처리를 자동으로 한다 (씬 update에서 매 프레임 호출).
    * 반환: 이번 호출로 새로 판정된 결과들
    */
-  sync(side: BetSide, loop: GameLoop): RoundBetResult[] {
+  sync(side: BetSide, loop: BetProgress): RoundBetResult[] {
     const before = this.history.length;
     if (loop.phase === 'card' && !this.out[side]) this.enter(side, loop.wave);
     const lr = loop.lastRound;

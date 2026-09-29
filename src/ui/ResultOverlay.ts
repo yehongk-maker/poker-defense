@@ -23,11 +23,26 @@ export interface ResultData {
   stars: number;
   rows: ResultRow[];
   onContinue: () => void;
-  onAgain: () => void;
+  /** 없으면 "한 판 더" 링크를 숨긴다 */
+  onAgain?: () => void;
+  /** 제목 (기본: 승리!/패배/무승부) */
+  title?: string;
+  continueLabel?: string;
+  continueVariant?: 'gold' | 'gray';
+  againLabel?: string;
+  /**
+   * 보상형 광고 버튼 (캠페인 전용, DESIGN §5-05/06). green + ▶ AD, 가장 크고 위.
+   * onClick은 결과를 돌려준다: 버튼을 끄고 바꿀 문구(지급 완료 등). null이면 그대로 둔다(광고를 닫음).
+   */
+  ad?: { label: string; onClick: () => Promise<string | null> };
+  /** 부활 제안 카운트다운(초). 0이 되면 광고 버튼이 꺼진다 */
+  countdownSec?: number;
+  /** 카운트다운 아래 아까움 문구 (사실 기반) */
+  countdownNote?: string;
 }
 
 /**
- * 결과 화면 (DESIGN §5-05 승리 / §5-06 패배). 1:1 대결이므로 부활·광고 버튼은 없다 (§10.5).
+ * 결과 화면 (DESIGN §5-05 승리 / §5-06 패배·부활). 광고 버튼·부활 카운트다운은 캠페인에서만 넘긴다 (대전은 §10.5로 금지).
  *  승리: 광선(24초 회전) + 별 3개 + "승리!" 리본 + 경로 캡션 + 보상 알약 + [계속 gold] + "한 판 더" 링크
  *  패배/무승부: 다크 배경 + 제목 + 사유 + 기록 알약 + 같은 버튼
  */
@@ -60,9 +75,9 @@ export class ResultOverlay extends Phaser.GameObjects.Container {
       });
       this.add(sg);
       // 리본
-      this.add(this.ribbon(scene, cx, y, d.outcome === 'win' ? '승리!' : ''));
+      this.add(this.ribbon(scene, cx, y, d.title ?? '승리!'));
     } else {
-      const t = d.outcome === 'draw' ? '무승부' : '패배';
+      const t = d.title ?? (d.outcome === 'draw' ? '무승부' : '패배');
       this.add(scene.add.text(cx, y - 60, t, { fontSize: '120px', color: hex(d.outcome === 'draw' ? COLOR.textSub : COLOR.red), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 8 }).setOrigin(0.5));
       if (d.subtitle) this.add(scene.add.text(cx, y + 50, d.subtitle, { fontSize: `${SIZE.h2}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5));
     }
@@ -87,12 +102,47 @@ export class ResultOverlay extends Phaser.GameObjects.Container {
       y += rh + 16;
     });
 
+    // 부활 카운트다운 (DESIGN §5-06: Jua 88 골드 + 아까움 문구)
+    let adBtn: Button | null = null;
+    let timer: Phaser.Time.TimerEvent | null = null;
+    if (d.countdownSec && d.ad) {
+      let left = d.countdownSec;
+      const cd = scene.add.text(cx, y + 30, `${left}`, { fontSize: '88px', color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 8 }).setOrigin(0.5);
+      this.add(cd);
+      if (d.countdownNote) this.add(scene.add.text(cx, y + 100, d.countdownNote, { fontSize: `${SIZE.body}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700', ...OUTLINE }).setOrigin(0.5));
+      timer = scene.time.addEvent({ delay: 1000, repeat: d.countdownSec - 1, callback: () => {
+        left--;
+        cd.setText(`${Math.max(0, left)}`);
+        if (left <= 0) { adBtn?.setLabel('시간 종료').setEnabled(false); cd.setColor(hex(COLOR.gray)); }
+      } });
+      y += 150;
+    }
+
     y += 60;
-    this.add(new Button(scene, cx, y, '계속', d.onContinue, { width: GAME_WIDTH - 2 * SIZE.gutter, height: SIZE.btnL, fontSize: 52, variant: 'gold' }));
-    const again = scene.add.text(cx, y + 110, '한 판 더', { fontSize: '34px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    again.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) d.onAgain(); });
-    const ul = scene.add.rectangle(cx, y + 134, again.width, 3, COLOR.textMain);
-    this.add([again, ul]);
+    if (d.ad) {
+      const ad = d.ad;
+      let busy = false;
+      adBtn = new Button(scene, cx, y, `${ad.label}\n▶ AD 시청`, () => {
+        if (busy) return;
+        busy = true;
+        timer?.remove();
+        void ad.onClick().then((done) => {
+          busy = false;
+          if (done !== null && adBtn?.active) adBtn.setLabel(done).setEnabled(false);
+        });
+      }, { width: GAME_WIDTH - 2 * SIZE.gutter, height: SIZE.btnL + 10, fontSize: 48, variant: 'green' });
+      this.add(adBtn);
+      y += SIZE.btnL + 34;
+    }
+    this.add(new Button(scene, cx, y, d.continueLabel ?? '계속', d.onContinue, { width: GAME_WIDTH - 2 * SIZE.gutter - (d.ad ? 120 : 0), height: d.ad ? SIZE.btnM : SIZE.btnL, fontSize: d.ad ? 40 : 52, variant: d.continueVariant ?? 'gold' }));
+    if (d.onAgain) {
+      const onAgain = d.onAgain;
+      const again = scene.add.text(cx, y + 110, d.againLabel ?? '한 판 더', { fontSize: '34px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      again.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP) onAgain(); });
+      const ul = scene.add.rectangle(cx, y + 134, again.width, 3, COLOR.textMain);
+      this.add([again, ul]);
+    }
+    this.once('destroy', () => timer?.remove());
 
     this.setDepth(30).setAlpha(0);
     scene.tweens.add({ targets: this, alpha: 1, duration: 300 });

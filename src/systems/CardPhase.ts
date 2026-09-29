@@ -58,6 +58,9 @@ export class CardPhase {
   private exchangedCount: number[] = [];
   /** 이번 라운드 교환권으로 교환한 횟수 (카드별) */
   private ticketCount: number[] = [];
+  /** 이번 라운드에 받은 보너스 교환(광고 보상) 잔여 */
+  private bonus = 0;
+  private bonusUsedCount = 0;
   private remainingTime = 0;
   private phaseState: CardPhaseState = 'idle';
   private result: HandResult | null = null;
@@ -77,6 +80,8 @@ export class CardPhase {
     this.handCards = this.deck.splice(0, this.handSize);
     this.exchangedCount = new Array(this.handSize).fill(0);
     this.ticketCount = new Array(this.handSize).fill(0);
+    this.bonus = 0;
+    this.bonusUsedCount = 0;
     this.remainingTime = this.timerSeconds;
     this.phaseState = 'choosing';
     this.result = null;
@@ -135,6 +140,30 @@ export class CardPhase {
   ticketsUsedFor(index: number): number {
     this.assertIndex(index);
     return this.ticketCount[index];
+  }
+
+  /** 보너스 교환(광고 보상) 잔여 — 기본 교환을 다 쓴 카드에 쓴다. 라운드가 바뀌면 사라진다 */
+  get bonusExchanges(): number { return this.bonus; }
+  get bonusUsed(): number { return this.bonusUsedCount; }
+  grantBonusExchange(n = 1): void {
+    this.assertChoosing();
+    this.bonus += Math.max(0, Math.floor(n));
+  }
+  /** 보너스 교환 1회 사용: 횟수 제한과 무관하게 이 카드를 바꾼다 */
+  exchangeWithBonus(index: number): Card {
+    this.assertChoosing();
+    this.assertIndex(index);
+    if (this.bonus <= 0) throw new Error('No bonus exchanges left');
+    const next = this.draw(index);
+    this.handCards[index] = next;
+    this.bonus--;
+    this.bonusUsedCount++;
+    return next;
+  }
+
+  /** 행운 게이지 복원 (이어하기) */
+  restorePity(levels: Partial<Record<OutKind, number>>): void {
+    for (const k of OUT_KINDS) this.pityLevel[k] = Math.max(0, Math.min(this.pity.maxLevel, Math.floor(levels[k] ?? 0)));
   }
 
   /** 교환권으로 이 카드를 교환할 수 있는가 (횟수 제한 무시, 상태·덱만 확인) */

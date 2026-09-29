@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
 import type { GameLoop } from '../systems/GameLoop.ts';
 import { GAME_WIDTH } from '../config.ts';
-import { ALPHA, COLOR, FONT, OUTLINE, SIZE, TAP_SLOP, hex } from './theme.ts';
+import { ALPHA, COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, hex } from './theme.ts';
 import { TokenBar } from './TokenBar.ts';
+import { starPath } from './draw.ts';
+import type { Suit } from '../systems/PokerEvaluator.ts';
 
 /** 상대 바·라운드 바 중심 y (토큰 알약 바로 아래) */
 export const HUD_ROW_Y = 128;
@@ -19,16 +21,27 @@ export class HUD {
   /** 상대 말풍선 기준점 (씬 좌표) */
   readonly opponentAnchor = { x: SIZE.gutter + 40, y: HUD_ROW_Y + 34 };
 
-  constructor(scene: Phaser.Scene, onOpenCodex?: () => void) {
+  /**
+   * @param opponentAvatar 대전이면 상대 아바타 수트, 캠페인(상대 없음)이면 null → 같은 자리에 내 최고 기록
+   */
+  constructor(scene: Phaser.Scene, onOpenCodex?: () => void, opponentAvatar: Suit | null = null) {
     this.tokens = new TokenBar(scene);
     const y = HUD_ROW_Y, h = 64;
     const g = scene.add.graphics().setDepth(7); // HUD는 트랙 윗줄의 적(보스·공중)보다 위
     g.fillStyle(COLOR.navyDark, 0.92).fillRoundedRect(SIZE.gutter / 2, y - h / 2, GAME_WIDTH - SIZE.gutter, h, h / 2);
-    // 상대 아바타 (퍼플 원 + AI)
     const ax = SIZE.gutter / 2 + h / 2;
-    g.fillStyle(COLOR.purpleDark).fillCircle(ax, y, 28);
-    g.fillStyle(COLOR.purple).fillCircle(ax, y - 2, 24);
-    scene.add.text(ax, y, 'AI', { fontSize: '24px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setDepth(7);
+    if (opponentAvatar) {
+      // 상대 아바타: 수트색 원 + 수트 글리프 (사람·대체 상대 구분 없이 같은 모양)
+      g.fillStyle(COLOR.navyDark).fillCircle(ax, y, 29);
+      g.fillStyle(SUIT_COLOR[opponentAvatar]).fillCircle(ax, y - 1, 25);
+      g.fillStyle(0xffffff, 0.25).fillCircle(ax - 8, y - 10, 9);
+      scene.add.text(ax, y, SUIT_SYMBOL[opponentAvatar], { fontSize: '30px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5).setDepth(7);
+    } else {
+      // 캠페인: 기록 별
+      g.fillStyle(COLOR.goldDark).fillCircle(ax, y, 28);
+      g.fillStyle(COLOR.gold).fillCircle(ax, y - 2, 24);
+      starPath(g, ax, y - 1, 15, 7, COLOR.textOnGold);
+    }
     this.oppText = scene.add.text(ax + 38, y, '', { fontSize: `${SIZE.caption}px`, color: hex(COLOR.textMain), fontFamily: FONT.body, fontStyle: '700', ...OUTLINE, strokeThickness: 3 }).setOrigin(0, 0.5).setDepth(7);
     this.roundText = scene.add.text(GAME_WIDTH / 2 + 30, y, '', { fontSize: `${SIZE.h2}px`, color: hex(COLOR.textGold), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 5 }).setOrigin(0.5).setDepth(7);
     this.phaseText = scene.add.text(GAME_WIDTH - SIZE.gutter - 104, y, '', { fontSize: `${SIZE.caption}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700', align: 'right' }).setOrigin(1, 0.5).setDepth(7);

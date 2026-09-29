@@ -13,12 +13,16 @@ UI 디자인 시스템: `DESIGN.md` — 모든 UI는 이 문서의 토큰(`src/u
 src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
-  scenes/        Boot, Lobby, Game, Meta(메타 업그레이드 화면)  ← Phaser 의존 OK
+  scenes/        Boot, Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기), Meta  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
+  ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
+  runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
   systems/       PokerEvaluator, CardPhase(+행운 드로우 outsFor), DrawAssist(아웃 판정·가중 추첨, 순수), SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리),
                  MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터),
                  bots(봇 전략 공용), Duel(OpponentAI 실시간/fastForward + resolveDuel 승패),
-                 Betting(1:1 판돈 걸기: 앤티/체크·레이즈/콜·폴드/판정/이월 + AI 성향, GameLoop이 BetWallet)
+                 Betting(1:1 판돈 걸기: 앤티/체크·레이즈/콜·폴드/판정/이월 + AI 성향, GameLoop이 BetWallet),
+                 GameMode(모드 프리셋 CAMPAIGN/rankedDuel/friendDuel + buildGameData), Opponent(OpponentSource·OpponentView·AIOpponent),
+                 Ads(AdService·StubAdService), Rating(ELO-lite)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
@@ -44,6 +48,12 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 버튼 색은 역할로만: gold=진행·핵심 CTA, purple=베팅·다이아 가격, blue=일반(체크·콜·배속·탭), gray=보조·닫기, red=위험(판매·초기화), green=광고 보상(▶ AD 필수, 1:1 대결에서는 금지).
 - 매 프레임 호출되는 UI 갱신은 값이 바뀔 때만 다시 그린다 (Button.setLabel/setEnabled/setVariant는 같은 값이면 무시).
 - 이모지는 임시 아이콘: HUD·알약·결과 화면은 도형 아이콘으로 교체 완료, 토스트·일부 라벨 문자열에 남은 💰💎 등은 스프라이트 도입 때 교체.
+
+## 모드 규칙 (docs/mode-design.md)
+- 씬 시작은 `scene.start(SCENE.Game, { mode, opponent?, opponentSource?, resume? })`. 데이터는 항상 `buildGameData(loadModeSources(), mode, meta.effects)`로 만든다 — 씬에서 웨이브·등급·교환권 상한을 직접 고르지 않는다.
+- 캠페인(CAMPAIGN): 40웨이브, 상대·판돈 없음, 메타 적용, 광고 3자리(교환 +1·부활·보상 2배), 카드 페이즈 시작마다 자동 저장. 대전(rankedDuel/friendDuel): 20웨이브 곡선, 판돈, 메타 미적용·영웅 전부·배속 고정·교환권 3회(친구 대전은 방장 규칙).
+- 상대는 `OpponentSource`로만 다룬다. UI·판돈·레이스 판정은 `view`/`wallet`/`participant`만 보고, 봇인지 사람인지는 화면에 드러내지 않는다(identity의 닉·레이팅·아바타만).
+- 광고 보상은 캠페인에서만, 버튼에 `▶ AD` 표기 필수. 대전 화면에는 광고·부활 UI를 넣지 않는다.
 
 ## 서버 규칙 (Supabase, docs/server-setup.md)
 - 클라이언트는 테이블에 직접 쓰지 않는다. 쓰기는 전부 SECURITY DEFINER RPC, RLS는 "내 행 조회"만.
@@ -107,6 +117,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료: 족보별 영웅 조각·보스 조각·행운 드로우(GDD v1.8, 2026-09-28): DrawAssist + CardPhase 가중 추첨, hands.json shards, heroes.json shardType, 상점 패널 조각 게이지 3줄+와일드 뱃지(DESIGN §5-04), 영웅 카드는 조각 맞는 것만 활성(§5-07), 카드 우상단 아웃 표시, 보스 조각 토스트. 밸런스 재측정: 하이카드 23·무전략 25·최선 32 (JSON 변경 없음).
 - 완료: DESIGN.md 캐주얼 디자인 적용(2026-09-26): 토큰·UIButton·재화 알약·타이머 링·부채꼴 손패·잔디 필드/모래 트랙·유닛 칩·지상/공중 적 표현·데미지 숫자·베팅 3버튼·상대 말풍선·웨이브/위기 배너·결과 화면·로비 탭바. GameLoop.heroGradeDrop(등급 하락 카피).
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
+- 완료(2026-09-29): A단계 모드 분리 — GameMode·OpponentSource·캠페인 레이아웃(CampaignBar)·광고 스텁 3자리·부활(GameLoop.revive)·이어하기(snapshot/restore)·로비 선택 시트. 랭크 대전은 매칭 화면 전까지 로컬 봇 상대로 바로 시작, 친구 대전은 C단계.
 - 완료(2026-09-29): Supabase 서버 1차 — 스키마 12테이블·RLS·RPC(프로필/방/랭크 매칭+숨김 대체/판정·레이팅/친구·초대)·verify-match Edge Function·src/net 클라이언트 계층. 원격 프로젝트 생성·배포·실서버 스모크 19항목 통과.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.

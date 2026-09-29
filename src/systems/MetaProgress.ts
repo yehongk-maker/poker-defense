@@ -216,6 +216,16 @@ export class MetaProgress {
     this.store.clear();
   }
 
+  /** 메타 업그레이드가 한 판에 주는 효과 (GameMode.buildGameData 입력) */
+  get effects(): { exchangeLimit: number; timerSeconds: number; startGoldBonus: number; unlockedHeroes: string[] } {
+    return {
+      exchangeLimit: 1 + this.level('exchange_plus1'),
+      timerSeconds: 30 + 10 * this.level('timer_plus10'),
+      startGoldBonus: 100 * this.level('start_gold_plus100'),
+      unlockedHeroes: this.unlockedHeroIds,
+    };
+  }
+
   /** 메타 효과를 GameData에 반영한 복사본 (원본 불변) */
   applyTo(data: GameData): GameData {
     const exchangeLimit = 1 + this.level('exchange_plus1');

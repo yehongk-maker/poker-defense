@@ -30,6 +30,8 @@ export interface ExchangeStatus {
   pity?: { label: string; mult: number }[];
   /** 대전: 이 판 교환권 사용 상한 (used/max) */
   runCap?: { used: number; max: number };
+  /** 광고 보상 교환 잔여 (캠페인) — 기본 교환을 다 쓴 카드에 교환권보다 먼저 쓰인다 */
+  bonus?: number;
 }
 
 const CARD_W = SIZE.cardW;
@@ -41,7 +43,7 @@ const FLIP_MS = 160;      // 반 바퀴(앞→옆, 옆→앞) 시간
 const DEAL_STAGGER = 220; // 배분 시 카드 간 오픈 간격
 const ROW_Y = CARD_H / 2 + 110;          // 진행 버튼 행 (카드 중심 기준)
 
-type TagKind = 'exchange' | 'ticket' | 'done' | 'none';
+type TagKind = 'exchange' | 'bonus' | 'ticket' | 'done' | 'none';
 
 interface CardView {
   root: Phaser.GameObjects.Container;
@@ -111,7 +113,7 @@ export class CardHand extends Phaser.GameObjects.Container {
       root.add([back, front]);
       root.setSize(CARD_W, CARD_H).setInteractive({ useHandCursor: true });
       root.on('pointerup', (p: Phaser.Input.Pointer) => {
-        if (p.getDistance() < TAP_SLOP && this.busy === 0 && (this.exchangeLeft[i] > 0 || this.status.tickets > 0)) this.cb.onExchange(i);
+        if (p.getDistance() < TAP_SLOP && this.busy === 0 && (this.exchangeLeft[i] > 0 || this.status.tickets > 0 || (this.status.bonus ?? 0) > 0)) this.cb.onExchange(i);
       });
       const v: CardView = { root, front, back, face, rank, small, suit, tagBg, tag, outs, faceUp: true, baseY: FAN_DY[i] };
       this.drawFace(v, false);
@@ -240,7 +242,7 @@ export class CardHand extends Phaser.GameObjects.Container {
   // ── 내부 ──
   private tagKind(i: number): TagKind {
     const left = this.exchangeLeft[i];
-    return left > 0 ? 'exchange' : this.status.tickets > 0 ? 'ticket' : 'done';
+    return left > 0 ? 'exchange' : (this.status.bonus ?? 0) > 0 ? 'bonus' : this.status.tickets > 0 ? 'ticket' : 'done';
   }
 
   private afterReveal(): void {
@@ -259,6 +261,7 @@ export class CardHand extends Phaser.GameObjects.Container {
     const left = st.total - st.used;
     const assist = st.outs && st.outs.length ? ' · 행운 드로우: 남긴 카드와 어울리는 카드가 2배 잘 나와요' : '';
     if (left > 0) this.hintText.setText(`카드를 탭하면 그 카드만 교환 · 남은 ${left}회${assist}`);
+    else if ((st.bonus ?? 0) > 0) this.hintText.setText(`기본 교환 완료 · 광고 보상 교환 ${st.bonus}회 남음 (카드를 탭)`);
     else if (st.tickets > 0) this.hintText.setText(`기본 교환 완료 · 카드를 탭하면 교환권 1장으로 한 번 더 (남은 ${st.tickets}장)`);
     else this.hintText.setText('교환 완료 · 진행하세요 (교환권은 상점에서 다이아로 구매)');
     this.confirmBtn.setEnabled(true);
@@ -279,6 +282,7 @@ export class CardHand extends Phaser.GameObjects.Container {
     if (kind === 'none') { v.tag.setText(''); return; }
     const spec = {
       exchange: { fill: COLOR.gold, text: COLOR.textOnGold, label: '교환' },
+      bonus: { fill: COLOR.green, text: COLOR.textMain, label: '+1 교환' },
       ticket: { fill: COLOR.blue, text: COLOR.textMain, label: '교환권' },
       done: { fill: COLOR.gray, text: COLOR.textMain, label: '완료' },
     }[kind];

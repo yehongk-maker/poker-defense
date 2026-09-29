@@ -14,17 +14,10 @@ export interface Profile {
   best_campaign_wave: number;
 }
 
-/** 친구 대전 방장 규칙 (서버 normalize_rules 와 같은 키) */
-export interface RoomRules {
-  waves: 20 | 40;
-  betting: boolean;
-  allHeroes: boolean;
-  sharedHand: boolean;
-  speed: 1 | 2;
-  applyMeta: boolean;
-  /** 교환권 매치당 상한: 0 / 3 / -1(무제한) */
-  tickets: 0 | 3 | -1;
-}
+import type { DuelRules } from '../systems/GameMode.ts';
+
+/** 친구 대전 방장 규칙 (서버 normalize_rules 와 같은 키) — 게임 규칙 타입과 같은 것 */
+export type RoomRules = DuelRules;
 
 export type RoomStatus = 'waiting' | 'live' | 'done' | 'closed';
 

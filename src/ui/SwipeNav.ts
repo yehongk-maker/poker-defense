@@ -19,10 +19,10 @@ export class SwipeNav {
   private targetStart = 0;
   private opened: PanelSide | null = null;
 
-  constructor(private scene: Phaser.Scene, private panels: Record<PanelSide, Phaser.GameObjects.Container>, private onChange?: (side: PanelSide | null) => void) {
-    panels.left.setX(-GAME_WIDTH);
-    panels.right.setX(GAME_WIDTH);
-    panels.bottom.setY(GAME_HEIGHT);
+  constructor(private scene: Phaser.Scene, private panels: Partial<Record<PanelSide, Phaser.GameObjects.Container>>, private onChange?: (side: PanelSide | null) => void) {
+    panels.left?.setX(-GAME_WIDTH);
+    panels.right?.setX(GAME_WIDTH);
+    panels.bottom?.setY(GAME_HEIGHT);
     scene.input.on('pointerdown', this.onDown, this);
     scene.input.on('pointermove', this.onMove, this);
     scene.input.on('pointerup', this.onUp, this);
@@ -38,6 +38,7 @@ export class SwipeNav {
   get openSide(): PanelSide | null { return this.opened; }
 
   open(side: PanelSide): void {
+    if (!this.panels[side]) return; // 이 모드에는 없는 패널 (캠페인의 상대 패널)
     if (this.opened && this.opened !== side) this.snap(this.opened, false);
     this.snap(side, true);
   }
@@ -47,9 +48,9 @@ export class SwipeNav {
   }
 
   private closedPos(side: PanelSide): number { return side === 'left' ? -GAME_WIDTH : side === 'right' ? GAME_WIDTH : GAME_HEIGHT; }
-  private getPos(side: PanelSide): number { return side === 'bottom' ? this.panels[side].y : this.panels[side].x; }
+  private getPos(side: PanelSide): number { const p = this.panels[side]!; return side === 'bottom' ? p.y : p.x; }
   private setPos(side: PanelSide, v: number): void {
-    const p = this.panels[side];
+    const p = this.panels[side]!;
     const closed = this.closedPos(side);
     const clamped = closed < 0 ? Phaser.Math.Clamp(v, closed, 0) : Phaser.Math.Clamp(v, 0, closed);
     if (side === 'bottom') p.setY(clamped); else p.setX(clamped);
@@ -72,8 +73,9 @@ export class SwipeNav {
         this.target = closing ? this.opened : null;
       } else {
         this.target = this.axis === 'h' ? (dx > 0 ? 'left' : 'right') : dy < 0 ? 'bottom' : null;
+        if (this.target && !this.panels[this.target]) this.target = null;
       }
-      if (this.target) { this.targetStart = this.getPos(this.target); this.scene.tweens.killTweensOf(this.panels[this.target]); }
+      if (this.target) { this.targetStart = this.getPos(this.target); this.scene.tweens.killTweensOf(this.panels[this.target]!); }
     }
     if (!this.target) return;
     this.setPos(this.target, this.targetStart + (this.target === 'bottom' ? dy : dx));
@@ -99,6 +101,7 @@ export class SwipeNav {
 
   private snap(side: PanelSide, open: boolean): void {
     const p = this.panels[side];
+    if (!p) return;
     this.scene.tweens.killTweensOf(p);
     const to = open ? 0 : this.closedPos(side);
     this.scene.tweens.add({ targets: p, [side === 'bottom' ? 'y' : 'x']: to, duration: 220, ease: 'Cubic.easeOut' });

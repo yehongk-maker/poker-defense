@@ -123,6 +123,23 @@ export interface DeployResult {
   freeHeroSummon: boolean;
 }
 
+/** 이어하기용 판 저장 (GameLoop.snapshot / restore) */
+export interface RunSnapshot {
+  version: 1;
+  wave: number;
+  gold: number;
+  life: number;
+  shards: Record<ShardKey, number>;
+  units: { id: string; slot: number }[];
+  hero: { id: string; grade: HeroGrade; slot: number } | null;
+  freeHero: boolean;
+  upgrades: Record<Suit, number>;
+  heroSkillCd: number;
+  ticketsUsedRun: number;
+  revivesUsed: number;
+  pity: Record<string, number>;
+}
+
 /** 전투 tick 결과 + 보스 처치 조각 보상 */
 export interface CombatTickEvents extends BattleTickEvents {
   /** 보스 웨이브를 클리어한 tick에만 채워진다 */
@@ -163,6 +180,7 @@ export class GameLoop {
   private coverageCache = new Map<number, number[]>(); // range → 슬롯별 트랙 커버리지
   private roundHandRank = 0;
   private _ticketsUsedRun = 0;
+  private _revivesUsed = 0;
   private roundLifeLost = 0;
   private _lastRound: RoundReport | null = null;
 
@@ -465,19 +483,84 @@ export class GameLoop {
     }
 
     const grade = this.heroGradeNow;
-    const mult = this.data.config.hero.grades[grade].mult;
 
-    // 영웅을 전투 유닛으로 구성 (시너지 카운트 제외 — GDD 3.3)
-    const heroUnitDef: UnitDef = {
+    const heroUnitDef = this.heroUnitDef(def, grade);
+    this._hero = { def, grade, unit: { def: heroUnitDef, slot, placed: false } };
+    this.recalcSynergy();
+    return { def, grade };
+  }
+
+  /** 영웅을 전투 유닛으로 구성 (수트·클래스 시너지 카운트 제외 — GDD 3.3). 근접 영웅은 지상만, 대공 영웅은 공중 특화 */
+  private heroUnitDef(def: HeroDef, grade: HeroGrade): UnitDef {
+    const mult = this.data.config.hero.grades[grade].mult;
+    return {
       id: `hero_${def.id}`, name: def.name, suit: def.suit, tier: 6, cards: 'high',
-      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType, targets: def.combat.targets ?? 'both', // 근접 영웅은 지상만, 대공 영웅은 공중 특화
+      class: 'transcendent' as UnitClass, race: def.race, attackType: def.combat.attackType, targets: def.combat.targets ?? 'both',
       baseDps: def.combat.baseDps * mult, dpsFactor: 1.0,
       attackInterval: def.combat.attackInterval, range: def.combat.range,
       value: 0, effect: null, desc: `${def.name} (${grade}급)`,
     };
-    this._hero = { def, grade, unit: { def: heroUnitDef, slot, placed: false } };
-    this.recalcSynergy();
-    return { def, grade };
+  }
+
+  // ── 부활 (캠페인 광고 보상, GDD §9.2) ─────────────────────
+  get revivesUsed(): number { return this._revivesUsed; }
+  /** 탈락 직후 부활: 하트를 회복하고 **같은 웨이브**를 카드 페이즈부터 다시. 판당 maxPerRun회 */
+  revive(restoreLife: number, maxPerRun = 1): void {
+    this.assertPhase('defeat');
+    if (this._revivesUsed >= maxPerRun) throw new Error('부활은 판당 한 번만 가능합니다');
+    this._revivesUsed++;
+    this._life = Math.min(this.data.config.startLife, Math.max(1, restoreLife));
+    this.battle_ = null;
+    this._phase = 'card';
+    this.cardPhase.start();
+  }
+
+  // ── 저장/이어하기 (캠페인) ─────────────────────────────────
+  /** 카드 페이즈 시작 시점의 판 상태. 손패는 저장하지 않는다(이어하면 새로 받는다) */
+  snapshot(): RunSnapshot {
+    return {
+      version: 1,
+      wave: this._wave, gold: this._gold, life: this._life,
+      shards: { ...this._shards },
+      units: this._units.map((u) => ({ id: u.def.id, slot: u.slot })),
+      hero: this._hero ? { id: this._hero.def.id, grade: this._hero.grade, slot: this._hero.unit.slot } : null,
+      freeHero: this.freeHero,
+      upgrades: { ...this.upgradeLevels },
+      heroSkillCd: this.heroSkillCd,
+      ticketsUsedRun: this._ticketsUsedRun,
+      revivesUsed: this._revivesUsed,
+      pity: { ...this.cardPhase.pityLevels },
+    };
+  }
+
+  /** 저장된 판을 복원한다. 데이터(웨이브 수·유닛 id)가 맞지 않으면 throw → 호출 측이 저장을 버린다 */
+  static restore(data: GameData, snap: RunSnapshot, rng: () => number = Math.random): GameLoop {
+    if (snap.version !== 1) throw new Error('unknown snapshot version');
+    if (!Number.isInteger(snap.wave) || snap.wave < 1 || snap.wave > data.config.totalWaves) throw new Error('snapshot wave out of range');
+    const g = new GameLoop(data, rng);
+    g._wave = snap.wave;
+    g._gold = Math.max(0, snap.gold);
+    g._life = Math.min(data.config.startLife, Math.max(1, snap.life));
+    for (const k of SHARD_KEYS) g._shards[k] = Math.max(0, Math.floor(snap.shards?.[k] ?? 0));
+    const used = new Set<number>();
+    for (const u of snap.units) {
+      if (u.slot < 0 || u.slot >= data.config.maxSlots || used.has(u.slot)) throw new Error('snapshot slot invalid');
+      used.add(u.slot);
+      g._units.push({ def: g.mapper.unitById(u.id), slot: u.slot, placed: true });
+    }
+    if (snap.hero) {
+      const def = data.heroes.find((h) => h.id === snap.hero!.id);
+      if (!def || used.has(snap.hero.slot)) throw new Error('snapshot hero invalid');
+      g._hero = { def, grade: snap.hero.grade, unit: { def: g.heroUnitDef(def, snap.hero.grade), slot: snap.hero.slot, placed: true } };
+    }
+    g.freeHero = !!snap.freeHero && g._hero === null;
+    for (const s of ['S', 'H', 'D', 'C'] as Suit[]) g.upgradeLevels[s] = Math.max(0, Math.min(data.config.upgrade.maxLevel, Math.floor(snap.upgrades?.[s] ?? 0)));
+    g.heroSkillCd = Math.max(0, snap.heroSkillCd ?? 0);
+    g._ticketsUsedRun = Math.max(0, snap.ticketsUsedRun ?? 0);
+    g._revivesUsed = Math.max(0, snap.revivesUsed ?? 0);
+    g.cardPhase.restorePity(snap.pity ?? {});
+    g.recalcSynergy();
+    return g;
   }
 
   // ── 전투 ──────────────────────────────────────────────────

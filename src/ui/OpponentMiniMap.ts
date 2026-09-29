@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { OpponentAI } from '../systems/Duel.ts';
+import type { OpponentView } from '../systems/Opponent.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 import { ALPHA, COLOR, ENEMY_COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, TAP_SLOP, hex } from './theme.ts';
 import { starPath } from './draw.ts';
@@ -36,15 +36,14 @@ export class OpponentMiniMap extends Phaser.GameObjects.Container {
     scene.add.existing(this);
   }
 
-  refresh(opp: OpponentAI, trackLength: number): void {
-    const o = opp.loop;
+  refresh(o: OpponentView, trackLength: number): void {
     const phase: Record<string, string> = { card: '카드', manage: '정비', combat: '전투', victory: '클리어', defeat: '탈락' };
     this.title.setText(`상대 R${o.wave} ♥${o.life} · ${phase[o.phase] ?? o.phase}`);
     if (this.title.width > S - 12) this.title.setScale((S - 12) / this.title.width); else this.title.setScale(1);
 
-    const enemies = o.battle?.aliveEnemies ?? [];
+    const enemies = o.enemies;
     // 유닛·적이 바뀌었을 때만 다시 그림 (적은 위치가 계속 변하므로 전투 중엔 매번)
-    const key = `${o.units.map((u) => `${u.slot}${u.def.suit}${u.def.tier}`).join(',')}|${o.hero ? o.hero.unit.slot : '-'}|${enemies.length ? 'c' + Math.round(enemies.reduce((s, e) => s + e.pos, 0)) : ''}`;
+    const key = `${o.units.map((u) => `${u.slot}${u.suit}${u.tier}`).join(',')}|${o.hero ? o.hero.slot : '-'}|${enemies.length ? 'c' + Math.round(enemies.reduce((s, e) => s + e.pos, 0)) : ''}`;
     if (key === this.lastKey) return;
     this.lastKey = key;
 
@@ -56,8 +55,8 @@ export class OpponentMiniMap extends Phaser.GameObjects.Container {
     // 필드 5×5
     const gx = (box - GRID_N * CELL) / 2, gy = top + (box - GRID_N * CELL) / 2;
     const bySlot = new Map<number, { suit: Suit; tier: number; hero: boolean }>();
-    for (const u of o.units) bySlot.set(u.slot, { suit: u.def.suit, tier: u.def.tier, hero: false });
-    if (o.hero) bySlot.set(o.hero.unit.slot, { suit: o.hero.unit.def.suit, tier: 0, hero: true });
+    for (const u of o.units) bySlot.set(u.slot, { suit: u.suit, tier: u.tier, hero: false });
+    if (o.hero) bySlot.set(o.hero.slot, { suit: o.hero.suit, tier: 0, hero: true });
     this.heroStar.clear();
     for (let i = 0; i < GRID_N * GRID_N; i++) {
       const cx = gx + (i % GRID_N) * CELL + CELL / 2, cy = gy + Math.floor(i / GRID_N) * CELL + CELL / 2;

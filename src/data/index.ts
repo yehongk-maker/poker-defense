@@ -6,8 +6,26 @@ import heroesJson from './heroes.json';
 import wavesJson from './waves.json';
 import configJson from './config.json';
 import duelJson from './duel.json';
+import duelWavesJson from './duel-waves.json';
 import type { GameData } from '../systems/GameLoop.ts';
 import type { DuelConfig } from '../systems/Betting.ts';
+import type { ModeSources, WaveSet } from '../systems/GameMode.ts';
+import type { RewardedAdsConfig } from '../systems/Ads.ts';
+
+/** 모드별 데이터 조립 재료 (GameMode.buildGameData 입력): 캠페인 기본 데이터 + 대전 20웨이브 곡선 + 매치 규칙 */
+export function loadModeSources(): ModeSources {
+  const duelWaves: WaveSet = {
+    waves: duelWavesJson.waves as unknown as WaveSet['waves'],
+    enemyTypes: duelWavesJson.enemyTypes as WaveSet['enemyTypes'],
+    battleConfig: duelWavesJson.config as WaveSet['battleConfig'],
+  };
+  return { base: loadGameData(), duelWaves, duelMatch: loadDuelConfig().match };
+}
+
+/** 보상형 광고 수치 (config.json monetization.rewardedAds) */
+export function loadRewardedAds(): RewardedAdsConfig {
+  return (configJson as unknown as { monetization: { rewardedAds: RewardedAdsConfig } }).monetization.rewardedAds;
+}
 
 /** 1:1 판돈 걸기 설정 (duel.json) */
 export function loadDuelConfig(): DuelConfig {

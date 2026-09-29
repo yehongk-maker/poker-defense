@@ -263,7 +263,7 @@ queue         player_id, rating, enqueued_at, mode
 
 | 단계 | 기간 | 내용 | 완료 기준 |
 |---|---|---|---|
-| **A. 모드 분리** | 3일 | GameMode·OpponentSource·솔로 레이아웃·로비 진입·AI 대전 태그·저장/이어하기 | 캠페인·AI 대전 둘 다 플레이 가능, 기존 테스트 유지 |
+| **A. 모드 분리** ✅ 2026-09-29 | 3일 | GameMode·OpponentSource·솔로 레이아웃·로비 진입·AI 대전 태그·저장/이어하기 | 캠페인·AI 대전 둘 다 플레이 가능, 기존 테스트 유지 |
 | **B. 결정론 로그** | 3일 | InputLog·시드 스트림·고정 step·`replayMatch` | 100판 로그 재생 성적 100% 일치 테스트 |
 | **C. 친구 대전 (실시간 1차)** | 1.5주 | Supabase 프로필·`rooms`·Realtime 릴레이, `LiveOpponent`, 방 코드·초대 링크·방 화면·재대결·친구 목록, 이탈 처리 | 두 기기에서 코드로 붙어 한 판 완주, 재대결, 끊김 후 봇 대행 |
 | **D. 고스트전** | 1주 | 로그 저장/검증 Edge Function, `GhostOpponent`, 랭크 기초 | 내 로그로 나 자신과 고스트전, 검증 통과 |
