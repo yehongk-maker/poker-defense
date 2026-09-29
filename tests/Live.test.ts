@@ -9,7 +9,7 @@ import { BettingSystem, type BetWallet, type DuelConfig } from '../src/systems/B
 import { seededRng, seedStreams } from '../src/systems/Seed.ts';
 import { smartExchange, smartManage } from '../src/systems/bots.ts';
 import { raceStatus, sideOf } from '../src/systems/Duel.ts';
-import { LiveOpponent, LivePublisher } from '../src/net/Live.ts';
+import { LiveOpponent, LivePublisher, SenderView } from '../src/net/Live.ts';
 import { InputRecorder, type RoundInput } from '../src/systems/InputLog.ts';
 import { anteMax, raiseOf, verifyBets } from '../src/net/verifyBets.ts';
 import type { MatchEvent, MatchTransport, Unsubscribe } from '../src/net/MatchTransport.ts';
@@ -49,6 +49,8 @@ class LagEnd implements MatchTransport {
   }
 }
 
+interface TestNet extends MatchTransport { advance(t: number): void; sent: MatchEvent[] }
+
 /** 한 기기: 내 판 + 판돈 + 보내는 쪽 + 받는 쪽 + 사람 흉내 */
 class Device {
   loop: GameLoop;
@@ -58,7 +60,7 @@ class Device {
   rec: InputRecorder;
   private wait = 0;
   ended = false;
-  constructor(readonly data: GameData, seed: string, player: string, readonly net: LagEnd, private brain: () => number, betting: boolean, private pace: number) {
+  constructor(readonly data: GameData, seed: string, player: string, readonly net: TestNet, private brain: () => number, betting: boolean, private pace: number) {
     this.loop = new GameLoop(data, seedStreams(seed, { player }));
     this.rec = new InputRecorder(this.loop, data.config.simStep);
     this.opp = new LiveOpponent({ name: 'x', rating: null, avatar: 'S' }, net, data);
@@ -411,5 +413,127 @@ describe('판돈 교차 검증 (verify-match)', () => {
   it('판돈 없는 방에서 골드가 오갔으면 잡힌다', () => {
     const { a } = logs('vb-off', 0.3);
     expect(verifyBets(duelCfg, false, a, null).issues).toEqual(['bet:wallet_ops_without_betting']);
+  });
+});
+
+/** 여러 명이 붙는 채널 (실제 Realtime 채널처럼): 보낸 사람 표시, 입장 알림, 구경꾼은 접속 판단에서 빠진다 */
+class Hub {
+  ends: HubEnd[] = [];
+  join(id: string, role: 'player' | 'spectator'): HubEnd {
+    const e = new HubEnd(this, id, role);
+    const others = [...this.ends];
+    this.ends.push(e); // 채널에 붙은 뒤에 입장이 알려진다
+    for (const o of others) { o.joined({ id, role }); if (role === 'player') o.presenceOf(true); }
+    if (others.some((o) => o.role === 'player')) e.presenceOf(true);
+    return e;
+  }
+}
+class HubEnd implements TestNet {
+  sent: MatchEvent[] = [];
+  private queue: { e: MatchEvent; from: string }[] = [];
+  private handlers = new Set<(e: MatchEvent, from?: string) => void>();
+  private presence = new Set<(on: boolean) => void>();
+  private joins = new Set<(w: { id: string; role: 'player' | 'spectator' }) => void>();
+  private on_ = false;
+  constructor(private hub: Hub, readonly id: string, readonly role: 'player' | 'spectator') {}
+  async connect(): Promise<void> { /* 항상 연결 */ }
+  send(e: MatchEvent): void {
+    if (this.role === 'spectator') return;
+    this.sent.push(e);
+    for (const o of this.hub.ends) if (o !== this) o.queue.push({ e: JSON.parse(JSON.stringify(e)), from: this.id });
+  }
+  on(h: (e: MatchEvent, from?: string) => void): Unsubscribe { this.handlers.add(h); return () => this.handlers.delete(h); }
+  onPresence(h: (on: boolean) => void): Unsubscribe { this.presence.add(h); if (this.on_) h(true); return () => this.presence.delete(h); }
+  onJoin(h: (w: { id: string; role: 'player' | 'spectator' }) => void): Unsubscribe { this.joins.add(h); return () => this.joins.delete(h); }
+  joined(w: { id: string; role: 'player' | 'spectator' }): void { this.joins.forEach((h) => h(w)); }
+  presenceOf(on: boolean): void { this.on_ = on; this.presence.forEach((h) => h(on)); }
+  close(): void { /* noop */ }
+  advance(): void { const q = this.queue; this.queue = []; for (const { e, from } of q) this.handlers.forEach((h) => h(e, from)); }
+}
+
+describe('관전 — 구경꾼이 두 사람을 따로 본다', () => {
+  function watch(seed: string, joinAtWave: number) {
+    const data = buildGameData(sources(), friendDuel(RANKED_RULES, seed), null);
+    const hub = new Hub();
+    const na = hub.join('a', 'player'), nb = hub.join('b', 'player');
+    const A = new Device(data, seed, 'a', na, seededRng(11), true, 1);
+    const B = new Device(data, seed, 'b', nb, seededRng(22), true, 2);
+    let t = 0;
+    const run = (until: () => boolean) => { for (let i = 0; i < 40000 && !until(); i++) { t += 0.1; A.step(t, 0.1); B.step(t, 0.1); } };
+    run(() => A.loop.wave >= joinAtWave && B.loop.wave >= joinAtWave - 1);
+    const ns = hub.join('s', 'spectator');
+    const seeA = new LiveOpponent({ name: 'a', rating: null, avatar: 'S' }, new SenderView(ns, 'a'), data);
+    const seeB = new LiveOpponent({ name: 'b', rating: null, avatar: 'H' }, new SenderView(ns, 'b'), data);
+    const settle = () => { for (let i = 0; i < 8; i++) { t += 0.1; A.step(t, 0.1); B.step(t, 0.1); ns.advance(); } };
+    return { A, B, ns, seeA, seeB, run, settle, data };
+  }
+
+  it('대전 도중에 들어와도 두 사람의 지금 상태가 각각 맞게 보인다', () => {
+    const w = watch('sp-1', 5);
+    w.settle();
+    for (const [seen, dev] of [[w.seeA, w.A], [w.seeB, w.B]] as const) {
+      expect(seen.view.wave).toBe(dev.loop.wave);
+      expect(seen.view.life).toBe(dev.loop.life);
+      expect(seen.view.gold).toBe(Math.floor(dev.loop.gold));
+      expect(seen.view.units.length).toBe(dev.loop.units.length);
+    }
+    expect(w.seeA.view.units.map((u) => u.slot).sort()).not.toEqual([]);
+  });
+
+  it('계속 따라간다: 끝까지 보고, 누가 끝났는지 안다', () => {
+    const w = watch('sp-2', 3);
+    w.run(() => { w.ns.advance(); return w.A.over || w.B.over; });
+    w.settle();
+    const done = w.A.over ? [w.seeA, w.A] as const : [w.seeB, w.B] as const;
+    expect(done[0].finished).toBe(true);
+    expect(done[0].view.phase).toBe(done[1].loop.phase);
+    expect(done[0].finalReport).toEqual(done[1].pub.report);
+  });
+
+  it('판돈 선택이 사람별로 보인다', () => {
+    const w = watch('sp-3', 2);
+    w.run(() => { w.ns.advance(); return w.A.loop.wave >= 6; });
+    w.settle();
+    expect(w.seeA.lastBet).not.toBeNull();
+    expect(w.seeB.lastBet).not.toBeNull();
+    const lastA = [...w.A.net.sent].reverse().find((e) => e.t === 'bet') as Extract<MatchEvent, { t: 'bet' }>;
+    expect(w.seeA.lastBet).toMatchObject({ wave: lastA.wave, action: lastA.action });
+  });
+
+  it('구경꾼은 아무것도 보내지 않고, 두 사람의 대전에 영향을 주지 않는다', () => {
+    const solo = match('sp-4', { lag: 0 });
+    const w = watch('sp-same', 4);
+    const sentBefore = w.ns.sent.length;
+    w.run(() => { w.ns.advance(); return w.A.over && w.B.over; });
+    expect(w.ns.sent.length).toBe(sentBefore);
+    expect(w.ns.sent).toEqual([]);
+    // 구경꾼이 있어도 두 기기의 판돈 판정은 서로 일치한다
+    const hb = new Map(w.B.betting!.history.map((r) => [r.wave, r]));
+    let compared = 0;
+    for (const r of w.A.betting!.history) {
+      const o = hb.get(r.wave);
+      if (!o) continue;
+      compared++;
+      expect(o.pot).toBe(r.pot);
+      expect(o.winner === 'carry' ? 'carry' : o.winner === 'player' ? 'opponent' : 'player').toBe(r.winner);
+    }
+    expect(compared).toBeGreaterThan(3);
+    expect(solo.A.betting!.history.length).toBeGreaterThan(0);
+  });
+
+  it('구경꾼이 들어와도 판정용 기록 전체를 다시 보내지 않는다 (상태 한 장 + 필드)', () => {
+    const w = watch('sp-5', 6);
+    const before = w.A.net.sent.length;
+    w.A.step(1e6, 0); // 구경꾼 입장 직후 한 프레임
+    const extra = w.A.net.sent.slice(before).map((e) => e.t);
+    expect(extra).toContain('field');
+    expect(w.A.net.sent.filter((e) => e.t === 'state').length).toBe(1);
+    expect(extra.filter((t) => t === 'enter' || t === 'report').length).toBeLessThanOrEqual(1);
+  });
+
+  it('손패는 구경꾼에게도 가지 않는다', () => {
+    const w = watch('sp-6', 4);
+    w.settle();
+    expect(JSON.stringify([...w.A.net.sent, ...w.B.net.sent])).not.toMatch(/"rank":|hand"\s*:/);
   });
 });

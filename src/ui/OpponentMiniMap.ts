@@ -20,6 +20,8 @@ export class OpponentMiniMap extends Phaser.GameObjects.Container {
   private title: Phaser.GameObjects.Text;
   private heroStar: Phaser.GameObjects.Graphics;
   private lastKey = '';
+  /** 제목 앞머리 (대전 화면은 '상대 ', 관전 화면은 비움) */
+  label = '상대 ';
 
   constructor(scene: Phaser.Scene, right: number, top: number, onTap: () => void) {
     super(scene, right - S, top);
@@ -38,7 +40,7 @@ export class OpponentMiniMap extends Phaser.GameObjects.Container {
 
   refresh(o: OpponentView, trackLength: number): void {
     const phase: Record<string, string> = { card: '카드', manage: '정비', combat: '전투', victory: '클리어', defeat: '탈락' };
-    this.title.setText(`상대 R${o.wave} ♥${o.life} · ${phase[o.phase] ?? o.phase}`);
+    this.title.setText(`${this.label}R${o.wave} ♥${o.life} · ${phase[o.phase] ?? o.phase}`);
     if (this.title.width > S - 12) this.title.setScale((S - 12) / this.title.width); else this.title.setScale(1);
 
     const enemies = o.enemies;

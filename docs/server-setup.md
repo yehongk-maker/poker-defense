@@ -101,3 +101,4 @@ npm run fn:deploy
 4. **D. 고스트전** ✅: 매칭 대기 화면(`MatchScene`) + `findMatch()`, 대체 상대(봇 두뇌·고스트 대본) 연결. 마이그레이션 `…000400_ghost_verified.sql`(고스트는 verify-match가 검증 통과 후 등록, 대본에 player 키), `…000500_abandoned_matches.sql`(enqueue 시 끊긴 매치 무효). 
 5. **E. 랭크 실시간** ✅: `…000600_forfeit_heartbeat.sql`(heartbeat·forfeit_match·claim_absent, enqueue 시 하던 랭크 매치 기권패), 봇 강도 프리셋, verify-match 판돈 교차 검증.
 6. **F. 시즌·랭킹** ✅: `…000700_season_ranking.sql`(season_results, leaderboard, my_season, claim_season_reward, ensure_season). cron 없이 지연 넘김. 시즌을 강제로 넘겨 시험하려면 대시보드 SQL에서 `update seasons set ends_at = now() - interval '1 hour'` 후 랭킹 탭을 연다.
+7. **관전** ✅: `…000800_spectators.sql`(room_spectators, watch_room·watch_info·unwatch_room, 구경꾼용 rooms 조회 정책). 로컬에서 세 번째 계정은 `http://[::1]:5180`.

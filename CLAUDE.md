@@ -14,7 +14,7 @@ src/
   main.ts        Phaser.Game 생성
   config.ts      해상도·씬 키 상수
   scenes/        Boot(초대 링크 /j/코드 → Friend), Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기, 실시간 매치는 init.live),
-                 Meta, Rank(랭킹 탭: 시즌 카드·보상 수령·리더보드), Match(랭크 매칭 대기 → 상대 소개 → 대전; 서버가 없으면 이 기기의 상대로), Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
+                 Spectate(친구 방 관전: 두 사람의 공개 정보를 나란히), Meta, Rank(랭킹 탭: 시즌 카드·보상 수령·리더보드), Match(랭크 매칭 대기 → 상대 소개 → 대전; 서버가 없으면 이 기기의 상대로), Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
   runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
@@ -78,6 +78,12 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 판돈 검증: `net/verifyBets`가 로그의 g/l 증감을 넉넉한 경계(낸 것 하한·받은 것 상한)로 검사, 사람 상대면 상대 로그의 라운드 성적으로 상한을 좁힌다. 판돈 선택 기록에는 걸린 라운드(`bet.wave`)를 남긴다.
 - 승패는 서버 판정(report_result → finalize_match)을 표시한다. 친구 대전의 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
 - 글자 입력(닉네임·방 코드)은 `ui/TextPrompt.askText`(DOM 입력칸) — 한글 조합·붙여넣기 때문. 색·폰트는 DESIGN 토큰.
+
+## 관전 규칙 (친구 방)
+- 방 코드를 아는 사람은 `watch_room`으로 구경꾼이 된다(방마다 8명, 방의 두 사람은 불가). 구경꾼은 방 행만 읽을 수 있고 **매치 행(시드)은 읽지 못한다** — 공개 정보는 `watch_info`(room_public)가 골라 준다.
+- 매치 채널 이벤트에는 보낸 사람(`_from`)이 붙는다. 구경꾼은 `SupabaseTransport(…, 'spectator')`로 듣기만 하고(send는 무시), `SenderView`로 사람별 `LiveOpponent` 두 개를 만든다. 접속 판단(presence)은 role이 player인 상대만 센다.
+- 구경꾼이 들어오면 각 LivePublisher가 `state` 한 장 + 필드를 보낸다(판정용 기록 전체 재전송은 상대 재접속 때만).
+- 채널에 싣는 이벤트는 구경꾼에게도 간다 — 손패·아웃·게이지는 앞으로도 싣지 않는다.
 
 ## 대전 이어하기·기권 규칙
 - 대전 중 1초마다·화면을 떠날 때 `saveMatch`(내 입력 로그 + 판돈 상태 + 이 기기 상대의 라운드 시작 스냅샷). 판이 끝나거나 앱 안에서 대전을 떠나면 지운다.
@@ -159,7 +165,9 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): D단계 고스트전 — 고스트 대본 재생(OpponentAI script), MatchScene(매칭 대기·상대 소개), 대체 매칭 결과 보고·레이팅 표시, 마이그레이션 000400(검증된 로그만 고스트·대본에 플레이어 키)·000500(끊긴 랭크 매치 무효), verify-match 재배포. 실서버에서 봇 매치 → 로그 검증 통과 → 다른 계정에 고스트로 등장 확인.
 - 완료(2026-09-29): E단계 랭크 실시간 — 사람 대 사람 매칭 실서버 확인, 기권패·heartbeat·claim_absent(마이그레이션 000600), 봇 강도 프리셋, 판돈 교차 검증, verify-match 재배포. 기획의 '끊김 후 봇 대행'은 '부재 = 기권패'로 단순화.
 - 완료(2026-09-29): F단계 시즌·랭킹 — 마이그레이션 000700(season_results, ensure_season 지연 넘김, leaderboard, my_season, claim_season_reward), Ranking 순수 로직, RankScene(로비 랭킹 탭). 시즌은 cron 없이 시즌을 읽는 RPC·enqueue가 넘긴다. 보상 다이아는 서버에 수령 기록 후 메타(localStorage)에 더한다.
-- 온라인 단계 A~F 완료. 기획에 있던 친구 방 관전은 미구현.
+- 온라인 단계 A~F 완료.
+- 완료(2026-09-29): 친구 방 관전 — 마이그레이션 000800(room_spectators, watch_room/watch_info/unwatch_room), SpectateScene, 친구 대전 화면의 [관전하기]. 실서버에서 세 계정으로 방 구경 → 대전 관전 → 도중 재입장 → 결과 확인.
+- 알려진 약점: 손패 시드 스트림의 키가 플레이어 id라서, 매치 시드와 상대 id를 아는 대전 상대는 상대 손패를 계산할 수 있다(클라이언트를 고친 경우). 막으려면 서버가 플레이어별 비밀 손패 시드를 따로 줘야 한다.
 - 완료(2026-09-29): 대전 중 기권 버튼, 재접속 이어하기(랭크·친구·서버 없는 판). 실서버에서 대체 상대 매치 전투 중 새로고침 → 복원, 사람 상대 매치 새로고침 → 복원(판돈 일치) → 상대 기권 확인.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.

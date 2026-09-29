@@ -10,4 +10,5 @@ export const SCENE = {
   Friend: 'Friend',
   Match: 'Match',
   Rank: 'Rank',
+  Spectate: 'Spectate',
 } as const;

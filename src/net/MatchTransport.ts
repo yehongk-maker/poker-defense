@@ -19,17 +19,24 @@ export type MatchEvent =
   | { t: 'finish'; reached: number; life: number; gold: number; clearedSec: number | null }
   | { t: 'rematch'; ready: boolean }
   | { t: 'leave' }
-  | { t: 'surrender' };                                            // 기권: 받은 쪽이 바로 이긴다                                                // 방을 나감 (판 중이면 기권)
+  | { t: 'surrender' }
+  // 늦게 들어온 구경꾼에게 주는 지금 상태 한 장 (판정에는 쓰지 않는다)
+  | { t: 'state'; wave: number; phase: string; handRank: number | null; exchange: number; finished: boolean };                                            // 기권: 받은 쪽이 바로 이긴다                                                // 방을 나감 (판 중이면 기권)
 
 export type MatchEventType = MatchEvent['t'];
 export type Unsubscribe = () => void;
+
+export type PeerRole = 'player' | 'spectator';
 
 export interface MatchTransport {
   /** 채널 연결이 끝나면 resolve */
   connect(): Promise<void>;
   send(event: MatchEvent): void;
-  on(handler: (event: MatchEvent) => void): Unsubscribe;
-  /** 상대 접속 상태 (끊김 30초 유예 판단용) */
+  /** from = 보낸 사람 id (구경꾼이 두 사람의 이벤트를 가르는 데 쓴다. 통로가 모르면 undefined) */
+  on(handler: (event: MatchEvent, from?: string) => void): Unsubscribe;
+  /** 누군가 채널에 들어왔다 (구경꾼 포함). 지원하지 않는 통로는 없을 수 있다 */
+  onJoin?(handler: (who: { id: string; role: PeerRole }) => void): Unsubscribe;
+  /** 상대 접속 상태 (끊김 30초 유예 판단용). 구경꾼은 세지 않는다 */
   onPresence(handler: (opponentOnline: boolean) => void): Unsubscribe;
   close(): void;
 }

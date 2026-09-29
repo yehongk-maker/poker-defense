@@ -51,6 +51,7 @@ export class LivePublisher {
   private critical: MatchEvent[] = [];
   private peerOnline = false;
   private offPresence: Unsubscribe;
+  private offJoin: Unsubscribe;
 
   constructor(
     private transport: MatchTransport,
@@ -65,6 +66,19 @@ export class LivePublisher {
       if (on && !this.peerOnline) this.resend();
       this.peerOnline = on;
     });
+    // 구경꾼이 들어오면 지금 상태 한 장 + 필드를 보낸다 (판정용 기록 전체를 다시 보내지는 않는다)
+    this.offJoin = transport.onJoin?.((who) => { if (who.role === 'spectator') this.sendState(); }) ?? (() => undefined);
+  }
+
+  private sendState(): void {
+    const g = this.loop;
+    this.transport.send({
+      t: 'state', wave: g.wave, phase: g.phase, handRank: g.phase === 'card' ? null : g.cardPhase.handResult?.rank ?? null,
+      exchange: g.cardPhase.exchangesUsed + g.cardPhase.ticketsUsed, finished: g.phase === 'victory' || g.phase === 'defeat',
+    });
+    this.lastField = '';
+    this.fieldWait = 0;
+    this.snapWait = 0;
   }
 
   private static readonly CRITICAL: ReadonlySet<MatchEvent['t']> = new Set(['enter', 'confirm', 'bet', 'report', 'finish', 'surrender']);
@@ -80,7 +94,7 @@ export class LivePublisher {
     this.fieldWait = 0;
   }
 
-  close(): void { this.offPresence(); }
+  close(): void { this.offPresence(); this.offJoin(); }
 
   /** 매치 시작 후 흐른 시간(초, 벽시계) */
   get matchSec(): number { return this.elapsed; }
@@ -216,6 +230,18 @@ export class LivePublisher {
   }
 }
 
+/** 한 채널에서 특정 사람이 보낸 이벤트만 골라 듣는 통로 (구경꾼이 두 사람을 따로 그릴 때) */
+export class SenderView implements MatchTransport {
+  constructor(private base: MatchTransport, private sender: string) {}
+  connect(): Promise<void> { return Promise.resolve(); }
+  send(): void { /* 구경꾼은 보내지 않는다 */ }
+  on(handler: (e: MatchEvent, from?: string) => void): Unsubscribe {
+    return this.base.on((e, from) => { if (from === this.sender) handler(e, from); });
+  }
+  onPresence(): Unsubscribe { return () => undefined; }
+  close(): void { /* 바탕 통로는 연 쪽이 닫는다 */ }
+}
+
 /** 상대 지갑의 거울: 값은 상대가 보내 준 그대로. 판돈 시스템은 네트워크 상대의 지갑을 건드리지 않는다 */
 class MirrorWallet implements BetWallet {
   gold = 0;
@@ -248,6 +274,8 @@ export class LiveOpponent implements OpponentSource {
   private _rematch = false;
   private _final: MatchReport | null = null;
   events: LiveOpponentEvents = {};
+  /** 가장 최근 판돈 선택 (구경 화면 표시용) */
+  lastBet: { wave: number; action: BetAction; amount?: number } | null = null;
 
   constructor(readonly identity: OpponentIdentity, transport: MatchTransport, private data: GameData) {
     this.types = enemyTypeList(data);
@@ -340,6 +368,7 @@ export class LiveOpponent implements OpponentSource {
       case 'skill':
         this.events.onSkill?.(e.id);
         break;
+      // (bet 이벤트는 판돈 시스템이 없을 때 — 구경꾼 — lastBet으로만 남는다)
       case 'report': {
         const r: RoundReport = { wave: e.wave, lifeLost: e.lifeLost, clearSec: e.clearSec, handRank: e.handRank, cleared: e.cleared };
         // 성적은 받는 즉시 판돈에 보고한다 (프레임 사이에 여러 개가 와도 빠뜨리지 않게)
@@ -353,6 +382,7 @@ export class LiveOpponent implements OpponentSource {
         break;
       }
       case 'bet':
+        this.lastBet = { wave: e.wave, action: e.action, amount: e.amount };
         this.applyBet(e);
         break;
       case 'finish':
@@ -371,6 +401,14 @@ export class LiveOpponent implements OpponentSource {
         break;
       case 'surrender':
         this._surrendered = true;
+        break;
+      case 'state':
+        if (this.done || e.wave < v.wave) break;
+        v.wave = e.wave;
+        if (e.phase === 'card' || e.phase === 'manage' || e.phase === 'combat' || e.phase === 'victory' || e.phase === 'defeat') v.phase = e.phase;
+        v.exchangeCount = e.exchange;
+        if (e.handRank !== null) v.lastHandRank = e.handRank;
+        if (e.finished) this.done = true;
         break;
       case 'leave':
         this._left = true;

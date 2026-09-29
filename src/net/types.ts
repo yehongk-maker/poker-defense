@@ -89,6 +89,15 @@ export interface Invite {
   created_at: string;
 }
 
+/** 구경꾼에게 보이는 방 정보 (room_public) — 시드·상대 종류 없음 */
+export interface WatchInfo {
+  room: { id: string; code: string; status: RoomStatus; rules: RoomRules; host: string; guest: string | null; hostReady: boolean; guestReady: boolean; gamesPlayed: number; matchId: string | null };
+  host: OpponentInfo & { id: string };
+  guest: (OpponentInfo & { id: string }) | null;
+  match: { id: string; waveCount: 20 | 40; rules: RoomRules; status: MatchInfo['status']; p1: string; p2: string | null; winner: MatchInfo['winner']; reason: string | null; startedAt: string } | null;
+  spectators: number;
+}
+
 export interface LeaderboardRow {
   rank: number;
   id: string;

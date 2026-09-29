@@ -398,6 +398,67 @@ describe('시즌·랭킹', () => {
   });
 });
 
+describe('친구 방 관전', () => {
+  type Info = { room: { id: string; code: string; status: string; matchId: string | null }; host: { name: string }; guest: { name: string } | null; match: Record<string, unknown> | null; spectators: number };
+  let code = '';
+
+  it('코드를 아는 사람은 구경꾼으로 들어온다. 방의 두 사람은 구경꾼이 될 수 없다', async () => {
+    const room = await rpc<{ id: string; code: string }>('ann', 'create_room', [JSON.stringify({})]);
+    code = room.code;
+    await rpc('bob', 'join_room', [code]);
+    const info = await rpc<Info>('cat', 'watch_room', [code.toLowerCase()]);
+    expect(info.room).toMatchObject({ code, status: 'waiting' });
+    expect(info.host.name).toBeTruthy();
+    expect(info.guest).not.toBeNull();
+    expect(info.spectators).toBe(1);
+    expect((await rpc<Info>('cat', 'watch_room', [code])).spectators).toBe(1); // 다시 들어와도 한 명
+    await expect(rpc('ann', 'watch_room', [code])).rejects.toThrow(/in_room/);
+    await expect(rpc('dan', 'watch_room', ['ZZZZZZ'])).rejects.toThrow(/room_not_found/);
+  });
+
+  it('구경꾼은 그 방 행만 보이고, 매치 행(시드)은 보이지 않는다', async () => {
+    expect((await as<{ code: string }>('cat', 'select code from public.rooms')).map((r) => r.code)).toContain(code);
+    expect((await as<{ code: string }>('dan', `select code from public.rooms where code = '${code}'`)).length).toBe(0);
+    await rpc('ann', 'set_ready', [code, true]);
+    await rpc('bob', 'set_ready', [code, true]);
+    const info = await rpc<Info>('cat', 'watch_info', [code]);
+    expect(info.room.status).toBe('live');
+    expect(info.match).toMatchObject({ status: 'live', waveCount: 20 });
+    expect(JSON.stringify(info)).not.toMatch(/seed|opponent_kind|ghost|bot/i);
+    expect((await as('cat', `select id from public.matches where id = '${info.room.matchId}'`)).length).toBe(0);
+    await expect(rpc('dan', 'watch_info', [code])).rejects.toThrow(/not_watching/);
+  });
+
+  it('방 사람들은 구경꾼 수를 볼 수 있고, 남은 볼 수 없다', async () => {
+    expect((await as('ann', 'select 1 from public.room_spectators')).length).toBe(1);
+    expect((await as('dan', 'select 1 from public.room_spectators')).length).toBe(0);
+  });
+
+  it('끝나면 구경꾼에게 승자가 보인다', async () => {
+    const before = await rpc<Info>('cat', 'watch_info', [code]);
+    const id = before.room.matchId!;
+    await rpc('ann', 'report_result', [id, JSON.stringify({ reached: 12, life: 0, gold: 3 }), null]);
+    await rpc('bob', 'report_result', [id, JSON.stringify({ reached: 9, life: 0, gold: 0 }), null]);
+    const info = await rpc<Info>('cat', 'watch_info', [code]);
+    expect(info.room.status).toBe('done');
+    expect(info.match).toMatchObject({ status: 'done', winner: 'p1', reason: 'wave' });
+  });
+
+  it('여덟 명까지, 나가면 자리가 난다', async () => {
+    const [{ id }] = await admin<{ id: string }>(`select id from public.rooms where code = '${code}' and status <> 'closed'`);
+    await admin(`insert into auth.users (id) select gen_random_uuid() from generate_series(1, 7)`).catch(() => undefined);
+    const extra = await admin<{ id: string }>(`select u.id from auth.users u where not exists (select 1 from public.profiles p where p.id = u.id) limit 7`);
+    for (const [i, u] of extra.entries()) {
+      await admin(`insert into public.profiles (id, nick) values ('${u.id}', '구경${i + 1}')`);
+      await admin(`insert into public.room_spectators (room_id, player_id) values ('${id}', '${u.id}')`);
+    }
+    if (extra.length === 7) await expect(rpc('dan', 'watch_room', [code])).rejects.toThrow(/spectators_full/);
+    await rpc('cat', 'unwatch_room', [code]);
+    expect((await rpc<Info>('dan', 'watch_room', [code])).spectators).toBeLessThanOrEqual(8);
+    await expect(rpc('cat', 'watch_info', [code])).rejects.toThrow(/not_watching/);
+  });
+});
+
 describe('판정·레이팅 순수 함수', () => {
   const decide = async (a: object, b: object) =>
     (await admin<{ r: { winner: string; reason: string } }>('select public.decide_winner($1::jsonb, $2::jsonb) as r', [JSON.stringify(a), JSON.stringify(b)]))[0].r;

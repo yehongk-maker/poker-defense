@@ -7,13 +7,14 @@ import { Button } from '../ui/Button.ts';
 import { addBackdrop } from '../ui/Backdrop.ts';
 import { askText, closeTextPrompt } from '../ui/TextPrompt.ts';
 import { COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, hex } from '../ui/theme.ts';
-import { answerInvite, createRoom, getMatch, getProfile, inviteFriend, joinRoom, leaveRoom, listFriends, pendingInvites, setReady, setRoomRules, subscribeInvites, subscribeRoom, SupabaseTransport } from '../net/api.ts';
+import { answerInvite, countSpectators, createRoom, getMatch, getProfile, inviteFriend, joinRoom, leaveRoom, listFriends, pendingInvites, setReady, setRoomRules, subscribeInvites, subscribeRoom, SupabaseTransport, unwatchRoom, watchInfo, watchRoom } from '../net/api.ts';
 import { errorText, getSession, onlineAvailable, rename } from '../net/session.ts';
 import { readOnlineEnv } from '../net/env.ts';
 import { inviteLink, isValidRoomCode, normalizeRoomCode, parseInvite } from '../net/roomCode.ts';
 import { DEFAULT_RULES, isCustom, normalizeRules } from '../net/rules.ts';
 import { LiveOpponent, type LiveContext } from '../net/Live.ts';
-import type { Friend, Invite, Profile, Room, RoomRules } from '../net/types.ts';
+import type { Friend, Invite, Profile, Room, RoomRules, WatchInfo } from '../net/types.ts';
+import type { SpectateSceneInit } from './SpectateScene.ts';
 import type { Unsubscribe } from '../net/MatchTransport.ts';
 import { clearMatch, loadMatch } from '../matchSave.ts';
 import { prepareResume } from './resumeMatch.ts';
@@ -21,6 +22,8 @@ import { prepareResume } from './resumeMatch.ts';
 export interface FriendSceneInit {
   /** 이 코드의 방으로 바로 들어간다 (초대 링크·재대결) */
   code?: string;
+  /** 이 코드의 방을 구경한다 (관전 후 방으로 돌아올 때) */
+  watch?: string;
 }
 
 interface RuleRow<K extends keyof RoomRules = keyof RoomRules> {
@@ -51,6 +54,9 @@ export class FriendScene extends Phaser.Scene {
   private args: FriendSceneInit = {};
   private me: Profile | null = null;
   private room: Room | null = null;
+  /** 구경 중인 방 (내가 참가자가 아닌 방) */
+  private watching: WatchInfo | null = null;
+  private spectators = 0;
   private names = new Map<string, Profile>();
   private body!: Phaser.GameObjects.Container;
   private toast!: Phaser.GameObjects.Text;
@@ -74,6 +80,7 @@ export class FriendScene extends Phaser.Scene {
   create(): void {
     this.alive = true;
     this.room = null; this.invite = null; this.friends = []; this.busy = false; this.starting = false;
+    this.watching = null; this.spectators = 0;
     addBackdrop(this, 'duel');
     const cx = GAME_WIDTH / 2;
     new Button(this, SIZE.gutter + 110, 110, '‹ 로비', () => void this.exit(), { width: 220, height: SIZE.btnS, fontSize: 32, variant: 'gray' });
@@ -99,10 +106,14 @@ export class FriendScene extends Phaser.Scene {
       if (!this.alive) return;
       this.names.set(this.me.id, this.me);
       this.showNick();
-      this.unsubInvites = subscribeInvites(this.me.id, (i) => { this.invite = i; void this.loadName(i.from_id).then(() => { if (!this.room) this.drawMenu(); }); });
+      this.unsubInvites = subscribeInvites(this.me.id, (i) => { this.invite = i; void this.loadName(i.from_id).then(() => { if (!this.room && !this.watching) this.drawMenu(); }); });
       if (this.args.code) {
         await this.enterRoom(() => joinRoom(this.args.code!));
         if (this.room) return;
+      }
+      if (this.args.watch) {
+        await this.enterWatch(this.args.watch);
+        if (this.watching) return;
       }
       await this.refreshMenu();
     } catch (e) {
@@ -125,11 +136,11 @@ export class FriendScene extends Phaser.Scene {
   private async refreshMenu(): Promise<void> {
     const me = this.me!;
     const [friends, invites] = await Promise.all([listFriends().catch(() => [] as Friend[]), pendingInvites(me.id).catch(() => [] as Invite[])]);
-    if (!this.alive || this.room) return;
+    if (!this.alive || this.room || this.watching) return;
     this.friends = friends;
     this.invite = invites[0] ?? null;
     if (this.invite) await this.loadName(this.invite.from_id);
-    if (this.alive && !this.room) this.drawMenu();
+    if (this.alive && !this.room && !this.watching) this.drawMenu();
   }
 
   // ── 그리기 ──
@@ -176,7 +187,9 @@ export class FriendScene extends Phaser.Scene {
     this.button(cx, 400, '방 만들기\n6자리 코드로 친구를 초대해요', () => void this.enterRoom(() => createRoom(DEFAULT_RULES)), { width: w, height: SIZE.btnL + 16, fontSize: 56, variant: 'gold' });
     this.button(cx, 570, '코드로 참가\n친구가 알려 준 코드를 입력해요', () => void this.askCode(), { width: w, height: SIZE.btnL + 16, fontSize: 52, variant: 'blue' });
 
-    let y = 690;
+    this.button(cx, 720, '관전하기\n친구들의 대전을 코드로 구경해요', () => void this.askWatch(), { width: w - 160, height: SIZE.btnM + 8, fontSize: 40, variant: 'purple' });
+
+    let y = 810;
     if (this.invite) {
       const from = this.names.get(this.invite.from_id);
       this.panel(y, 190);
@@ -274,7 +287,45 @@ export class FriendScene extends Phaser.Scene {
     } else {
       this.button(cx, y, myReady ? '준비 취소\n상대가 준비하면 바로 시작해요' : '준비\n둘 다 준비하면 3초 뒤 시작', () => void this.ready(!myReady), { width: w, height: SIZE.btnL + 16, fontSize: 56, variant: myReady ? 'gray' : 'gold' });
     }
-    if (room.games_played > 0 && room.status !== 'live') this.label(cx, y + 110, `이 방에서 ${room.games_played}판 · 준비하면 새 판을 시작해요`, SIZE.caption + 4, COLOR.textSub, false);
+    const played = room.games_played > 0 && room.status !== 'live' ? `이 방에서 ${room.games_played}판 · 준비하면 새 판을 시작해요` : '';
+    const seen = this.spectators > 0 ? `구경꾼 ${this.spectators}명` : '';
+    if (played || seen) this.label(cx, y + 110, [played, seen].filter(Boolean).join('   ·   '), SIZE.caption + 4, COLOR.textSub, false);
+  }
+
+  /** 구경꾼이 보는 방 화면: 읽기 전용. 대전이 시작되면 관전 화면으로 넘어간다 */
+  private drawWatch(): void {
+    const info = this.watching;
+    if (!info) return;
+    this.clear();
+    this.nickText.setX(GAME_WIDTH / 2);
+    const cx = GAME_WIDTH / 2;
+    const rules = normalizeRules(info.room.rules);
+    this.panel(280, 250);
+    this.label(cx, 330, '구경 중인 방', SIZE.body, COLOR.textSub, false);
+    this.label(cx, 410, info.room.code.split('').join(' '), 92, COLOR.textGold);
+    this.label(cx, 490, `구경꾼 ${info.spectators}명 · 두 사람에게 내 화면은 보이지 않아요`, SIZE.caption + 4, COLOR.textSub, false);
+    const side = (x: number, p: WatchInfo['host'] | null, ready: boolean, tag: string) => {
+      if (p) this.avatar(x, 660, p.avatar, 70);
+      else { const g = this.add.graphics(); g.lineStyle(6, COLOR.textSub, 0.7).strokeCircle(x, 660, 70); this.body.add(g); this.label(x, 660, '?', 72, COLOR.textSub); }
+      this.label(x, 770, p ? p.name : '빈 자리', 38);
+      this.label(x, 818, tag, SIZE.caption + 2, COLOR.textSub, false);
+      if (p) this.label(x, 866, ready ? '준비 완료' : '준비 전', 32, ready ? COLOR.green : COLOR.textSub);
+    };
+    side(cx - 300, info.host, info.room.hostReady, '방장');
+    this.label(cx, 660, 'VS', 84, COLOR.textGold);
+    side(cx + 300, info.guest, info.room.guestReady, '친구');
+    const top = 920, rowH = 84;
+    this.panel(top, 70 + RULES.length * rowH + 20);
+    this.label(SIZE.gutter + 50, top + 46, '규칙', 40).setOrigin(0, 0.5);
+    RULES.forEach((r, i) => {
+      const y = top + 70 + i * rowH + rowH / 2;
+      const at = Math.max(0, r.options.findIndex((o) => o.value === rules[r.key]));
+      this.label(SIZE.gutter + 50, y, r.label, 34).setOrigin(0, 0.5);
+      this.label(GAME_WIDTH - SIZE.gutter - 50, y, r.options[at].text, 34, at === 0 ? COLOR.textMain : COLOR.textGold).setOrigin(1, 0.5);
+    });
+    const y = top + 70 + RULES.length * rowH + 20 + 110;
+    const st = info.room.status;
+    this.label(cx, y, st === 'live' ? '대전 중 — 관전 화면으로 가요' : st === 'done' ? '다음 판을 기다리는 중…' : info.guest ? '두 사람이 준비하면 시작해요' : '친구가 들어오기를 기다리는 중…', SIZE.h2 - 4, COLOR.textGold);
   }
 
   // ── 동작 ──
@@ -307,6 +358,52 @@ export class FriendScene extends Phaser.Scene {
     await this.enterRoom(() => joinRoom(v));
   }
 
+  private async askWatch(): Promise<void> {
+    const v = await askText({
+      title: '구경할 방 코드', hint: '영문·숫자 6자리', placeholder: 'K7Q2M4', kind: 'code', okLabel: '구경',
+      transform: (raw) => parseInvite(raw) ?? normalizeRoomCode(raw).slice(0, 6),
+      valid: isValidRoomCode,
+    });
+    if (!v || !this.alive) return;
+    await this.enterWatch(v);
+  }
+
+  private async enterWatch(code: string): Promise<void> {
+    await this.guard(async () => {
+      const info = await watchRoom(code);
+      if (!this.alive) return;
+      this.watching = info;
+      this.unsubRoom?.();
+      // 방 행이 바뀔 때마다 공개 정보를 다시 읽는다 (프로필·매치 상태 포함)
+      this.unsubRoom = subscribeRoom(info.room.id, () => void this.refreshWatch());
+      this.onWatch(info);
+    });
+  }
+
+  private async refreshWatch(): Promise<void> {
+    const cur = this.watching;
+    if (!cur || !this.alive) return;
+    const info = await watchInfo(cur.room.code).catch(() => null);
+    if (!this.alive || this.watching?.room.id !== cur.room.id) return;
+    if (!info || info.room.status === 'closed') {
+      this.leaveLocal();
+      this.showToast('방이 닫혔어요');
+      await this.refreshMenu();
+      return;
+    }
+    this.onWatch(info);
+  }
+
+  private onWatch(info: WatchInfo): void {
+    this.watching = info;
+    this.drawWatch();
+    if (info.room.status === 'live' && info.match && info.guest && !this.starting && this.me) {
+      this.starting = true;
+      const init: SpectateSceneInit = { info, me: this.me.id };
+      this.time.delayedCall(600, () => { if (this.alive) this.scene.start(SCENE.Spectate, init); });
+    }
+  }
+
   private async enterRoom(open: () => Promise<Room>): Promise<void> {
     await this.guard(async () => {
       const room = await open();
@@ -329,7 +426,8 @@ export class FriendScene extends Phaser.Scene {
       return;
     }
     this.room = r;
-    await Promise.all([this.loadName(r.host), r.guest ? this.loadName(r.guest) : null]);
+    const [, , seen] = await Promise.all([this.loadName(r.host), r.guest ? this.loadName(r.guest) : null, countSpectators(r.id).catch(() => 0)]);
+    this.spectators = seen;
     if (!this.alive || this.room?.id !== r.id) return;
     this.drawRoom();
     if (r.status === 'live' && r.match_id && !this.starting) void this.startMatch(r, r.match_id);
@@ -422,10 +520,19 @@ export class FriendScene extends Phaser.Scene {
     this.unsubRoom?.();
     this.unsubRoom = null;
     this.room = null;
+    this.watching = null;
   }
 
   private async exit(): Promise<void> {
     if (this.starting) return;
+    const seen = this.watching;
+    if (seen) {
+      this.leaveLocal();
+      await unwatchRoom(seen.room.code).catch(() => undefined);
+      if (!this.alive) return;
+      await this.refreshMenu().catch(() => this.drawMenu());
+      return;
+    }
     const room = this.room;
     if (room) {
       this.leaveLocal();

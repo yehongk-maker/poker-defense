@@ -3,7 +3,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { getClient } from './supabase.ts';
 import { normalizeRoomCode } from './roomCode.ts';
 import type { Friend, Invite, Leaderboard, LeaderboardKind, MatchInfo, MatchReport, PollResult, Profile, Room, RoomRules, RoundInput, SeasonInfo } from './types.ts';
-import type { MatchEvent, MatchTransport, Unsubscribe } from './MatchTransport.ts';
+import type { MatchEvent, MatchTransport, PeerRole, Unsubscribe } from './MatchTransport.ts';
+import type { WatchInfo } from './types.ts';
 
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await getClient().rpc(fn, args);
@@ -73,6 +74,16 @@ export function subscribeRoom(roomId: string, onChange: (room: Room) => void): U
     });
   return () => { alive = false; void getClient().removeChannel(ch); };
 }
+
+// ── 관전 ──
+export const watchRoom = (code: string) => rpc<WatchInfo>('watch_room', { p_code: normalizeRoomCode(code) });
+export const watchInfo = (code: string) => rpc<WatchInfo>('watch_info', { p_code: code });
+/** 방의 구경꾼 수 (방 사람·구경꾼만 셀 수 있다) */
+export async function countSpectators(roomId: string): Promise<number> {
+  const { count } = await getClient().from('room_spectators').select('player_id', { count: 'exact', head: true }).eq('room_id', roomId);
+  return count ?? 0;
+}
+export const unwatchRoom = (code: string) => rpc<void>('unwatch_room', { p_code: code });
 
 // ── 랭크 매칭 ──
 export const enqueue = () => rpc<PollResult>('enqueue');
@@ -162,23 +173,35 @@ export function subscribeInvites(myId: string, onInvite: (invite: Invite) => voi
 /** Realtime broadcast 채널 match:<id>. DB를 거치지 않는 저지연 릴레이 */
 export class SupabaseTransport implements MatchTransport {
   private ch: RealtimeChannel | null = null;
-  private handlers = new Set<(e: MatchEvent) => void>();
+  private handlers = new Set<(e: MatchEvent, from?: string) => void>();
   private presence = new Set<(on: boolean) => void>();
+  private joins = new Set<(who: { id: string; role: PeerRole }) => void>();
   private peerOn = false;
 
-  constructor(private matchId: string, private me: string) {}
+  /** @param role 구경꾼은 'spectator' — 상대 접속 판단에서 빠지고, 이벤트를 보내지 않는다 */
+  constructor(private matchId: string, private me: string, private role: PeerRole = 'player') {}
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const ch = getClient().channel(`match:${this.matchId}`, { config: { broadcast: { self: false }, presence: { key: this.me } } });
-      ch.on('broadcast', { event: 'e' }, (msg) => this.handlers.forEach((h) => h(msg.payload as MatchEvent)));
+      ch.on('broadcast', { event: 'e' }, (msg) => {
+        const { _from, ...event } = msg.payload as MatchEvent & { _from?: string };
+        this.handlers.forEach((h) => h(event as MatchEvent, _from));
+      });
+      const roleOf = (p: unknown): PeerRole => ((p as { role?: string } | undefined)?.role === 'spectator' ? 'spectator' : 'player');
+      ch.on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        if (key === this.me) return;
+        const who = { id: key, role: roleOf(newPresences[0]) };
+        this.joins.forEach((h) => h(who));
+      });
       ch.on('presence', { event: 'sync' }, () => {
-        const others = Object.keys(ch.presenceState()).filter((k) => k !== this.me);
+        const state = ch.presenceState();
+        const others = Object.keys(state).filter((k) => k !== this.me && state[k].some((p) => roleOf(p) === 'player'));
         this.peerOn = others.length > 0;
         this.presence.forEach((h) => h(this.peerOn));
       });
       ch.subscribe((status) => {
-        if (status === 'SUBSCRIBED') { void ch.track({ at: Date.now() }); resolve(); }
+        if (status === 'SUBSCRIBED') { void ch.track({ at: Date.now(), role: this.role }); resolve(); }
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') reject(new Error(`realtime_${status.toLowerCase()}`));
       });
       this.ch = ch;
@@ -187,12 +210,18 @@ export class SupabaseTransport implements MatchTransport {
 
   send(event: MatchEvent): void {
     if (!this.ch) throw new Error('transport_closed');
-    void this.ch.send({ type: 'broadcast', event: 'e', payload: event });
+    if (this.role === 'spectator') return; // 구경꾼은 듣기만 한다
+    void this.ch.send({ type: 'broadcast', event: 'e', payload: { ...event, _from: this.me } });
   }
 
-  on(handler: (e: MatchEvent) => void): Unsubscribe {
+  on(handler: (e: MatchEvent, from?: string) => void): Unsubscribe {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  onJoin(handler: (who: { id: string; role: PeerRole }) => void): Unsubscribe {
+    this.joins.add(handler);
+    return () => this.joins.delete(handler);
   }
 
   /** 등록 즉시 현재 상태를 한 번 알려 준다 (나중에 등록한 쪽이 접속 사실을 놓치지 않게) */
