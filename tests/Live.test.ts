@@ -10,6 +10,8 @@ import { seededRng, seedStreams } from '../src/systems/Seed.ts';
 import { smartExchange, smartManage } from '../src/systems/bots.ts';
 import { raceStatus, sideOf } from '../src/systems/Duel.ts';
 import { LiveOpponent, LivePublisher } from '../src/net/Live.ts';
+import { InputRecorder, type RoundInput } from '../src/systems/InputLog.ts';
+import { anteMax, raiseOf, verifyBets } from '../src/net/verifyBets.ts';
 import type { MatchEvent, MatchTransport, Unsubscribe } from '../src/net/MatchTransport.ts';
 
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), '../src/data');
@@ -53,10 +55,12 @@ class Device {
   betting: BettingSystem | null;
   pub: LivePublisher;
   opp: LiveOpponent;
+  rec: InputRecorder;
   private wait = 0;
   ended = false;
   constructor(readonly data: GameData, seed: string, player: string, readonly net: LagEnd, private brain: () => number, betting: boolean, private pace: number) {
     this.loop = new GameLoop(data, seedStreams(seed, { player }));
+    this.rec = new InputRecorder(this.loop, data.config.simStep);
     this.opp = new LiveOpponent({ name: 'x', rating: null, avatar: 'S' }, net, data);
     this.betting = betting ? new BettingSystem(duelCfg, { player: this.loop, opponent: this.opp.wallet }, { remote: 'opponent' }) : null;
     if (this.betting) this.opp.attachBetting(this.betting);
@@ -64,6 +68,7 @@ class Device {
   }
   private act(a: 'check' | 'raise' | 'call' | 'fold', wave: number): void {
     const rb = this.betting!.act('player', wave, a);
+    this.rec.bet(a, wave);
     this.pub.bet(wave, a, a === 'raise' ? rb.raise!.amount : undefined);
   }
   step(t: number, dt: number): void {
@@ -354,5 +359,57 @@ describe('판돈 시스템 연결 전에 온 이벤트', () => {
       expect(bet.round(w)!.action.opponent).toBe(A.betting!.round(w)!.action.player);
       expect(bet.round(w)!.report.opponent).toEqual(A.betting!.round(w)!.report.player);
     }
+  });
+});
+
+describe('판돈 교차 검증 (verify-match)', () => {
+  const logs = (seed: string, lag: number) => {
+    const { A, B } = match(seed, { lag });
+    return { a: JSON.parse(JSON.stringify(A.rec.rounds)) as RoundInput[], b: JSON.parse(JSON.stringify(B.rec.rounds)) as RoundInput[] };
+  };
+
+  it('정직한 로그는 지연·엇갈림이 있어도 통과한다 (양쪽 모두, 상대 로그가 있든 없든)', () => {
+    for (const lag of [0.15, 1.5]) for (const seed of ['vb-1', 'vb-2', 'vb-3', 'vb-4', 'vb-5']) {
+      const { a, b } = logs(seed, lag);
+      expect(verifyBets(duelCfg, true, a, b).issues, `${seed} A`).toEqual([]);
+      expect(verifyBets(duelCfg, true, b, a).issues, `${seed} B`).toEqual([]);
+      expect(verifyBets(duelCfg, true, a, null).issues).toEqual([]);
+      const c = verifyBets(duelCfg, true, a, b);
+      expect(c.paid).toBeGreaterThan(0);
+      expect(c.won).toBeLessThanOrEqual(c.allowed);
+    }
+  });
+
+  it('없는 판돈을 받았다고 적으면 잡힌다', () => {
+    const { a, b } = logs('vb-cheat', 0.3);
+    const fat = a.map((r, i) => (i === 2 ? { ...r, ops: [...r.ops!, ['g', 900] as ['g', number]] } : r));
+    expect(verifyBets(duelCfg, true, fat, b).issues).toContain('bet:overpaid_winnings');
+  });
+
+  it('진 라운드의 판돈은 상한에서 빠지고, 동률 판돈은 다음 라운드 상한에 더해진다', () => {
+    const round = (wave: number, clearSec: number, ops: RoundInput['ops'] = [['g', -(5 + wave)], ['c'], ['go']]): RoundInput => ({
+      wave, exchanges: [], ticketExchanges: 0, confirmedAt: 3, manage: { moves: [], sells: [], merges: [], upgrades: [] }, combatSec: clearSec, skills: [],
+      bet: [{ action: 'check', at: 1 }], result: { lifeLost: 0, clearSec, handRank: 1, cleared: true }, ops, steps: Math.round(clearSec * 10), partial: false,
+    });
+    const pot = (w: number) => 2 * anteMax(duelCfg, w) + 2 * raiseOf(duelCfg, w);
+    const mine = [round(1, 9), round(2, 5), round(3, 7)];
+    const faster = [round(1, 5), round(2, 5), round(3, 9)]; // 1: 내가 짐, 2: 동률(이월), 3: 내가 이김
+    expect(verifyBets(duelCfg, true, mine, null).allowed).toBe(pot(1) + pot(2) + pot(3));
+    expect(verifyBets(duelCfg, true, mine, faster).allowed).toBe(pot(2) + (pot(2) + pot(3)));
+    // 3라운드에서 이월분까지 받은 것은 정상, 1라운드 판돈까지 받았다고 하면 넘친다
+    const got = (n: number) => mine.map((r, k) => (k === 2 ? { ...r, ops: [...r.ops!, ['g', n] as ['g', number]] } : r));
+    expect(verifyBets(duelCfg, true, got(2 * 7 + 2 * 8), faster).issues).toEqual([]);
+    expect(verifyBets(duelCfg, true, got(pot(1) + pot(2) + pot(2) + pot(3) + 1), faster).issues).toContain('bet:overpaid_winnings');
+  });
+
+  it('앤티를 안 냈으면 잡힌다', () => {
+    const { a, b } = logs('vb-free', 0.3);
+    const free = a.map((r) => ({ ...r, ops: r.ops!.filter((o) => !(o[0] === 'g' && o[1] < 0) && o[0] !== 'l') }));
+    expect(verifyBets(duelCfg, true, free, b).issues).toContain('bet:underpaid');
+  });
+
+  it('판돈 없는 방에서 골드가 오갔으면 잡힌다', () => {
+    const { a } = logs('vb-off', 0.3);
+    expect(verifyBets(duelCfg, false, a, null).issues).toEqual(['bet:wallet_ops_without_betting']);
   });
 });

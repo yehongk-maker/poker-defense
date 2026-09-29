@@ -8,7 +8,7 @@
  *    도달 웨이브(승리=41) → 라이프 → 골드 순으로 비교. 전부 같으면 무승부.
  */
 import { GameLoop, type GameData } from './GameLoop.ts';
-import { smartCardPhase, smartExchange, smartManage, smartCombatTick } from './bots.ts';
+import { smartCardPhase, smartExchange, smartManage, smartCombatTick, presetExchange, presetManage, presetCombatTick, type BotSkill } from './bots.ts';
 import { aiOpening, aiResponse, type BettingSystem, type DuelConfig } from './Betting.ts';
 import { evaluateHand } from './PokerEvaluator.ts';
 import type { RoundInput, RoundOp } from './InputLog.ts';
@@ -37,6 +37,8 @@ export interface OpponentOptions {
   loop?: GameLoop;
   /** 고스트 대본의 라운드들. loop는 대본의 시드 스트림으로 만든 것이어야 한다 */
   script?: RoundInput[];
+  /** 강도 조절 (없으면 최선 전략). 생각 시간은 thinkSec/manageSec로 따로 준다 */
+  skill?: BotSkill;
 }
 
 /** 상대 AI: GameLoop 하나를 실시간으로 굴린다 */
@@ -59,12 +61,14 @@ export class OpponentAI {
   private skillSteps: number[] = [];
   /** 대본을 따라 친 라운드 수 (테스트·통계용) */
   scriptedRounds = 0;
+  private skill: BotSkill | null;
 
   constructor(data: GameData, private rng: () => number = Math.random, opts: OpponentOptions = {}) {
     this.loop = opts.loop ?? new GameLoop(data, rng);
     this.thinkSec = opts.thinkSec ?? [1.5, 4];
     this.manageSec = opts.manageSec ?? [0.8, 1.8];
     this.betting = opts.betting;
+    this.skill = opts.skill ?? null;
     this.script = new Map((opts.script ?? []).filter((r) => Array.isArray(r.ops) && r.ops.some((o) => o[0] === 'c')).map((r) => [r.wave, r]));
   }
 
@@ -121,6 +125,11 @@ export class OpponentAI {
     return this.loop.phase === 'victory' || this.loop.phase === 'defeat';
   }
 
+  // 봇 두뇌 (강도 프리셋이 있으면 그 강도로)
+  private brainExchange(): void { if (this.skill) presetExchange(this.loop, this.skill, this.rng); else smartExchange(this.loop); }
+  private brainManage(): void { if (this.skill) presetManage(this.loop, this.skill); else smartManage(this.loop); }
+  private brainCombat(dt: number): void { if (this.skill) presetCombatTick(this.loop, this.skill, dt); else smartCombatTick(this.loop, dt); }
+
   /** 판돈 시스템을 나중에 연결 (지갑이 만들어진 뒤) */
   setBetting(b: NonNullable<OpponentOptions['betting']>): void {
     this.betting = b;
@@ -149,8 +158,7 @@ export class OpponentAI {
         if (r.autoConfirmed || this.timer >= this.wait) {
           if (r.autoConfirmed) { this.betOpening('check'); g.confirmHand(); }
           else if (plan) this.scriptedCard(plan);
-          else if (this.betting) { smartExchange(g); this.betOpening(null); g.confirmHand(); }
-          else smartCardPhase(g);
+          else { this.brainExchange(); this.betOpening(null); g.confirmHand(); }
           this.lastHandRank = g.cardPhase.handResult?.rank ?? null;
         }
         break;
@@ -159,12 +167,12 @@ export class OpponentAI {
         this.timer += dt;
         if (this.timer >= this.wait) {
           if (plan) this.scriptedManage(plan);
-          else { smartManage(g); g.startCombat(); }
+          else { this.brainManage(); g.startCombat(); }
         }
         break;
       case 'combat':
         if (plan) this.scriptedCombatTick(dt);
-        else smartCombatTick(g, dt);
+        else this.brainCombat(dt);
         break;
     }
   }
@@ -176,12 +184,12 @@ export class OpponentAI {
     while (!this.finished && ++guard <= maxRounds) {
       if (g.phase === 'card') {
         const plan = this.planFor(g.wave);
-        if (plan) this.scriptedCard(plan); else smartCardPhase(g);
+        if (plan) this.scriptedCard(plan); else { this.brainExchange(); g.confirmHand(); }
         this.lastHandRank = g.cardPhase.handResult?.rank ?? null;
       }
       const plan = this.planWave === g.wave ? this.plan : null;
-      if (g.phase === 'manage') { if (plan) this.scriptedManage(plan); else { smartManage(g); g.startCombat(); } }
-      for (let t = 0; t < 600 && g.phase === 'combat'; t += 0.1) { if (plan) this.scriptedCombatTick(0.1); else smartCombatTick(g, 0.1); }
+      if (g.phase === 'manage') { if (plan) this.scriptedManage(plan); else { this.brainManage(); g.startCombat(); } }
+      for (let t = 0; t < 600 && g.phase === 'combat'; t += 0.1) { if (plan) this.scriptedCombatTick(0.1); else this.brainCombat(0.1); }
       if (g.phase === 'combat') break; // 교착 방지
     }
   }

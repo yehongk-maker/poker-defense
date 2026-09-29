@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
 import { buildGameData, rankedDuel, type ModeSources } from '../src/systems/GameMode.ts';
-import { BettingSystem, type DuelConfig } from '../src/systems/Betting.ts';
+import { BettingSystem, pickPreset, type DuelConfig } from '../src/systems/Betting.ts';
 import { seededRng, seedStreams } from '../src/systems/Seed.ts';
 import { InputRecorder, type RoundInput } from '../src/systems/InputLog.ts';
 import { AIOpponent } from '../src/systems/Opponent.ts';
@@ -142,5 +142,40 @@ describe('고스트 대본 재생', () => {
     run(ghost, () => 0.1);
     expect(ghost.finished).toBe(true);
     expect(ghost.scriptedRounds).toBe(0);
+  });
+});
+
+describe('봇 강도 프리셋', () => {
+  const presets = duelCfg.ai.presets!;
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+  const reach = (id: string, games = 40) => {
+    const preset = presets.find((p) => p.id === id)!;
+    const out: number[] = [];
+    for (let i = 0; i < games; i++) {
+      const bot = new AIOpponent(duelData(), ID, seededRng(1000 + i), { preset });
+      bot.fastForward();
+      out.push(bot.loop.phase === 'victory' ? 21 : bot.loop.wave);
+    }
+    return median(out);
+  };
+
+  it('레이팅 구간으로 고른다', () => {
+    expect(pickPreset(presets, 800)!.id).toBe('easy');
+    expect(pickPreset(presets, 1000)!.id).toBe('normal');
+    expect(pickPreset(presets, 1300)!.id).toBe('hard');
+    expect(pickPreset(presets, null)).toBeUndefined();
+    expect(pickPreset(undefined, 1000)).toBeUndefined();
+  });
+
+  it('강할수록 더 멀리 간다 (easy < normal < hard), 가장 약해도 초반에 무너지지 않는다', () => {
+    const e = reach('easy'), n = reach('normal'), h = reach('hard');
+    expect(e).toBeLessThan(n);
+    expect(n).toBeLessThan(h);
+    expect(e).toBeGreaterThanOrEqual(6);
+  }, 60_000);
+
+  it('약한 봇은 더 오래 고민한다', () => {
+    const e = presets.find((p) => p.id === 'easy')!, h = presets.find((p) => p.id === 'hard')!;
+    expect(e.thinkSec[0]).toBeGreaterThan(h.thinkSec[0]);
   });
 });

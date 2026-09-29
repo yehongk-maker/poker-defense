@@ -38,6 +38,46 @@ export function smartExchange(g: GameLoop): void {
   }
 }
 
+/** 강도 조절 (Betting.BotPreset 중 전략에 쓰는 부분) */
+export interface BotSkill { exchangeChance: number; upgradeSpend: number; hero: boolean; skill: boolean }
+
+/** 강도 조절 카드 전략: smart와 같은 판단을 하되, 바꿀 카드를 exchangeChance 확률로만 바꾼다 */
+export function presetExchange(g: GameLoop, k: BotSkill, rng: () => number): void {
+  const p = g.cardPhase;
+  if (p.state !== 'choosing' || p.exchangesRemaining <= 0) return;
+  const hand = p.hand;
+  const r = evaluateHand([...hand], () => 0);
+  let keep = new Set(r.coreCards);
+  if (r.rank === HandRank.HighCard) {
+    const bySuit = new Map<Suit, number>();
+    for (const c of hand) bySuit.set(c.suit, (bySuit.get(c.suit) ?? 0) + 1);
+    const [suit, n] = [...bySuit.entries()].sort((a, b) => b[1] - a[1])[0];
+    keep = n >= 3 ? new Set(hand.filter((c) => c.suit === suit)) : new Set([r.coreCards[0]]);
+  }
+  if (r.rank < HandRank.Straight) {
+    hand.forEach((c, i) => { if (!keep.has(c) && p.canExchange(i) && rng() < k.exchangeChance) p.exchangeCard(i); });
+  }
+}
+
+/** 강도 조절 정비: 골드의 upgradeSpend만큼만 업그레이드, hero가 꺼져 있으면 영웅을 소환하지 않는다 */
+export function presetManage(g: GameLoop, k: BotSkill): void {
+  if (g.units.length >= 23) for (const id of g.mergeable) { try { g.mergeUnits(id); } catch { /* 경합 무시 */ } }
+  if (k.hero) { const hero = readyHero(g); if (hero) g.summonHero(hero); }
+  const suit = dominantSuit(g);
+  let budget = g.gold * k.upgradeSpend;
+  let cost = g.upgradeCost(suit);
+  while (cost !== null && cost <= budget && g.gold >= cost) {
+    g.buyUpgrade(suit);
+    budget -= cost;
+    cost = g.upgradeCost(suit);
+  }
+}
+
+export function presetCombatTick(g: GameLoop, k: BotSkill, dt: number): void {
+  if (k.skill && g.heroSkillReady && g.battle && g.battle.aliveEnemies.length >= 3) g.useHeroSkill();
+  g.tickCombat(dt);
+}
+
 /** smart 카드 페이즈: 교환 후 확정 */
 export function smartCardPhase(g: GameLoop): void {
   smartExchange(g);

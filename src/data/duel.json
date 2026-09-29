@@ -32,6 +32,12 @@
     "respondSec": [
       0.8,
       2.0
+    ],
+    "presetsComment": "대체 상대(봇)의 강도. 서버가 정한 상대 레이팅이 maxRating 이하인 첫 프리셋을 쓴다. exchangeChance = 바꿀 카드를 실제로 바꿀 확률, upgradeSpend = 정비 때 골드 중 업그레이드에 쓰는 비율, hero/skill = 영웅 소환·액티브 사용 여부. 도달 라운드 중앙값은 tests/Ghost.test.ts가 순서(easy < normal < hard)를 고정.",
+    "presets": [
+      { "id": "easy", "maxRating": 940, "exchangeChance": 0.5, "upgradeSpend": 0.4, "hero": false, "skill": false, "thinkSec": [3, 8], "manageSec": [1.5, 3.5] },
+      { "id": "normal", "maxRating": 1080, "exchangeChance": 0.85, "upgradeSpend": 0.75, "hero": true, "skill": false, "thinkSec": [2, 6], "manageSec": [1, 2.5] },
+      { "id": "hard", "maxRating": 99999, "exchangeChance": 1, "upgradeSpend": 1, "hero": true, "skill": true, "thinkSec": [1.5, 4], "manageSec": [0.8, 1.8] }
     ]
   },
   "match": {

@@ -11,7 +11,7 @@ import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
 import { randomSeed, seedStreams, type RngStreams } from '../systems/Seed.ts';
 import { InputRecorder, replayMatch, type RoundInput } from '../systems/InputLog.ts';
 import { LiveOpponent, LivePublisher, type LiveContext } from '../net/Live.ts';
-import { addFriend, getMatch, leaveRoom, reportResult, submitLog, subscribeMatch, verifyMatch } from '../net/api.ts';
+import { addFriend, claimAbsent, forfeitMatch, getMatch, heartbeat, leaveRoom, reportResult, submitLog, subscribeMatch, verifyMatch } from '../net/api.ts';
 import { errorText } from '../net/session.ts';
 import type { MatchInfo, MatchReport } from '../net/types.ts';
 import type { FriendSceneInit } from './FriendScene.ts';
@@ -65,6 +65,9 @@ export interface GameSceneInit {
 const DISCONNECT_GRACE_SEC = 30;
 /** 서버 판정을 기다리는 최대 시간(ms). 넘으면 이 기기의 판정으로 표시한다 */
 const VERDICT_WAIT_MS = 6000;
+/** 랭크: 서버에 "나 여기 있음"을 알리는 간격(초)과, 상대 부재 확인을 다시 묻는 간격(초) */
+const HEARTBEAT_SEC = 10;
+const CLAIM_RETRY_SEC = 5;
 
 /**
  * 게임 씬 — GameLoop(순수 로직)에 UI를 얇게 연결한다. GameMode가 화면 조각을 켜고 끈다 (docs/mode-design.md §2.1).
@@ -104,6 +107,10 @@ export class GameScene extends Phaser.Scene {
   private matchClock = 0;
   private myClearedSec: number | null = null;
   private oppClearedSec: number | null = null;
+  private heartbeatIn = 0;
+  private claimIn = 0;
+  private claiming = false;
+  private offMatchRow: (() => void) | null = null;
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
@@ -148,6 +155,7 @@ export class GameScene extends Phaser.Scene {
     this.overlay = null;
     this.live = null; this.publisher = null; this.waitingForOpponent = false;
     this.matchClock = 0; this.myClearedSec = null; this.oppClearedSec = null;
+    this.heartbeatIn = 0; this.claimIn = 0; this.claiming = false; this.offMatchRow = null;
     this.opponent = null; this.betting = null; this.betBar = null; this.oppMini = null; this.oppPanel = null; this.oppBubble = null; this.campaignBar = null;
     addBackdrop(this, mode.world); // DESIGN §2: 솔로 = 블루 하늘, 듀얼 = 퍼플 월드
 
@@ -169,10 +177,17 @@ export class GameScene extends Phaser.Scene {
         this.live = this.initArgs.live;
         this.publisher = new LivePublisher(this.live.transport, this.loop, this.data_, this.betting);
         opp.events.onSkill = () => this.oppBubble?.show('영웅 스킬!', true);
+        // 랭크: 상대가 기권해 매치가 먼저 확정되면 바로 끝낸다
+        const live = this.live;
+        if (live.roomCode === null) this.offMatchRow = subscribeMatch(live.matchId, (status) => { if (status === 'done' && !this.ended) this.endByForfeit(); });
       }
     }
     this.lastFrameAt = performance.now();
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.closeLive());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      const on = this.initArgs.online;
+      if (on && !this.ended) void forfeitMatch(on.matchId).catch(() => undefined);
+      this.closeLive();
+    });
     this.oppDefeatAnnounced = false;
     this.oppRefreshAcc = 0;
 
@@ -332,9 +347,21 @@ export class GameScene extends Phaser.Scene {
     if (!this.live || !(opp instanceof LiveOpponent)) return;
     this.publisher?.tick(wallDt);
     if (this.ended) return;
+    const ranked = this.live.roomCode === null;
+    if (ranked) {
+      this.heartbeatIn -= wallDt;
+      if (this.heartbeatIn <= 0) { this.heartbeatIn = HEARTBEAT_SEC; void heartbeat(this.live.matchId).catch(() => undefined); }
+    }
     if (opp.left || opp.offlineFor >= DISCONNECT_GRACE_SEC) {
-      this.abortLive(opp.left ? '상대가 방을 나갔어요' : '상대의 연결이 끊겼어요');
-      return;
+      // 친구 대전: 결과 없이 중단. 랭크: 서버가 상대 부재를 확인하면 상대 기권패
+      if (!ranked) { this.abortLive(opp.left ? '상대가 방을 나갔어요' : '상대의 연결이 끊겼어요'); return; }
+      this.claimIn -= wallDt;
+      if (this.claimIn <= 0 && !this.claiming) {
+        this.claimIn = CLAIM_RETRY_SEC;
+        this.claiming = true;
+        const id = this.live.matchId;
+        void claimAbsent(id).then((gone) => { if (gone && !this.ended) this.endByForfeit(); }).catch(() => undefined).finally(() => { this.claiming = false; });
+      }
     }
     const over = this.loop.phase === 'victory' || this.loop.phase === 'defeat';
     if (!over) return;
@@ -534,7 +561,7 @@ export class GameScene extends Phaser.Scene {
     const v = betting.view('player', this.loop.wave);
     this.safe(() => {
       betting.act('player', v.wave, a);
-      this.recorder?.bet(a);
+      this.recorder?.bet(a, v.wave);
       this.publisher?.bet(v.wave, a, a === 'raise' ? v.raiseAmount : undefined);
       const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
       this.showToast(msg[a]);
@@ -736,7 +763,7 @@ export class GameScene extends Phaser.Scene {
     // 검증은 매치가 확정된 뒤에만 된다 (양쪽 보고 후)
     if (log) void submitLog(live.matchId, log.rounds, log.checksum).then(() => (info?.status === 'done' ? verifyMatch(live.matchId, live.me) : null)).catch(() => undefined);
     if (!this.scene.isActive()) return;
-    this.showDuelResult(this.verdictOf(info, local), info?.status === 'done', info?.mode === 'ranked' ? info.ratingDelta : null);
+    this.showDuelResult(this.verdictOf(info, local), info?.status === 'done', info?.mode === 'ranked' ? info.ratingDelta : null, info?.reason === 'forfeit');
   }
 
   private waitVerdict(live: LiveContext): Promise<MatchInfo | null> {
@@ -749,6 +776,14 @@ export class GameScene extends Phaser.Scene {
       // 구독이 붙기 전에 확정됐을 수 있다
       setTimeout(() => void read().then((m) => { if (m) finish(m); }), 1500);
     });
+  }
+
+  /** 랭크: 상대 기권으로 매치가 확정됨 → 내 성적을 남기고 결과(서버 판정)를 보여 준다 */
+  private endByForfeit(): void {
+    if (this.ended || !this.opponent) return;
+    const total = this.data_.config.totalWaves;
+    const local = resolveDuel(sideOf(this.loop), sideOf(this.opponent.view), total);
+    this.showEnd({ ...local, winner: 'player' });
   }
 
   /** 실시간 매치 중단 (상대 이탈): 결과 없이 끝낸다 — 전적 미기록 (docs/mode-design.md §1.3) */
@@ -772,7 +807,12 @@ export class GameScene extends Phaser.Scene {
   private closeLive(): void {
     const live = this.live;
     if (!live) return;
-    if (!this.ended) { try { this.publisher?.leave(); } catch { /* 이미 닫힘 */ } }
+    if (!this.ended) {
+      try { this.publisher?.leave(); } catch { /* 이미 닫힘 */ }
+      if (live.roomCode === null) void forfeitMatch(live.matchId).catch(() => undefined); // 랭크를 도중에 나감 = 기권패
+    }
+    this.offMatchRow?.();
+    this.offMatchRow = null;
     if (this.opponent instanceof LiveOpponent) this.opponent.close();
     this.publisher?.close();
     live.transport.close();
@@ -780,7 +820,7 @@ export class GameScene extends Phaser.Scene {
     this.publisher = null;
   }
 
-  private showDuelResult(duel: DuelResult, confirmed = true, ratingDelta: number | null = null): void {
+  private showDuelResult(duel: DuelResult, confirmed = true, ratingDelta: number | null = null, forfeit = false): void {
     if (!this.opponent) return;
     const total = this.data_.config.totalWaves;
     const cleared = this.loop.phase === 'victory';
@@ -798,7 +838,8 @@ export class GameScene extends Phaser.Scene {
     const name = this.opponent.identity.name;
     const rules = this.mode.custom ? ' (커스텀 룰)' : '';
     const pending = confirmed ? '' : ' (서버 확인 전)';
-    const caption = `${this.mode.label}${rules} · ${PATH[duel.reason]}${pending}\n나 R${cleared ? `${total} 클리어` : this.loop.wave} ♥${this.loop.life}  vs  ${name} R${o.phase === 'victory' ? `${total} 클리어` : o.wave} ♥${o.life}`;
+    const path = forfeit ? (duel.winner === 'player' ? '상대 기권' : '기권패') : PATH[duel.reason];
+    const caption = `${this.mode.label}${rules} · ${path}${pending}\n나 R${cleared ? `${total} 클리어` : this.loop.wave} ♥${this.loop.life}  vs  ${name} R${o.phase === 'victory' ? `${total} 클리어` : o.wave} ♥${o.life}`;
     const rows: ResultRow[] = [];
     if (this.betting) rows.push({ icon: 'coin', label: `판돈 획득 (나 / ${name})`, value: `${this.betting.won.player} / ${this.betting.won.opponent}` });
     rows.push({ icon: 'star', label: '최고 족보', value: this.bestRank >= 0 ? HAND_NAME[this.bestRank] : '-', highlight: true });

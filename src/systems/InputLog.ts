@@ -44,7 +44,8 @@ export interface RoundInput {
   combatSec: number;
   /** 영웅 스킬 사용 시각 (전투 시작 후 초) */
   skills: number[];
-  bet: { action: BetAction; at: number }[];
+  /** wave = 이 선택이 걸린 라운드 (밀린 레이즈에 대한 응답은 지금 라운드와 다를 수 있다) */
+  bet: { action: BetAction; at: number; wave?: number }[];
   result: { lifeLost: number; clearSec: number; handRank: number; cleared: boolean };
   /** 순서 있는 전체 입력 — 재생은 이것만 본다 (위 필드들은 요약) */
   ops?: RoundOp[];
@@ -118,10 +119,10 @@ export class InputRecorder implements LoopListener {
   }
 
   /** 판돈 액션 기록 (씬이 BettingSystem.act 직후 호출) */
-  bet(action: BetAction): void {
+  bet(action: BetAction, wave?: number): void {
     const r = this.round(this.loop.wave);
     const at = this.loop.phase === 'card' ? this.cardElapsed() : r.confirmedAt + this.loop.combatSteps * this.step;
-    r.bet.push({ action, at: Math.round(at * 100) / 100 });
+    r.bet.push(wave === undefined || wave === r.wave ? { action, at: Math.round(at * 100) / 100 } : { action, at: Math.round(at * 100) / 100, wave });
   }
 
   /** 지금까지의 로그 (복사본). 진행 중인 라운드는 partial로 남고 그때까지의 전투 step 수를 담는다 */

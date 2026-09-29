@@ -19,6 +19,25 @@ export type BetSide = 'player' | 'opponent';
 export type BetAction = 'check' | 'raise' | 'call' | 'fold';
 export type BetReason = 'fold' | 'life' | 'time' | 'hand' | 'out' | 'carry';
 
+/** 봇 강도 (duel.json ai.presets) */
+export interface BotPreset {
+  id: string;
+  maxRating: number;
+  exchangeChance: number;
+  upgradeSpend: number;
+  hero: boolean;
+  skill: boolean;
+  thinkSec: [number, number];
+  manageSec: [number, number];
+}
+
+/** 상대 레이팅에 맞는 프리셋 (없으면 undefined = 최선 전략) */
+export function pickPreset(presets: readonly BotPreset[] | undefined, rating: number | null): BotPreset | undefined {
+  if (!presets || presets.length === 0 || rating === null) return undefined;
+  const sorted = [...presets].sort((a, b) => a.maxRating - b.maxRating);
+  return sorted.find((p) => rating <= p.maxRating) ?? sorted[sorted.length - 1];
+}
+
 export interface DuelConfig {
   /** 매치 규칙 (20웨이브 곡선·등급 경계·보스 조각·교환권 상한) — docs/mode-design.md */
   match: { waves: number; wavesFile: string; hero: { grades: Record<'S' | 'A' | 'B', { minRemainingWaves: number; mult: number }>; bossShardAmount: number }; ticketsPerMatch: number; simStep: number };
@@ -35,6 +54,8 @@ export interface DuelConfig {
     callAnyRankChance: number;
     reserveAntes: number;
     respondSec: [number, number];
+    /** 대체 상대 강도 프리셋 (레이팅 구간별) */
+    presets?: BotPreset[];
   };
 }
 

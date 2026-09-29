@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
-import { loadModeSources } from '../data/index.ts';
+import { loadDuelConfig, loadModeSources } from '../data/index.ts';
+import { pickPreset } from '../systems/Betting.ts';
 import { buildGameData, rankedDuel } from '../systems/GameMode.ts';
 import { AIOpponent, localBotIdentity, type OpponentSource } from '../systems/Opponent.ts';
 import type { GameSceneInit } from './GameScene.ts';
@@ -32,6 +33,8 @@ export class MatchScene extends Phaser.Scene {
   private clock!: Phaser.GameObjects.Text;
   private tip!: Phaser.GameObjects.Text;
   private cancelBtn!: Button;
+  private ring: Phaser.GameObjects.Container | null = null;
+  private glyphs: Phaser.GameObjects.Text[] = [];
   private search: { cancel: () => Promise<void> } | null = null;
   private startedAt = 0;
   private found = false;
@@ -45,6 +48,7 @@ export class MatchScene extends Phaser.Scene {
     this.alive = true;
     this.found = false;
     this.search = null;
+    this.glyphs = [];
     addBackdrop(this, 'duel');
     const cx = GAME_WIDTH / 2;
     this.add.text(cx, 260, '랭크 대전', { fontSize: `${SIZE.h1}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE, strokeThickness: 8 }).setOrigin(0.5);
@@ -60,7 +64,9 @@ export class MatchScene extends Phaser.Scene {
       g.lineStyle(5, 0xffffff).strokeCircle(Math.cos(a) * 150, Math.sin(a) * 150, 58);
       const t = this.add.text(Math.cos(a) * 150, Math.sin(a) * 150, SUIT_SYMBOL[s], { fontSize: '64px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
       ring.add([g, t]);
+      this.glyphs.push(t);
     });
+    this.ring = ring;
     this.tweens.add({ targets: ring, angle: 360, duration: 6000, repeat: -1 });
 
     this.status = this.add.text(cx, 1080, '연결 중…', { fontSize: `${SIZE.h2}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5);
@@ -76,6 +82,8 @@ export class MatchScene extends Phaser.Scene {
   }
 
   update(): void {
+    // 고리는 돌아도 수트 글자는 똑바로
+    if (this.ring) for (const t of this.glyphs) t.setAngle(-this.ring.angle);
     if (this.found || !this.startedAt) return;
     const s = Math.floor((performance.now() - this.startedAt) / 1000);
     this.clock.setText(`${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`);
@@ -121,7 +129,7 @@ export class MatchScene extends Phaser.Scene {
     } else {
       const script = await getOpponentScript(info.id).catch(() => null);
       const usable = script && Array.isArray(script.rounds) && script.rounds.length > 0 ? script : undefined;
-      const opponent: OpponentSource = new AIOpponent(data, identity, Math.random, { script: usable });
+      const opponent: OpponentSource = new AIOpponent(data, identity, Math.random, { script: usable, preset: pickPreset(loadDuelConfig().ai.presets, identity.rating) });
       init = { mode, opponentSource: opponent, playerId: me.id, online: { matchId: info.id, me: me.id } };
     }
     if (!this.alive) { init.live?.transport.close(); return; }
@@ -152,7 +160,9 @@ export class MatchScene extends Phaser.Scene {
   private startLocal(): void {
     this.found = true;
     const id = localBotIdentity(1000);
-    const init: GameSceneInit = { mode: rankedDuel('ai'), opponent: id };
+    const mode = rankedDuel('ai');
+    const opponent = new AIOpponent(buildGameData(loadModeSources(), mode, null), id, Math.random, { preset: pickPreset(loadDuelConfig().ai.presets, id.rating) });
+    const init: GameSceneInit = { mode, opponentSource: opponent };
     this.reveal(id.name, id.rating, id.avatar, () => this.scene.start(SCENE.Game, init));
   }
 

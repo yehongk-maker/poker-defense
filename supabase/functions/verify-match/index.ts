@@ -35,7 +35,8 @@ Deno.serve(async (req) => {
     const results: Record<string, { ok: boolean; issues: string[]; replayed: boolean }> = {};
     for (const l of logs ?? []) {
       const report = l.player_id === m.p1 ? m.p1_report : m.p2_report;
-      const r = verifyMatch(l.rounds, { seed: m.seed, playerId: l.player_id, waveCount: m.wave_count, rules: m.rules, report, wallSec });
+      const other = (logs ?? []).find((x) => x.player_id !== l.player_id);
+      const r = verifyMatch(l.rounds, { seed: m.seed, playerId: l.player_id, waveCount: m.wave_count, rules: m.rules, report, wallSec, opponentRounds: other?.rounds });
       results[l.player_id] = r;
       await admin.from('match_logs')
         .update({ verified: r.ok, verify_note: r.ok ? null : r.issues.slice(0, 10).join(',') })

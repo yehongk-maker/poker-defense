@@ -7,7 +7,7 @@
 import type { GameData, GamePhase, RoundReport } from './GameLoop.ts';
 import { GameLoop } from './GameLoop.ts';
 import type { Suit } from './PokerEvaluator.ts';
-import type { BetWallet, BettingSystem, DuelConfig } from './Betting.ts';
+import type { BetWallet, BettingSystem, BotPreset, DuelConfig } from './Betting.ts';
 import { OpponentAI, type OpponentScript } from './Duel.ts';
 import { seedStreams } from './Seed.ts';
 
@@ -74,8 +74,10 @@ export class AIOpponent implements OpponentSource {
    * @param opts.script 고스트 대본. 있으면 그 판의 시드 스트림으로 판을 만들고 대본을 따라 친다 (끝나면 봇 두뇌가 이어 받음).
    *   화면에는 대본 유무가 드러나지 않는다 — 봇과 같은 OpponentSource다.
    */
-  constructor(data: GameData, readonly identity: OpponentIdentity, rng: () => number = Math.random, opts: { thinkSec?: [number, number]; manageSec?: [number, number]; script?: OpponentScript } = {}) {
-    const { script, ...rest } = opts;
+  constructor(data: GameData, readonly identity: OpponentIdentity, rng: () => number = Math.random, opts: { thinkSec?: [number, number]; manageSec?: [number, number]; script?: OpponentScript; preset?: BotPreset } = {}) {
+    const { script, preset, ...given } = opts;
+    // 강도 프리셋: 전략 강도 + 생각 시간. 대본이 있으면 대본이 끝난 뒤(이어받기)에만 쓰인다
+    const rest = preset ? { thinkSec: preset.thinkSec, manageSec: preset.manageSec, skill: preset, ...given } : given;
     this.loop = script ? new GameLoop(data, seedStreams(script.seed, { player: script.player })) : new GameLoop(data, rng);
     this.ai = new OpponentAI(data, rng, { ...rest, loop: this.loop, script: script?.rounds });
   }

@@ -104,6 +104,12 @@ export function findMatch(onTick?: (waitedSec: number) => void, intervalMs = 250
 // ── 결과 ──
 export const reportResult = (matchId: string, report: MatchReport, opponent?: MatchReport) =>
   rpc<MatchInfo>('report_result', { p_match: matchId, p_report: report, p_opponent: opponent ?? null });
+/** 랭크 매치 중 10초마다: 서버가 나를 마지막으로 본 시각 */
+export const heartbeat = (matchId: string) => rpc<void>('heartbeat', { p_match: matchId });
+/** 랭크 매치를 나감 = 기권패 (친구 대전은 아무 일도 없다) */
+export const forfeitMatch = (matchId: string) => rpc<MatchInfo>('forfeit_match', { p_match: matchId });
+/** 상대가 안 보인다 → 서버가 확인해 맞으면 상대 기권패로 확정하고 true */
+export const claimAbsent = (matchId: string) => rpc<boolean>('claim_absent', { p_match: matchId });
 export const claimTimeout = (matchId: string) => rpc<MatchInfo>('claim_timeout', { p_match: matchId });
 export const submitLog = (matchId: string, rounds: RoundInput[], checksum?: string) =>
   rpc<void>('submit_log', { p_match: matchId, p_rounds: rounds, p_checksum: checksum ?? null });

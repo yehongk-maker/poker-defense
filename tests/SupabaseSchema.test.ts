@@ -268,29 +268,64 @@ describe('랭크 매칭', () => {
   });
 });
 
-describe('끊긴 랭크 매치', () => {
-  it('대체 상대 매치를 끝내지 않고 다시 매칭하면 그 판은 무효가 되고 새로 대기한다', async () => {
+describe('랭크 이탈 = 기권패', () => {
+  it('대체 상대 매치를 끝내지 않고 다시 매칭하면 그 판은 기권패(레이팅 하락)가 되고 새로 대기한다', async () => {
     const [{ id }] = await admin<{ id: string }>(`select id from public.matches where p1 = '${users.dan}' and status = 'live' order by started_at desc limit 1`);
-    const [before] = await admin<{ rating: number }>(`select rating from public.profiles where id = '${users.dan}'`);
+    const [before] = await admin<{ rating: number; losses: number }>(`select rating, losses from public.profiles where id = '${users.dan}'`);
     const r = await rpc<{ status: string }>('dan', 'enqueue', []);
     expect(r.status).toBe('waiting');
-    const [m] = await admin<{ status: string; reason: string }>(`select status, reason from public.matches where id = '${id}'`);
-    expect(m).toMatchObject({ status: 'void', reason: 'abandoned' });
-    const [after] = await admin<{ rating: number }>(`select rating from public.profiles where id = '${users.dan}'`);
-    expect(after.rating).toBe(before.rating);
+    const [m] = await admin<{ status: string; reason: string; winner: string }>(`select status, reason, winner from public.matches where id = '${id}'`);
+    expect(m).toMatchObject({ status: 'done', reason: 'forfeit', winner: 'p2' });
+    const [after] = await admin<{ rating: number; losses: number }>(`select rating, losses from public.profiles where id = '${users.dan}'`);
+    expect(after.rating).toBeLessThan(before.rating);
+    expect(after.losses).toBe(before.losses + 1);
     await rpc('dan', 'cancel_queue', []);
   });
 
-  it('사람 상대 매치는 최대 시간이 지나기 전에는 그대로 돌려준다', async () => {
+  const pair = async () => {
     await admin(`update public.profiles set rating = 1000 where id in ('${users.ann}', '${users.bob}')`);
     await rpc('ann', 'enqueue', []);
     const r = await rpc<{ status: string; match: { id: string } }>('bob', 'enqueue', []);
     expect(r.status).toBe('matched');
-    const again = await rpc<{ status: string; match: { id: string } }>('bob', 'enqueue', []);
-    expect(again.match.id).toBe(r.match.id);
-    await admin(`update public.matches set started_at = now() - interval '2 hours' where id = '${r.match.id}'`);
+    return r.match.id;
+  };
+
+  it('기권하면 바로 확정되고 상대가 이긴다. 기권한 사람의 다음 매칭을 막지 않는다', async () => {
+    const id = await pair();
+    const r = await rpc<{ status: string; winner: string; role: string; reason: string }>('bob', 'forfeit_match', [id]);
+    expect(r.status).toBe('done');
+    expect(r.reason).toBe('forfeit');
+    expect(r.winner).not.toBe(r.role);
+    // 남은 사람이 뒤늦게 보고해도 결과는 그대로
+    const late = await rpc<{ status: string; winner: string; role: string }>('ann', 'report_result', [id, JSON.stringify({ reached: 9, life: 4, gold: 10 }), null]);
+    expect(late.winner).toBe(late.role);
     expect((await rpc<{ status: string }>('bob', 'enqueue', [])).status).toBe('waiting');
     await rpc('bob', 'cancel_queue', []);
+  });
+
+  it('상대가 안 보인다는 주장은 서버가 본 시각으로 확인한다', async () => {
+    const id = await pair();
+    await rpc('ann', 'heartbeat', [id]);
+    await rpc('bob', 'heartbeat', [id]);
+    expect(await rpc<boolean>('ann', 'claim_absent', [id])).toBe(false); // 방금 봤다
+    const [live] = await admin<{ status: string }>(`select status from public.matches where id = '${id}'`);
+    expect(live.status).toBe('live');
+    const [{ p1 }] = await admin<{ p1: string }>(`select p1 from public.matches where id = '${id}'`);
+    const bobSide = p1 === users.bob ? 'p1' : 'p2';
+    await admin(`update public.matches set ${bobSide}_seen = now() - interval '40 seconds' where id = '${id}'`);
+    expect(await rpc<boolean>('ann', 'claim_absent', [id])).toBe(true);
+    const [m] = await admin<{ status: string; reason: string; winner: string }>(`select status, reason, winner from public.matches where id = '${id}'`);
+    expect(m).toMatchObject({ status: 'done', reason: 'forfeit', winner: bobSide === 'p1' ? 'p2' : 'p1' });
+  });
+
+  it('친구 대전에는 기권패가 없다', async () => {
+    const [f] = await admin<{ id: string; p1: string }>(`select id, p1 from public.matches where mode = 'friend' limit 1`);
+    if (!f) return;
+    const who = Object.entries(users).find(([, v]) => v === f.p1)![0];
+    const before = await admin<{ status: string }>(`select status from public.matches where id = '${f.id}'`);
+    await rpc(who, 'forfeit_match', [f.id]);
+    expect(await admin(`select status from public.matches where id = '${f.id}'`)).toEqual(before);
+    expect(await rpc<boolean>(who, 'claim_absent', [f.id])).toBe(false);
   });
 });
 

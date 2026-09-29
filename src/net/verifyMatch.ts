@@ -7,6 +7,8 @@ import type { MatchReport, RoomRules, RoundInput } from './types.ts';
 import { replayMatch } from '../systems/InputLog.ts';
 import { seedStreams } from '../systems/Seed.ts';
 import { buildGameData, friendDuel, type ModeSources } from '../systems/GameMode.ts';
+import type { DuelConfig } from '../systems/Betting.ts';
+import { verifyBets } from './verifyBets.ts';
 
 export interface MatchVerifyInput {
   seed: string;
@@ -17,6 +19,10 @@ export interface MatchVerifyInput {
   report: MatchReport;
   /** 매치 벽시계 길이(초) */
   wallSec: number;
+  /** 판돈 규칙 (duel.json). 있으면 판돈 증감을 검사한다 */
+  duel?: DuelConfig;
+  /** 상대의 로그 (사람 상대 매치). 있으면 라운드 성적을 비교해 판돈 상한을 좁힌다 */
+  opponentRounds?: unknown;
 }
 
 export interface MatchVerifyResult extends VerifyResult {
@@ -27,9 +33,13 @@ export interface MatchVerifyResult extends VerifyResult {
 export function verifyMatchLog(sources: ModeSources, rounds: unknown, m: MatchVerifyInput): MatchVerifyResult {
   const base = verifyLog(rounds, { waveCount: m.waveCount, rules: m.rules, report: m.report, wallSec: m.wallSec });
   if (!Array.isArray(rounds) || rounds.length === 0) return { ...base, replayed: false };
-  if (m.rules.applyMeta) return { ...base, replayed: false };
-
   const issues = [...base.issues];
+  if (m.duel) {
+    const theirs = Array.isArray(m.opponentRounds) && m.opponentRounds.length > 0 ? (m.opponentRounds as RoundInput[]) : null;
+    try { issues.push(...verifyBets(m.duel, m.rules.betting, rounds as RoundInput[], theirs).issues); } catch { issues.push('bet:crashed'); }
+  }
+  if (m.rules.applyMeta) return { ok: issues.length === 0, issues, replayed: false };
+
   const mode = friendDuel({ ...m.rules, waves: m.waveCount as 20 | 40 }, m.seed);
   const data = buildGameData(sources, mode, null);
   const streams = seedStreams(m.seed, { player: m.playerId, sharedHand: m.rules.sharedHand });
