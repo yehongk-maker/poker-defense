@@ -1,6 +1,6 @@
 # 서버 (Supabase) — 구성과 배포
 
-작성일: 2026-09-29 | 근거: docs/mode-design.md §2 | 상태: 스키마·RPC·클라이언트 계층 완료, 원격 프로젝트 미생성
+작성일: 2026-09-29 | 근거: docs/mode-design.md §2 | 상태: **원격 프로젝트 생성·배포·실서버 스모크 테스트 완료** (프로젝트 `poker-defense`, ref `tshhszmudzsjwsqyyayo`, 서울 리전, 조직 yehongk@naver.com's Org)
 
 ## 1. 무엇이 어디에 있나
 
@@ -50,7 +50,12 @@ seasons / bot_names
 
 ## 5. 프로젝트 만들고 올리기
 
-Supabase CLI는 로그인돼 있다. **포커디펜스용 프로젝트는 아직 없다** — 기존 프로젝트("샐러리 MVP" 등)에 연결하지 말 것.
+**2026-09-29 완료.** 아래는 다시 만들거나 다른 환경(스테이징)을 세울 때의 절차다. 기존 프로젝트("샐러리 MVP" 등)에 연결하지 말 것 — `cat supabase/.temp/project-ref`로 연결 대상을 먼저 확인한다.
+
+- 대시보드: https://supabase.com/dashboard/project/tshhszmudzsjwsqyyayo
+- `.env.local`(커밋 안 됨)에 `SUPABASE_DB_PASSWORD`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`가 들어 있다. DB 비밀번호는 이 파일에만 있으니 비밀번호 관리자에 옮겨 둘 것.
+- 실서버 점검: `npm run smoke:online` (익명 계정 2개로 방·실시간·판정·랭크·검증 함수 19항목). 끝에 테스트 계정을 지우려면 `SMOKE_SERVICE_KEY`를 환경 변수로 넘긴다.
+- **주의 — `supabase config push`는 비대화형에서 확인 없이 바로 적용된다.** config.toml의 `[auth]`는 원격의 현재 값에 맞춰 두었고(익명 로그인만 켬), 인증 설정을 바꿀 때는 config.toml을 고친 뒤 push 한다.
 
 ```bash
 # 1) 프로젝트 생성 (대시보드에서 만들어도 된다). 리전은 서울 권장
@@ -82,11 +87,11 @@ npm run fn:deploy
 |---|---|
 | 스키마·RPC·RLS | pglite에 마이그레이션 3개를 그대로 적용해 테스트 20개 통과 |
 | 순수 계층(레이팅·코드·규칙·로그 검사·loopback 통로) | 테스트 18개 통과 |
-| `SupabaseTransport`·`api.ts` | 타입 체크만. 실제 프로젝트 연결 후 두 기기로 확인 필요 |
-| Edge Function `verify-match` | 작성·번들만. Docker/Deno가 없어 로컬 실행 못 함 → 배포 후 확인 필요 |
-| Realtime publication·익명 로그인 | 원격 프로젝트에서 확인 필요 |
+| 원격 배포 | 마이그레이션 3개 적용, `verify-match` 배포(`--use-api`, Docker 불필요), 익명 로그인 켬 |
+| 실서버 스모크 (`npm run smoke:online`) | 19항목 통과: 익명 로그인, RLS, 방 생성·참가·준비, 행 변경 실시간 수신, broadcast·presence, 판정, 친구·전적, 랭크 매칭·레이팅, 내부 표 차단, 로그 제출, 검증 함수 |
+| `src/net/api.ts`의 래퍼·`SupabaseTransport` 클래스 자체 | 같은 RPC·채널을 스모크가 직접 호출해 확인. 래퍼는 브라우저(Vite env)에서 화면을 붙일 때 확인 |
 
-pglite는 Supabase의 auth 스키마·역할을 흉내 낸 것이라, 원격 첫 `db push` 때 권한 관련 차이가 나올 수 있다(특히 함수 실행 권한 revoke/grant).
+알아둘 점: postgres_changes 구독은 `SUBSCRIBED` 뒤 1~2초 지나야 이벤트가 오기 시작한다. `subscribeRoom`은 구독 완료 시와 2초 뒤에 현재 행을 다시 읽어 놓친 변경을 메운다.
 
 ## 7. 다음 단계 (docs/mode-design.md §5)
 

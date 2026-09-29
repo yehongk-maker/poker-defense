@@ -16,7 +16,8 @@
     "draw": "tsx scripts/draw-assist-report.ts",
     "build:fn": "esbuild src/net/verify.ts --bundle --format=esm --platform=neutral --outfile=supabase/functions/_shared/verify.js",
     "db:push": "supabase db push",
-    "fn:deploy": "npm run build:fn && supabase functions deploy verify-match"
+    "fn:deploy": "npm run build:fn && supabase functions deploy verify-match",
+    "smoke:online": "tsx scripts/smoke-online.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

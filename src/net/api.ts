@@ -23,13 +23,25 @@ export const setReady = (code: string, ready = true) => rpc<Room>('set_ready', {
 export const leaveRoom = (code: string) => rpc<void>('leave_room', { p_code: code });
 export const kickGuest = (code: string) => rpc<Room>('kick_guest', { p_code: code });
 
-/** 방 변경 구독 (입장·준비·규칙·매치 시작). RLS 덕에 내 방만 온다 */
+/**
+ * 방 변경 구독 (입장·준비·규칙·매치 시작). RLS 덕에 내 방만 온다.
+ * 구독이 붙기 전(SUBSCRIBED 뒤 1~2초)에 일어난 변경은 놓칠 수 있으므로, 구독 완료 시와 그 2초 뒤에 현재 행을 한 번씩 읽어 맞춘다.
+ */
 export function subscribeRoom(roomId: string, onChange: (room: Room) => void): Unsubscribe {
+  let alive = true;
+  const refetch = async () => {
+    const { data } = await getClient().from('rooms').select('*').eq('id', roomId).maybeSingle();
+    if (alive && data) onChange(data as Room);
+  };
   const ch = getClient()
     .channel(`room-row:${roomId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (p) => onChange(p.new as Room))
-    .subscribe();
-  return () => { void getClient().removeChannel(ch); };
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      void refetch();
+      setTimeout(() => void refetch(), 2000);
+    });
+  return () => { alive = false; void getClient().removeChannel(ch); };
 }
 
 // ── 랭크 매칭 ──
