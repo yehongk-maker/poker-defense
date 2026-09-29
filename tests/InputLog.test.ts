@@ -149,7 +149,7 @@ describe('입력 로그 기록 → 재생', () => {
     expect(rounds).toBeGreaterThan(500);
     expect(skills).toBeGreaterThan(0);
     expect(tickets).toBeGreaterThan(100);
-  });
+  }, 90_000); // 200판 분량(원본 + 재생) — 다른 테스트와 같이 돌면 느려진다
 
   it('로그는 JSON으로 보냈다 받아도 그대로 재생된다', () => {
     const { loop, rec, data } = play('json', 'me', 5);
