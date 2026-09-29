@@ -64,6 +64,8 @@ export class CardPhase {
   private remainingTime = 0;
   private phaseState: CardPhaseState = 'idle';
   private result: HandResult | null = null;
+  /** 교환이 성공할 때마다 불린다 (입력 로그용) */
+  onExchange: ((index: number, kind: 'normal' | 'ticket' | 'bonus') => void) | null = null;
 
   constructor(config: CardPhaseConfig = {}, rng: () => number = Math.random) {
     this.handSize = config.handSize ?? 5;
@@ -158,6 +160,7 @@ export class CardPhase {
     this.handCards[index] = next;
     this.bonus--;
     this.bonusUsedCount++;
+    this.onExchange?.(index, 'bonus');
     return next;
   }
 
@@ -209,6 +212,7 @@ export class CardPhase {
     const next = this.draw(index);
     this.handCards[index] = next;
     this.exchangedCount[index]++;
+    this.onExchange?.(index, 'normal');
     return next;
   }
 
@@ -222,6 +226,7 @@ export class CardPhase {
     const next = this.draw(index);
     this.handCards[index] = next;
     this.ticketCount[index]++;
+    this.onExchange?.(index, 'ticket');
     return next;
   }
 

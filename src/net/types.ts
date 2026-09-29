@@ -89,20 +89,5 @@ export interface Invite {
   created_at: string;
 }
 
-/** 한 라운드의 입력 로그 — 결정론 재생·검증의 재료 (docs/mode-design.md §2.2) */
-export interface RoundInput {
-  wave: number;
-  /** 교환한 카드 인덱스 순서 (교환권 교환 포함) */
-  exchanges: number[];
-  /** 그중 교환권으로 한 교환 수 */
-  ticketExchanges: number;
-  /** 카드 확정 시각 (라운드 시작 후 초) */
-  confirmedAt: number;
-  manage: { moves: [number, number][]; sells: number[]; merges: string[]; upgrades: SuitCode[]; hero?: string };
-  /** 전투 길이(초, 시뮬 시간) */
-  combatSec: number;
-  /** 영웅 스킬 사용 시각 (전투 시작 후 초) */
-  skills: number[];
-  bet: { action: 'check' | 'raise' | 'call' | 'fold'; at: number }[];
-  result: { lifeLost: number; clearSec: number; handRank: number; cleared: boolean };
-}
+/** 한 라운드의 입력 로그 — 결정론 재생·검증의 재료. 정의는 src/systems/InputLog.ts */
+export type { RoundInput, RoundOp } from '../systems/InputLog.ts';

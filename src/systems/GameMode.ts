@@ -88,6 +88,8 @@ export interface DuelMatchConfig {
   waves: number;
   hero: { grades: Record<HeroGrade, { minRemainingWaves: number; mult: number }>; bossShardAmount: number };
   ticketsPerMatch: number;
+  /** 전투 시뮬 고정 간격(초) — 대전 모드는 항상 고정 step */
+  simStep: number;
 }
 
 /** 메타 업그레이드가 한 판에 주는 효과 (MetaProgress.effects) */
@@ -128,6 +130,7 @@ export function buildGameData(src: ModeSources, mode: GameMode, meta: MetaEffect
       totalWaves: ws.waves.length,
       startGold: b.config.startGold + (useMeta ? meta.startGoldBonus : 0),
       ticketsPerRun: mode.tickets < 0 ? undefined : mode.tickets,
+      simStep: isDuel(mode) ? src.duelMatch.simStep : undefined,
       hero,
     },
     cardPhase: useMeta ? { exchangeLimit: meta.exchangeLimit, timerSeconds: meta.timerSeconds } : {},

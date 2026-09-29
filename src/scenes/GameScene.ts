@@ -8,6 +8,8 @@ import { AIOpponent, localBotIdentity, type OpponentIdentity, type OpponentSourc
 import { CampaignBar } from '../ui/CampaignBar.ts';
 import { getMeta } from '../meta.ts';
 import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
+import { randomSeed, seedStreams, type RngStreams } from '../systems/Seed.ts';
+import { InputRecorder, replayMatch, type RoundInput } from '../systems/InputLog.ts';
 import type { ShardKey } from '../systems/SummonMapper.ts';
 import { evaluateHand, type Suit } from '../systems/PokerEvaluator.ts';
 import { HandFx, FX_CENTER, RANK_TIER } from '../ui/HandFx.ts';
@@ -46,6 +48,8 @@ export interface GameSceneInit {
   opponentSource?: OpponentSource;
   /** 캠페인 이어하기 */
   resume?: boolean;
+  /** 내 계정 id — 손패 시드 스트림을 가르는 키 (온라인). 없으면 'local' */
+  playerId?: string;
 }
 
 /**
@@ -75,6 +79,9 @@ export class GameScene extends Phaser.Scene {
   private nav!: SwipeNav;
   private fx!: HandFx;
   private opponent: OpponentSource | null = null;
+  /** 대전: 입력 로그 기록기와 그 판의 시드 (결과 보고 때 서버로 보낸다) */
+  private recorder: InputRecorder | null = null;
+  private matchSeed = '';
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
@@ -313,7 +320,7 @@ export class GameScene extends Phaser.Scene {
       }
       const b = this.loop.battle;
       if (b) {
-        this.track.updateEnemies(b.aliveEnemies, cfg.trackLength);
+        this.track.updateEnemies(b.aliveEnemies, cfg.trackLength, this.loop.combatAlpha);
         this.track.updateTemporaryUnits(b.temporaryUnits);
         this.refreshSkillButton();
         const t = Math.ceil(b.timeRemaining);
@@ -377,7 +384,32 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (this.mode.resumable) clearRun();
-    return new GameLoop(this.data_);
+    this.recorder = null;
+    if (!isDuel(this.mode)) return new GameLoop(this.data_);
+    // 대전: 매치 시드로 난수를 고정하고 입력을 기록한다 (결정론 재생 — docs/mode-design.md §2.2)
+    this.matchSeed = this.mode.seed ?? randomSeed();
+    const loop = new GameLoop(this.data_, this.streams());
+    this.recorder = new InputRecorder(loop, this.data_.config.simStep);
+    return loop;
+  }
+
+  private streams(): RngStreams {
+    return seedStreams(this.matchSeed, { player: this.initArgs.playerId ?? 'local', sharedHand: this.mode.sharedHand });
+  }
+
+  /** 이 판의 입력 로그 (대전만). 결과 보고와 함께 서버에 제출한다 */
+  get matchLog(): { seed: string; rounds: RoundInput[]; checksum: string } | null {
+    return this.recorder ? { seed: this.matchSeed, rounds: this.recorder.rounds, checksum: this.recorder.checksum() } : null;
+  }
+
+  /** 개발 빌드: 판이 끝나면 방금 로그를 재생해 결정론이 깨지지 않았는지 콘솔에 알린다 */
+  private checkReplay(): void {
+    const log = this.matchLog;
+    if (!import.meta.env.DEV || !log) return;
+    const re = replayMatch(this.data_, this.streams(), log.rounds);
+    const same = re.final.life === this.loop.life && re.final.gold === this.loop.gold && re.final.reached === (this.loop.phase === 'victory' ? this.data_.config.totalWaves + 1 : this.loop.wave);
+    if (re.ok && same) console.info(`[replay] ok — ${log.rounds.length}라운드, checksum ${log.checksum}`);
+    else console.warn('[replay] 불일치', re.issues, re.final, { life: this.loop.life, gold: this.loop.gold, wave: this.loop.wave });
   }
 
   /** 캠페인 광고 보상: 이번 라운드 교환 +N (라운드당 1회) */
@@ -411,7 +443,7 @@ export class GameScene extends Phaser.Scene {
   private confirmHand(): void {
     if (this.loop.phase !== 'card') return;
     // 판돈: 아무것도 안 골랐으면 체크
-    if (this.betting?.options('player', this.loop.wave).includes('check')) this.betting.act('player', this.loop.wave, 'check');
+    if (this.betting?.options('player', this.loop.wave).includes('check')) { this.betting.act('player', this.loop.wave, 'check'); this.recorder?.bet('check'); }
     const res = this.loop.confirmHand();
     const hr = this.loop.cardPhase.handResult!;
     this.bestRank = Math.max(this.bestRank, hr.rank);
@@ -435,6 +467,7 @@ export class GameScene extends Phaser.Scene {
     const v = betting.view('player', this.loop.wave);
     this.safe(() => {
       betting.act('player', v.wave, a);
+      this.recorder?.bet(a);
       const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
       this.showToast(msg[a]);
     });
@@ -583,6 +616,7 @@ export class GameScene extends Phaser.Scene {
   private showEnd(duel: DuelResult): void {
     if (this.ended || !this.opponent) return;
     this.ended = true;
+    this.checkReplay();
     const total = this.data_.config.totalWaves;
     const cleared = this.loop.phase === 'victory';
     this.nav.close();

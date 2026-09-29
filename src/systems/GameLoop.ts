@@ -10,6 +10,8 @@
  * 영웅 액티브 스킬은 씬/전투 연출 단계에서 구현 (heroes.json에 데이터만 정의됨).
  */
 
+import type { RngStreams } from './Seed.ts';
+import type { RoundOp, LoopListener } from './InputLog.ts';
 import { type Suit, type HandResult, type Card } from './PokerEvaluator.ts';
 import { CardPhase, type CardPhaseConfig } from './CardPhase.ts';
 import {
@@ -77,6 +79,8 @@ export interface GameConfig {
   drawAssist?: { outWeight: number };
   /** 한 판(매치)에서 쓸 수 있는 카드 교환권 상한. 없으면 무제한 (캠페인). 대전은 duel.json match.ticketsPerMatch */
   ticketsPerRun?: number;
+  /** 전투 시뮬 고정 step(초). 있으면 tickCombat이 dt를 모아 이 간격으로만 진행한다 (온라인 결정론). 없으면 가변 dt */
+  simStep?: number;
   hero: {
     /** 영웅 1명 소환에 필요한 조각 수 (해당 종류 + wild 합) */
     shardsRequired: number;
@@ -162,7 +166,15 @@ export class GameLoop {
 
   private mapper: SummonMapper;
   private synergy: SynergySystem;
-  private rng: () => number;
+  /** 손패·소환용 난수 (라운드마다 교체될 수 있다) */
+  private handRng: () => number;
+  /** 전투·보스 조각용 난수 */
+  private combatRng: () => number;
+  private streams: RngStreams | null;
+  /** 입력 기록기 (InputLog). 없으면 기록하지 않는다 */
+  listener: LoopListener | null = null;
+  private stepAcc = 0;
+  private _combatSteps = 0;
 
   private _phase: GamePhase = 'card';
   private _wave = 1;
@@ -184,18 +196,43 @@ export class GameLoop {
   private roundLifeLost = 0;
   private _lastRound: RoundReport | null = null;
 
-  constructor(private data: GameData, rng: () => number = Math.random) {
-    this.rng = rng;
+  /**
+   * @param rng 난수 하나(테스트·캠페인) 또는 라운드별 시드 스트림(온라인 대전, Seed.seedStreams)
+   */
+  constructor(private data: GameData, rng: (() => number) | RngStreams = Math.random) {
+    this.streams = typeof rng === 'function' ? null : rng;
+    const base = typeof rng === 'function' ? rng : Math.random;
+    this.handRng = this.streams ? this.streams.hand(1) : base;
+    this.combatRng = base;
     const g = data.battleConfig;
     if (g.gridSize * g.gridSize !== data.config.maxSlots) {
       throw new Error(`maxSlots(${data.config.maxSlots}) must equal gridSize²(${g.gridSize * g.gridSize})`);
     }
     this._gold = data.config.startGold;
     this._life = data.config.startLife;
-    this.mapper = new SummonMapper(data.units, data.hands, rng);
+    const hand = () => this.handRng();
+    this.mapper = new SummonMapper(data.units, data.hands, hand);
     this.synergy = new SynergySystem(data.synergies);
-    this.cardPhase = new CardPhase({ drawAssist: data.config.drawAssist, ...(data.cardPhase ?? {}) }, rng);
+    this.cardPhase = new CardPhase({ drawAssist: data.config.drawAssist, ...(data.cardPhase ?? {}) }, hand);
+    this.cardPhase.onExchange = (index, kind) => this.emit([kind === 'ticket' ? 'xt' : kind === 'bonus' ? 'xb' : 'x', index]);
+    this.beginRound();
+  }
+
+  /** 라운드 시작: 시드 스트림이 있으면 이 라운드의 손패 난수로 바꾸고 새 패를 받는다 */
+  private beginRound(): void {
+    if (this.streams) this.handRng = this.streams.hand(this._wave);
     this.cardPhase.start();
+  }
+
+  private emit(op: RoundOp): void {
+    this.listener?.op(op, this._wave);
+  }
+  /** 전투 중이면 현재 step 번호를 붙인다 (재생 시 같은 step에 실행) */
+  private emitTimed(kind: 'sk' | 'g' | 'l', value?: number): void {
+    if (!this.listener) return;
+    const step = this._phase === 'combat' ? this._combatSteps : undefined;
+    if (kind === 'sk') this.emit(['sk', this._combatSteps]);
+    else this.emit(step === undefined ? [kind, value!] : [kind, value!, step]);
   }
 
   // ── 상태 조회 ──────────────────────────────────────────────
@@ -228,15 +265,18 @@ export class GameLoop {
   addGold(n: number): void {
     if (n < 0) throw new Error('addGold: negative');
     this._gold += n;
+    if (n > 0) this.emitTimed('g', n);
   }
   spendGold(n: number): void {
     if (n < 0) throw new Error('spendGold: negative');
     if (this._gold < n) throw new Error(`Not enough gold: need ${n}, have ${Math.floor(this._gold)}`);
     this._gold -= n;
+    if (n > 0) this.emitTimed('g', -n);
   }
   /** 하트 차감 (앤티 대납 등). 0이 되면 즉시 탈락. 이미 끝난 판에는 무효 */
   loseLife(n: number): void {
     if (n <= 0 || this._phase === 'victory' || this._phase === 'defeat') return;
+    this.emitTimed('l', n);
     this._life = Math.max(0, this._life - n);
     if (this._life === 0) {
       this._phase = 'defeat';
@@ -365,6 +405,7 @@ export class GameLoop {
     }
     this._phase = 'manage';
     this.recalcSynergy();
+    this.emit(['c']);
     return res;
   }
 
@@ -386,6 +427,7 @@ export class GameLoop {
     a.slot = toSlot;
     a.placed = true;
     this.recalcSynergy();
+    this.emit(['mv', fromSlot, toSlot]);
   }
 
   /** 아직 배치를 확정하지 않은(1회 이동 가능한) 유닛 — 영웅 포함 */
@@ -414,6 +456,7 @@ export class GameLoop {
     this._units.splice(index, 1);
     this._gold += gold;
     this.recalcSynergy();
+    this.emit(['sell', index]);
     return gold;
   }
 
@@ -432,6 +475,7 @@ export class GameLoop {
     const merged: DeployedUnit = { def: mergedDef, slot: this.autoSlot(mergedDef.range)!, placed: false }; // 합성 결과도 1회 배치 가능
     this._units.push(merged);
     this.recalcSynergy();
+    this.emit(['mg', unitId]);
     return merged;
   }
 
@@ -459,6 +503,7 @@ export class GameLoop {
     this._gold -= cost;
     this.upgradeLevels[suit]++;
     this.recalcSynergy();
+    this.emit(['up', suit]);
   }
 
   /** 영웅 소환. 등급은 남은 웨이브 수로 결정 (일찍 소환할수록 강함 — GDD 3.3) */
@@ -487,6 +532,7 @@ export class GameLoop {
     const heroUnitDef = this.heroUnitDef(def, grade);
     this._hero = { def, grade, unit: { def: heroUnitDef, slot, placed: false } };
     this.recalcSynergy();
+    this.emit(['hero', heroId]);
     return { def, grade };
   }
 
@@ -512,7 +558,8 @@ export class GameLoop {
     this._life = Math.min(this.data.config.startLife, Math.max(1, restoreLife));
     this.battle_ = null;
     this._phase = 'card';
-    this.cardPhase.start();
+    this.emit(['rv', this._life]);
+    this.beginRound();
   }
 
   // ── 저장/이어하기 (캠페인) ─────────────────────────────────
@@ -585,9 +632,10 @@ export class GameLoop {
     const combatUnits = this._hero ? [...this._units, this._hero.unit] : [...this._units];
     this.lifeNegationsLeft = this._units.filter((u) => u.def.effect?.type === 'negate_life_loss').length;
 
+    if (this.streams) this.combatRng = this.streams.combat(this._wave);
     this.battle_ = new Battle(waveDef, this.data.enemyTypes, combatUnits, this.data.battleConfig, {
       getGold: () => this._gold,
-      rng: this.rng,
+      rng: this.combatRng,
       globalMods: { ...mods, airKillGoldMult },
       battleMods: {
         airSpeedPct,
@@ -598,13 +646,54 @@ export class GameLoop {
       },
     });
     this.roundLifeLost = 0;
+    this.stepAcc = 0;
+    this._combatSteps = 0;
+    this.emit(['go']);
     this._phase = 'combat';
   }
 
-  /** 전투 프레임 진행. 씬 update()에서 호출 */
+  /** 이번 전투에서 진행한 시뮬 step 수 (입력 로그의 시각 단위) */
+  get combatSteps(): number { return this._combatSteps; }
+  /** 고정 step 사이의 진행 비율 0~1 (렌더 보간용). 가변 dt면 항상 1 */
+  get combatAlpha(): number {
+    const step = this.data.config.simStep;
+    return step ? Math.min(1, this.stepAcc / step) : 1;
+  }
+
+  /**
+   * 전투 프레임 진행. 씬 update()에서 호출.
+   * config.simStep이 있으면 dt를 모아 고정 step으로만 진행한다(한 번에 0~여러 step) — 프레임률과 무관하게 같은 결과.
+   */
   tickCombat(dt: number): CombatTickEvents {
     this.assertPhase('combat');
+    const step = this.data.config.simStep;
+    if (!step) return this.advance(dt);
+    this.stepAcc += dt;
+    const out: CombatTickEvents = { hits: [], kills: 0, goldEarned: 0, lifeLost: 0, timeUp: false, leaked: 0, cleared: false };
+    while (this.stepAcc >= step - 1e-9 && this._phase === 'combat') {
+      this.stepAcc = Math.max(0, this.stepAcc - step);
+      const ev = this.advance(step);
+      out.hits.push(...ev.hits);
+      out.kills += ev.kills;
+      out.goldEarned += ev.goldEarned;
+      out.lifeLost += ev.lifeLost;
+      out.leaked += ev.leaked;
+      out.timeUp = out.timeUp || ev.timeUp;
+      out.cleared = out.cleared || ev.cleared;
+      if (ev.bossShard) out.bossShard = ev.bossShard;
+    }
+    return out;
+  }
+
+  /** 고정 step 한 번 (입력 로그 재생용). simStep이 없으면 fallback 간격을 쓴다 */
+  stepCombat(fallback = 0.1): CombatTickEvents {
+    this.assertPhase('combat');
+    return this.advance(this.data.config.simStep ?? fallback);
+  }
+
+  private advance(dt: number): CombatTickEvents {
     const ev: CombatTickEvents = this.battle_!.tick(dt);
+    this._combatSteps++;
     this._gold += ev.goldEarned;
     if (this.heroSkillCd > 0) this.heroSkillCd = Math.max(0, this.heroSkillCd - dt);
     if (ev.leaked > 0) this._gold += ev.leaked * this.lastSynergy!.global.leakGold; // 고블린 5: 이탈 적당 골드 회수
@@ -615,7 +704,7 @@ export class GameLoop {
     if (loss > 0 && this._hero?.def.passive.type === 'life_save_chance_pct') {
       const pct = this._hero.def.passive.pct as number;
       let saved = 0;
-      for (let i = 0; i < loss; i++) if (this.rng() * 100 < pct) saved++;
+      for (let i = 0; i < loss; i++) if (this.combatRng() * 100 < pct) saved++;
       loss -= saved;
     }
     this._life -= loss;
@@ -625,11 +714,13 @@ export class GameLoop {
       this._life = 0;
       this._phase = 'defeat';
       this._lastRound = { wave: this._wave, handRank: this.roundHandRank, lifeLost: this.roundLifeLost, clearSec: this.battle_!.time, cleared: false };
+      this.listener?.roundEnd(this._lastRound, this._combatSteps);
       return ev;
     }
 
     if (ev.cleared) {
       this._lastRound = { wave: this._wave, handRank: this.roundHandRank, lifeLost: this.roundLifeLost, clearSec: this.battle_!.time, cleared: true };
+      this.listener?.roundEnd(this._lastRound, this._combatSteps);
       const g = this.lastSynergy!.global;
       this._gold += this.battle_!.clearGold(g.waveGoldPct);
       this._life = Math.min(this.data.config.startLife, this._life + g.lifePerWave);
@@ -640,13 +731,13 @@ export class GameLoop {
         // 보스 처치 보상: 랜덤 종류 영웅 조각 (마지막 웨이브는 게임이 끝나므로 제외) — GDD 3.3
         const boss = this.data.config.hero.bossShards;
         if (boss && this.data.waves[this._wave - 1]?.boss && boss.types.length > 0) {
-          const type = boss.types[Math.min(Math.floor(this.rng() * boss.types.length), boss.types.length - 1)];
+          const type = boss.types[Math.min(Math.floor(this.combatRng() * boss.types.length), boss.types.length - 1)];
           this._shards[type] += boss.amount;
           ev.bossShard = { type, amount: boss.amount };
         }
         this._wave++;
         this._phase = 'card';
-        this.cardPhase.start();
+        this.beginRound();
       }
     }
     return ev;
@@ -749,6 +840,7 @@ export class GameLoop {
         throw new Error(`Unknown hero skill: ${def.active.id}`);
     }
     this.heroSkillCd = def.active.cooldownSec;
+    this.emitTimed('sk');
     return { id: def.active.id, name: def.active.name, text, ...out };
   }
 

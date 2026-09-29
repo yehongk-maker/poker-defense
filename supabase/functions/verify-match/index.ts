@@ -1,8 +1,8 @@
 // verify-match — 매치 입력 로그 검증 (docs/mode-design.md §2.2). Deno Edge Function.
 // 호출: 매치 참가자가 결과 보고·로그 제출 뒤에 invoke('verify-match', { body: { matchId } }).
-// _shared/verify.js 는 src/net/verify.ts 를 번들한 것 (npm run build:fn) — 서버와 클라이언트가 같은 검사 코드를 쓴다.
+// _shared/verify.js 는 src/net/verifyServer.ts 를 번들한 것 (npm run build:fn): 개연성 검사 + 시드·로그 결정론 재생. 게임 로직·데이터가 클라이언트와 같은 소스다.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { verifyLog } from '../_shared/verify.js';
+import { verifyMatch } from '../_shared/verify.js';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -32,10 +32,10 @@ Deno.serve(async (req) => {
 
     const { data: logs } = await admin.from('match_logs').select('*').eq('match_id', matchId);
     const wallSec = (new Date(m.ended_at).getTime() - new Date(m.started_at).getTime()) / 1000;
-    const results: Record<string, { ok: boolean; issues: string[] }> = {};
+    const results: Record<string, { ok: boolean; issues: string[]; replayed: boolean }> = {};
     for (const l of logs ?? []) {
       const report = l.player_id === m.p1 ? m.p1_report : m.p2_report;
-      const r = verifyLog(l.rounds, { waveCount: m.wave_count, rules: m.rules, report, wallSec });
+      const r = verifyMatch(l.rounds, { seed: m.seed, playerId: l.player_id, waveCount: m.wave_count, rules: m.rules, report, wallSec });
       results[l.player_id] = r;
       await admin.from('match_logs')
         .update({ verified: r.ok, verify_note: r.ok ? null : r.issues.slice(0, 10).join(',') })

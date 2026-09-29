@@ -96,6 +96,6 @@ npm run fn:deploy
 ## 7. 다음 단계 (docs/mode-design.md §5)
 
 1. **A. 모드 분리**: `GameMode`, `OpponentSource`, 솔로 레이아웃.
-2. **B. 결정론 로그**: `InputLog`(RoundInput 기록) + `replayMatch` → `verify.ts`에 재생 검사 추가.
+2. **B. 결정론 로그** ✅: `Seed`·`InputLog`(기록 + `replayMatch`) + `verifyMatch`(개연성 + 재생). verify-match 함수는 `npm run fn:deploy`로 다시 올려야 재생 검사가 서버에 반영된다.
 3. **C. 친구 대전 화면**: `FriendScene`(방 만들기/코드 참가/방 화면) + `LiveOpponent`(MatchEvent → OpponentView).
 4. 매칭 대기 화면(09) + `findMatch()` 연결, 대체 상대(봇 두뇌·고스트 재생) 연결.

@@ -22,7 +22,8 @@ src/
                  bots(봇 전략 공용), Duel(OpponentAI 실시간/fastForward + resolveDuel 승패),
                  Betting(1:1 판돈 걸기: 앤티/체크·레이즈/콜·폴드/판정/이월 + AI 성향, GameLoop이 BetWallet),
                  GameMode(모드 프리셋 CAMPAIGN/rankedDuel/friendDuel + buildGameData), Opponent(OpponentSource·OpponentView·AIOpponent),
-                 Ads(AdService·StubAdService), Rating(ELO-lite)
+                 Ads(AdService·StubAdService), Rating(ELO-lite),
+                 Seed(시드 난수·라운드별 스트림 seedStreams), InputLog(InputRecorder 입력 기록 + replayMatch 결정론 재생)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
   ui/            HUD, CardHand, TrackView, ManagePanel, UpgradePanel(스와이프 화면), SwipeController, HandFx(족보 연출),
@@ -34,7 +35,8 @@ src/
                  OpponentMiniMap(필드 우상단 상대 필드·적 축소 표시, 0.5초 갱신, 탭 → 상대 패널),
                  draw(도형 아이콘: 동전·하트·젬·영웅 토큰·교환권·별), theme(DESIGN 토큰 + 구 COLORS 호환) (Phaser)
   net/           온라인 계층 (Phaser import 금지): supabase(클라이언트·익명 로그인), api(RPC 래퍼·구독·SupabaseTransport),
-                 MatchTransport(MatchEvent·LoopbackTransport), roomCode, rules, verify(입력 로그 개연성 검사), types, env
+                 MatchTransport(MatchEvent·LoopbackTransport), roomCode, rules, verify(입력 로그 개연성 검사),
+                 verifyMatch(개연성 + 재생, 순수) · verifyServer(Edge Function 번들 입구, JSON 데이터 포함), types, env
   data/          units, hands, waves, duel-waves, synergies, heroes, config, duel(판돈 룰·AI 성향·매치 규칙) .json
 supabase/        migrations(스키마·RPC·기본 데이터), functions/verify-match(Edge Function), config.toml — docs/server-setup.md
 tests/           vitest. systems/와 1:1 대응
@@ -54,6 +56,12 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 캠페인(CAMPAIGN): 40웨이브, 상대·판돈 없음, 메타 적용, 광고 3자리(교환 +1·부활·보상 2배), 카드 페이즈 시작마다 자동 저장. 대전(rankedDuel/friendDuel): 20웨이브 곡선, 판돈, 메타 미적용·영웅 전부·배속 고정·교환권 3회(친구 대전은 방장 규칙).
 - 상대는 `OpponentSource`로만 다룬다. UI·판돈·레이스 판정은 `view`/`wallet`/`participant`만 보고, 봇인지 사람인지는 화면에 드러내지 않는다(identity의 닉·레이팅·아바타만).
 - 광고 보상은 캠페인에서만, 버튼에 `▶ AD` 표기 필수. 대전 화면에는 광고·부활 UI를 넣지 않는다.
+
+## 결정론 규칙 (docs/mode-design.md §2.2)
+- 대전 모드의 GameLoop은 `seedStreams(매치 시드, { player, sharedHand })`로 만든다. 손패 난수는 라운드마다 (시드, 플레이어 키, 라운드)로, 전투 난수는 (시드, 라운드)로 새로 잡는다. `src/systems`에 `Math.random` 직접 호출 금지(기본 인자 제외).
+- 대전 전투는 고정 step(`duel.json match.simStep` = 0.1초 → `config.simStep`). `tickCombat(dt)`가 dt를 모아 step 단위로만 진행하고, 렌더는 `combatAlpha`로 보간(TrackView.updateEnemies). 시뮬레이터·서버·클라이언트가 같은 값이어야 한다.
+- 플레이어 상태를 바꾸는 GameLoop 공개 메서드를 새로 만들면 `emit(op)`로 입력을 알리고 `InputLog`의 `RoundOp`·`apply`·기록기 요약에 추가한다. 전투 중 입력은 step 번호(`combatSteps`)로 기록. 판돈으로 오간 골드·하트는 g/l 외부 입력으로 남는다.
+- `tests/InputLog.test.ts`의 "100판 재생 100% 일치"가 결정론 회귀 테스트다. 로직을 고쳐 이 테스트가 깨지면 난수 호출 순서나 가변 dt가 새로 생긴 것이다.
 
 ## 서버 규칙 (Supabase, docs/server-setup.md)
 - 클라이언트는 테이블에 직접 쓰지 않는다. 쓰기는 전부 SECURITY DEFINER RPC, RLS는 "내 행 조회"만.
@@ -119,6 +127,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료: 시너지 도감 (정보 패널 시너지 탭에 임베드, HUD 📖 버튼/시너지 줄 탭으로 열림). 새 effect 타입을 추가하면 synergyText.describeEffect에 문장을 함께 추가할 것 (SynergyText.test가 미번역을 잡음).
 - 완료(2026-09-29): A단계 모드 분리 — GameMode·OpponentSource·캠페인 레이아웃(CampaignBar)·광고 스텁 3자리·부활(GameLoop.revive)·이어하기(snapshot/restore)·로비 선택 시트. 랭크 대전은 매칭 화면 전까지 로컬 봇 상대로 바로 시작, 친구 대전은 C단계.
 - 완료(2026-09-29): Supabase 서버 1차 — 스키마 12테이블·RLS·RPC(프로필/방/랭크 매칭+숨김 대체/판정·레이팅/친구·초대)·verify-match Edge Function·src/net 클라이언트 계층. 원격 프로젝트 생성·배포·실서버 스모크 19항목 통과.
+- 완료(2026-09-29): B단계 결정론 입력 로그 — Seed·InputLog·고정 step·렌더 보간·GameScene 기록기(`matchLog`)·dev 빌드 종료 시 자동 재생 점검(`[replay] ok`)·verify-match에 재생 검사 추가(번들만, 함수 재배포는 아직).
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

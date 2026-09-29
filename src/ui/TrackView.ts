@@ -27,6 +27,8 @@ export class TrackView {
   private slotGfx: Phaser.GameObjects.Graphics;
   private unitSprites: Phaser.GameObjects.Container[] = [];
   private enemySprites = new Map<number, Phaser.GameObjects.Container>();
+  /** 고정 step 시뮬의 렌더 보간용: 적마다 직전 step 위치와 이번 step 위치 */
+  private enemyTrail = new Map<number, { from: number; to: number }>();
   private fx: HitFx[] = [];
   private fxGfx: Phaser.GameObjects.Graphics;
   private rangeGfx: Phaser.GameObjects.Graphics;
@@ -186,7 +188,10 @@ export class TrackView {
   }
 
   /** 적 스프라이트 동기화 (DESIGN §4 Foe: 지상=바닥 밀착+섀도, 공중=y-20 부양+분리된 그림자) */
-  updateEnemies(enemies: readonly Enemy[], trackLength: number): void {
+  /**
+   * @param alpha 고정 step 사이 진행 비율(0~1, GameLoop.combatAlpha). 직전 위치 → 현재 위치를 이만큼 보간해 그린다. 1이면 현재 위치 그대로
+   */
+  updateEnemies(enemies: readonly Enemy[], trackLength: number, alpha = 1): void {
     const alive = new Set<number>();
     for (const e of enemies) {
       alive.add(e.id);
@@ -217,7 +222,13 @@ export class TrackView {
         s = this.scene.add.container(0, 0, [g, barBg, bar]).setDepth(2);
         this.enemySprites.set(e.id, s);
       }
-      const { x, y } = this.trackPoint(e.pos / trackLength);
+      let tr = this.enemyTrail.get(e.id);
+      if (!tr) { tr = { from: e.pos, to: e.pos }; this.enemyTrail.set(e.id, tr); }
+      else if (tr.to !== e.pos) { tr.from = tr.to; tr.to = e.pos; }
+      let d = tr.to - tr.from;
+      if (d < -trackLength / 2) d += trackLength; // 한 바퀴 넘어감
+      const shown = alpha >= 1 ? e.pos : (tr.from + d * alpha + trackLength) % trackLength;
+      const { x, y } = this.trackPoint(shown / trackLength);
       s.setPosition(x, y);
       const bar = s.list[s.list.length - 1] as Phaser.GameObjects.Rectangle;
       const f = Math.max(0, e.hp / e.maxHp);
@@ -226,7 +237,7 @@ export class TrackView {
       bar.setFillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b));
     }
     for (const [id, s] of this.enemySprites) {
-      if (!alive.has(id)) { s.destroy(); this.enemySprites.delete(id); }
+      if (!alive.has(id)) { s.destroy(); this.enemySprites.delete(id); this.enemyTrail.delete(id); }
     }
   }
 
@@ -259,6 +270,7 @@ export class TrackView {
   clearEnemies(): void {
     for (const s of this.enemySprites.values()) s.destroy();
     this.enemySprites.clear();
+    this.enemyTrail.clear();
     for (const s of this.tempSprites) s.destroy();
     this.tempSprites = [];
     this.fx = [];

@@ -35,7 +35,7 @@
     ]
   },
   "match": {
-    "comment": "온라인/친구 대전 매치 규칙 (docs/mode-design.md §1.2). wavesFile은 npm run waves -- --total 20 ... 으로 생성. hero.grades는 20웨이브 기준 등급 경계, bossShardAmount는 보스(5/10/15) 클리어 조각 수 — 둘 다 npm run shards -- --mode duel 로 검증. ticketsPerMatch = 매치당 카드 교환권 사용 상한(허용하되 제한).",
+    "comment": "온라인/친구 대전 매치 규칙 (docs/mode-design.md §1.2). wavesFile은 npm run waves -- --total 20 ... 으로 생성. hero.grades는 20웨이브 기준 등급 경계, bossShardAmount는 보스(5/10/15) 클리어 조각 수 — 둘 다 npm run shards -- --mode duel 로 검증. ticketsPerMatch = 매치당 카드 교환권 사용 상한(허용하되 제한). simStep = 전투 시뮬 고정 간격(초) — 입력 로그 재생이 같은 결과를 내려면 양쪽·서버가 같은 값이어야 한다(시뮬레이터도 0.1).",
     "waves": 20,
     "wavesFile": "duel-waves.json",
     "hero": {
@@ -55,6 +55,7 @@
       },
       "bossShardAmount": 2
     },
-    "ticketsPerMatch": 3
+    "ticketsPerMatch": 3,
+    "simStep": 0.1
   }
 }
