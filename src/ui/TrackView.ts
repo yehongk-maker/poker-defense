@@ -4,6 +4,8 @@ import type { GameLoop } from '../systems/GameLoop.ts';
 import { auraSlots } from '../systems/SynergySystem.ts';
 import { ALPHA, COLOR, ENEMY_COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, TARGET_LABEL, hex } from './theme.ts';
 import { dashedRect, glossTop, starPath } from './draw.ts';
+import { GOLD_ICON } from './TokenBar.ts';
+import { reducedMotion } from '../settings.ts';
 
 /**
  * 필드 (DESIGN §2·§4): 초록 잔디 라운드 패널 + 모래색 순환 트랙(이중 스트로크) + 유닛 칩(5×5 슬롯) + 적 + 타격/데미지 숫자.
@@ -20,7 +22,17 @@ const GRID_Y = OUTER.y + (OUTER.h - GRID_N * CELL) / 2;
 const SLOT = SIZE.slotSize;
 const MAX_DMG_TEXT = 10;
 
-interface HitFx { x1: number; y1: number; x2: number; y2: number; color: number; ttl: number }
+/**
+ * 타격 연출 한 개. 그래픽 하나에 매 프레임 다시 그린다 (스프라이트 생성 없음).
+ *  bolt=원거리 탄 · orb=마법구 · slash=근접 베기 · ring=범위 고리 · zap=연쇄 번개·스킬 · spark=파편 · coin=골드 알약으로 날아가는 동전
+ */
+type FxKind = 'bolt' | 'orb' | 'slash' | 'ring' | 'zap' | 'spark' | 'coin';
+interface HitFx { kind: FxKind; x1: number; y1: number; x2: number; y2: number; color: number; t: number; dur: number; delay: number; r: number; seed: number }
+/** 동시에 그리는 연출 상한 (넘으면 처치 연출이 아닌 것부터 생략) */
+const MAX_FX = 90;
+/** 동시에 날아가는 동전 상한 (DESIGN §6) */
+const MAX_COINS = 8;
+const AOE = new Set(['splash', 'small_aoe', 'breath_aoe', 'aoe_stun']);
 
 export class TrackView {
   private zones: Phaser.GameObjects.Zone[] = [];
@@ -277,18 +289,53 @@ export class TrackView {
     this.fxGfx.clear();
   }
 
-  /** 타격 이벤트 → 유닛 칸에서 적으로 선 연출 + 데미지 숫자 */
+  private push(f: Omit<HitFx, 't' | 'seed' | 'r' | 'delay'> & Partial<Pick<HitFx, 'r' | 'delay'>>, important = false): void {
+    if (!important && this.fx.length >= MAX_FX) return;
+    this.fx.push({ t: 0, delay: 0, r: 0, seed: Math.random() * 1000, ...f });
+  }
+
+  /** 타격 이벤트 → 공격 방식별 연출(탄·베기·마법구·고리·번개) + 처치 파편·동전 + 데미지 숫자 */
   addHits(hits: readonly HitEvent[], enemies: readonly Enemy[], trackLength: number): void {
     if (hits.length === 0) return;
+    const calm = reducedMotion();
     const byId = new Map(enemies.map((e) => [e.id, e]));
     for (const h of hits) {
       const e = byId.get(h.enemyId);
       const from = this.cellCenter(h.unit.slot);
-      const to = e ? this.trackPoint(e.pos / trackLength) : this.enemySprites.get(h.enemyId) ?? null;
-      if (!to) continue;
+      const spr = this.enemySprites.get(h.enemyId);
+      const at = e ? this.trackPoint(e.pos / trackLength) : spr ? { x: spr.x, y: spr.y } : null;
+      if (!at) continue;
       const lift = e?.movement === 'air' ? 20 : 0;
-      this.fx.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y - lift, color: h.skill ? COLOR.textGold : SUIT_COLOR[h.unit.def.suit], ttl: h.skill ? 0.3 : h.killed ? 0.25 : 0.12 });
-      this.damageNumber(to.x, to.y - lift - 30, h.dmg, !!h.skill || h.killed);
+      const x2 = at.x, y2 = at.y - lift;
+      const color = h.skill ? COLOR.textGold : SUIT_COLOR[h.unit.def.suit];
+      const eff = h.unit.def.effect?.type as string | undefined;
+      let travel = 0;
+      if (h.skill) this.push({ kind: 'zap', x1: from.x, y1: from.y, x2, y2, color, dur: 0.28, r: 7 });
+      else if (eff === 'chain_lightning') this.push({ kind: 'zap', x1: from.x, y1: from.y, x2, y2, color: COLOR.textGold, dur: 0.16, r: 4 });
+      else if (h.unit.def.attackType === 'melee') this.push({ kind: 'slash', x1: x2, y1: y2, x2, y2, color, dur: 0.16, r: 30 });
+      else if (h.unit.def.attackType === 'magic') { travel = 0.16; this.push({ kind: 'orb', x1: from.x, y1: from.y, x2, y2, color, dur: travel }); }
+      else { travel = 0.11; this.push({ kind: 'bolt', x1: from.x, y1: from.y, x2, y2, color, dur: travel }); }
+      if (eff && AOE.has(eff)) this.push({ kind: 'ring', x1: x2, y1: y2, x2, y2, color, dur: 0.3, r: 70, delay: travel });
+      else if (travel > 0 && !h.skill) this.push({ kind: 'ring', x1: x2, y1: y2, x2, y2, color: 0xffffff, dur: 0.12, r: 18, delay: travel });
+      if (h.killed) this.burst(x2, y2, e?.isBoss ? COLOR.textGold : ENEMY_COLOR[e?.type ?? ''] ?? color, !!e?.isBoss, calm, travel);
+      this.damageNumber(x2, y2 - 30, h.dmg, !!h.skill || h.killed);
+    }
+  }
+
+  /** 처치: 사방으로 튀는 파편 + 동전 1개(동시 8개까지). 보스는 크게 + 화면 살짝 흔들림(감속 모드 제외) */
+  private burst(x: number, y: number, color: number, boss: boolean, calm: boolean, delay: number): void {
+    const n = (boss ? 16 : 7) * (calm ? 0.5 : 1);
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const sp = (boss ? 260 : 150) * (0.6 + Math.random() * 0.6);
+      this.push({ kind: 'spark', x1: x, y1: y, x2: Math.cos(a) * sp, y2: Math.sin(a) * sp, color: i % 3 === 0 ? 0xffffff : color, dur: boss ? 0.55 : 0.32, r: boss ? 9 : 6, delay }, true);
+    }
+    if (boss) {
+      this.push({ kind: 'ring', x1: x, y1: y, x2: x, y2: y, color: COLOR.textGold, dur: 0.5, r: 160, delay }, true);
+      if (!calm) this.scene.cameras.main.shake(200, 0.006);
+    }
+    if (this.fx.filter((f) => f.kind === 'coin').length < MAX_COINS) {
+      this.push({ kind: 'coin', x1: x, y1: y, x2: GOLD_ICON.x, y2: GOLD_ICON.y, color: COLOR.gold, dur: calm ? 0.35 : 0.55, delay: delay + 0.08 }, true);
     }
   }
 
@@ -302,13 +349,69 @@ export class TrackView {
     this.scene.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 600, ease: 'Cubic.easeOut', onComplete: () => { t.destroy(); this.dmgTexts--; } });
   }
 
-  /** 매 프레임: 타격선 페이드 */
+  /** 매 프레임: 연출 진행·그리기 */
   update(dt: number): void {
-    this.fxGfx.clear();
-    this.fx = this.fx.filter((f) => (f.ttl -= dt) > 0);
+    const g = this.fxGfx;
+    g.clear();
+    this.fx = this.fx.filter((f) => (f.t += dt) < f.delay + f.dur);
     for (const f of this.fx) {
-      this.fxGfx.lineStyle(4, f.color, Math.min(1, f.ttl * 8));
-      this.fxGfx.lineBetween(f.x1, f.y1, f.x2, f.y2);
+      if (f.t < f.delay) continue;
+      const p = Math.min(1, (f.t - f.delay) / f.dur);
+      const fade = 1 - p;
+      const lerp = (q: number) => ({ x: f.x1 + (f.x2 - f.x1) * q, y: f.y1 + (f.y2 - f.y1) * q });
+      switch (f.kind) {
+        case 'bolt': {
+          const a = lerp(Math.max(0, p - 0.35)), b = lerp(p);
+          g.lineStyle(5, f.color, 0.55).lineBetween(a.x, a.y, b.x, b.y);
+          g.fillStyle(0xffffff, 1).fillCircle(b.x, b.y, 5);
+          g.fillStyle(f.color, 1).fillCircle(b.x, b.y, 3.5);
+          break;
+        }
+        case 'orb': {
+          const b = lerp(p);
+          g.fillStyle(f.color, 0.3).fillCircle(b.x, b.y, 17);
+          g.fillStyle(f.color, 0.9).fillCircle(b.x, b.y, 9);
+          g.fillStyle(0xffffff, 0.9).fillCircle(b.x - 3, b.y - 3, 4);
+          break;
+        }
+        case 'slash': {
+          const a0 = (f.seed % 6.28) - 1.1;
+          g.lineStyle(7, 0xffffff, fade).beginPath().arc(f.x1, f.y1, f.r, a0, a0 + 0.4 + p * 2.0).strokePath();
+          g.lineStyle(4, f.color, fade).beginPath().arc(f.x1, f.y1, f.r - 6, a0, a0 + 0.4 + p * 2.0).strokePath();
+          break;
+        }
+        case 'ring':
+          g.lineStyle(f.r > 50 ? 6 : 4, f.color, fade * 0.9).strokeCircle(f.x1, f.y1, f.r * (0.25 + 0.75 * p));
+          break;
+        case 'zap': {
+          // 지그재그: 구간마다 수직 방향으로 흔들린 점 (seed로 고정)
+          const dx = f.x2 - f.x1, dy = f.y2 - f.y1, len = Math.hypot(dx, dy) || 1;
+          const nx = -dy / len, ny = dx / len, seg = 6;
+          g.lineStyle(f.r, f.color, fade).beginPath().moveTo(f.x1, f.y1);
+          for (let i = 1; i < seg; i++) {
+            const o = Math.sin(f.seed + i * 2.3) * 14;
+            g.lineTo(f.x1 + (dx * i) / seg + nx * o, f.y1 + (dy * i) / seg + ny * o);
+          }
+          g.lineTo(f.x2, f.y2).strokePath();
+          g.lineStyle(Math.max(1, f.r - 3), 0xffffff, fade * 0.8).lineBetween(f.x2 - 4, f.y2, f.x2 + 4, f.y2);
+          break;
+        }
+        case 'spark': {
+          const tt = f.t - f.delay;
+          const x = f.x1 + f.x2 * tt, y = f.y1 + f.y2 * tt + 220 * tt * tt; // 살짝 떨어짐
+          g.fillStyle(f.color, fade).fillCircle(x, y, Math.max(1, f.r * fade));
+          break;
+        }
+        case 'coin': {
+          const e = p * p * (3 - 2 * p); // 부드럽게
+          const b = lerp(e);
+          const y = b.y - Math.sin(Math.PI * p) * 90;
+          g.fillStyle(COLOR.goldDark, 1).fillCircle(b.x, y + 2, 11);
+          g.fillStyle(COLOR.gold, 1).fillCircle(b.x, y, 10);
+          g.fillStyle(0xffffff, 0.6).fillCircle(b.x - 3, y - 3, 3.5);
+          break;
+        }
+      }
     }
   }
 
