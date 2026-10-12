@@ -102,6 +102,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 상대가 사람/고스트/봇인지는 `match_internal`에만 있고 어떤 RPC 응답에도 넣지 않는다.
 - 스키마를 바꾸면 새 마이그레이션 파일을 추가하고 `tests/SupabaseSchema.test.ts`(pglite)를 같이 고친다. 서버 식(레이팅·규칙 정규화)은 `src/systems/Rating.ts`·`src/net/rules.ts`와 같아야 한다.
 - 원격 프로젝트: `poker-defense` (ref `tshhszmudzsjwsqyyayo`, 서울). 배포는 `npm run db:push` / `npm run fn:deploy`, 점검은 `npm run smoke:online`. 연결 대상은 `supabase/.temp/project-ref`로 확인 — 기존 Supabase 프로젝트(샐러리 등)에 연결하지 않는다.
+- 무료 플랜은 활동이 없으면 프로젝트를 일시 중지한다(INACTIVE → db push가 'tenant/user not found'). 재개는 대시보드 Restore 또는 Management API `POST /v1/projects/{ref}/restore`(CLI 로그인 토큰은 키체인 'Supabase CLI'). 계정 조치라 사용자 확인 후에만.
 - `supabase config push`는 비대화형에서 확인 없이 적용된다. `[auth]`는 원격 값과 맞춰 둔 상태(익명 로그인만 켬).
 - service_role key는 저장소·클라이언트 금지. `.env*`는 커밋하지 않는다(`.env.example`만).
 
@@ -168,7 +169,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): F단계 시즌·랭킹 — 마이그레이션 000700(season_results, ensure_season 지연 넘김, leaderboard, my_season, claim_season_reward), Ranking 순수 로직, RankScene(로비 랭킹 탭). 시즌은 cron 없이 시즌을 읽는 RPC·enqueue가 넘긴다. 보상 다이아는 서버에 수령 기록 후 메타(localStorage)에 더한다.
 - 온라인 단계 A~F 완료.
 - 완료(2026-09-29): 친구 방 관전 — 마이그레이션 000800(room_spectators, watch_room/watch_info/unwatch_room), SpectateScene, 친구 대전 화면의 [관전하기]. 실서버에서 세 계정으로 방 구경 → 대전 관전 → 도중 재입장 → 결과 확인.
-- 손패 시드 보안 보강(2026-10-12, 코드·테스트 완료): 플레이어별 비밀 손패 키(마이그레이션 000900 match_secrets + 매치 생성 트리거, match_public·get_opponent_script에 내 키/고스트 주인 키, verify-match가 키로 재생). **원격 반영 대기** — poker-defense 프로젝트가 비활성(일시 중지)이라 db push·fn:deploy를 못 함. 재개 후 `npm run db:push` → `npm run fn:deploy` 필요. 그 전까지 새 클라이언트는 서버 매치를 '서버 업데이트가 필요해요'로 거절한다.
+- 손패 시드 보안 보강(2026-10-12, 코드·테스트 완료): 플레이어별 비밀 손패 키(마이그레이션 000900 match_secrets + 매치 생성 트리거, match_public·get_opponent_script에 내 키/고스트 주인 키, verify-match가 키로 재생). 원격 반영 완료(2026-10-12, 프로젝트 재개 → db push → fn:deploy). 실서버 확인: 옛 매치 8건 'p:'+id로 채워짐, 새 랭크 매치는 두 사람이 서로 다른 'k:'+64hex 키·각자 자기 행만 조회·매치 행/채널 이벤트에 키 없음, 고스트(옛 키) 대본 재현, 새 키로 친 판의 로그 검증 통과.
 - 완료(2026-09-29): 대전 중 기권 버튼, 재접속 이어하기(랭크·친구·서버 없는 판). 실서버에서 대체 상대 매치 전투 중 새로고침 → 복원, 사람 상대 매치 새로고침 → 복원(판돈 일치) → 상대 기권 확인.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
