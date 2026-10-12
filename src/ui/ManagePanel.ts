@@ -23,6 +23,8 @@ export class ManagePanel extends Phaser.GameObjects.Container {
   private sellBtn: Button;
   private upgradesBtn: Button;
   private startBtn: Button;
+  /** 튜토리얼 강조용: [전투 시작] 버튼 */
+  startBounds(): { x: number; y: number; w: number; h: number } { return this.startBtn.screenRect(); }
 
   constructor(scene: Phaser.Scene, y: number, cb: ManageCallbacks) {
     super(scene, 0, y);

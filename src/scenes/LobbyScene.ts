@@ -13,6 +13,7 @@ import { COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, hex } fr
 import type { Suit } from '../systems/PokerEvaluator.ts';
 import { clearMatch, loadMatch } from '../matchSave.ts';
 import { getSettings, updateSettings } from '../settings.ts';
+import { resetTutorials } from '../tutorialSave.ts';
 import { sfx } from '../audio/sfx.ts';
 import { abandonSaved, prepareResume } from './resumeMatch.ts';
 import type { SavedMatch } from '../systems/MatchResume.ts';
@@ -113,7 +114,7 @@ export class LobbyScene extends Phaser.Scene {
   /** 설정 (모달): 효과음·볼륨·감속 모드. 바꾸는 즉시 저장된다 */
   private openSettingsSheet(): void {
     if (this.sheet) return;
-    const cx = GAME_WIDTH / 2, cy = 960, w = GAME_WIDTH - 2 * SIZE.gutter, h = 760;
+    const cx = GAME_WIDTH / 2, cy = 960, w = GAME_WIDTH - 2 * SIZE.gutter, h = 880;
     const c = this.add.container(0, 0).setDepth(40);
     const close = () => { c.destroy(); this.sheet = null; };
     const dim = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, 0.72).setInteractive();
@@ -140,6 +141,7 @@ export class LobbyScene extends Phaser.Scene {
       const b: Button = new Button(this, cx + w / 2 - 200, y, r.value(), () => { r.next(); b.setLabel(r.value()).setVariant(r.on() ? 'blue' : 'gray'); sfx('coin'); }, { width: 280, height: SIZE.btnS, fontSize: 36, variant: r.on() ? 'blue' : 'gray' });
       c.add(b);
     });
+    c.add(new Button(this, cx, cy + 230, '튜토리얼 다시 보기', () => { resetTutorials(); this.showToast('다음 판에서 가이드가 다시 나와요'); }, { width: 440, height: SIZE.btnS, fontSize: 32, variant: 'blue' }));
     c.add(this.add.text(cx, cy + 150, '감속 모드: 흔들림·회전·잔상 연출을 줄여요', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5));
     c.add(new Button(this, cx, cy + h / 2 - 90, '닫기', close, { width: 300, height: SIZE.btnS + 8, fontSize: 34, variant: 'gray' }));
     this.sheet = c;

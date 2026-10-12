@@ -18,6 +18,9 @@ src/
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
   ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
   runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
+  settings.ts    기기 설정 (효과음·볼륨·감속 모드, localStorage `poker-defense.settings.v1`) + reducedMotion()
+  tutorialSave.ts 첫 판 가이드 완료 기록 (`poker-defense.tutorial.v1`)
+  audio/sfx.ts   효과음 — Web Audio 합성(파일 없음). sfx(name)·handSfx(tier), 첫 입력에서 오디오를 깨움
   matchSave.ts   대전 이어하기 저장 (localStorage `poker-defense.match.v1`) — 형식·복원은 systems/MatchResume, 준비는 scenes/resumeMatch
   systems/       PokerEvaluator, CardPhase(+행운 드로우 outsFor), DrawAssist(아웃 판정·가중 추첨, 순수), SummonMapper, SynergySystem, Battle, GameLoop, Geometry(트랙/슬롯 좌표·사거리),
                  MetaProgress(젬·영구 업그레이드·영웅 해금·마일스톤, SaveStore DI), storage(localStorage 어댑터),
@@ -26,6 +29,7 @@ src/
                  GameMode(모드 프리셋 CAMPAIGN/rankedDuel/friendDuel + buildGameData), Opponent(OpponentSource·OpponentView·AIOpponent),
                  Ads(AdService·StubAdService), Rating(ELO-lite),
                  Ranking(티어·시즌 보상 진행도·남은 기간, 수치는 data/ranking.json),
+                 SoundGate(효과음 간격·묶음 상한·설정 정리), Tutorial(첫 판 가이드 단계 진행, 문구는 data/tutorial.json),
                  Seed(시드 난수·라운드별 스트림 seedStreams), InputLog(InputRecorder 입력 기록 + replayMatch 결정론 재생)
                  ← 순수 로직. Phaser import 금지
   entities/      Unit, Enemy, Projectile 표시 객체 (Phaser)
@@ -79,6 +83,11 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 판돈 검증: `net/verifyBets`가 로그의 g/l 증감을 넉넉한 경계(낸 것 하한·받은 것 상한)로 검사, 사람 상대면 상대 로그의 라운드 성적으로 상한을 좁힌다. 판돈 선택 기록에는 걸린 라운드(`bet.wave`)를 남긴다.
 - 승패는 서버 판정(report_result → finalize_match)을 표시한다. 친구 대전의 상대 이탈(leave 또는 30초 끊김)은 결과 없이 중단. 재대결은 방으로 돌아가 다시 준비(서버가 새 시드 발급).
 - 글자 입력(닉네임·방 코드)은 `ui/TextPrompt.askText`(DOM 입력칸) — 한글 조합·붙여넣기 때문. 색·폰트는 DESIGN 토큰.
+
+## 연출·소리·가이드 규칙 (Phase 4)
+- 효과음은 `sfx(name)`만 부른다. 같은 소리 간격·타격 묶음 초당 상한은 SoundGate가 정하므로 호출 측은 아끼지 않아도 된다. 새 소리는 audio/sfx.ts RECIPES에 합성식으로 추가(외부 음원 파일 없음).
+- 타격 연출(TrackView): 공격 방식별(탄·마법구·베기·고리·번개) + 처치 파편·동전. 동시 연출 90개, 동전 8개(DESIGN §6). 흔들림·회전·펄스는 `reducedMotion()`(OS 설정 또는 게임 감속 모드)이면 끈다.
+- 첫 판 가이드: 캠페인 첫 판·첫 대전에 자동. 단계는 tutorial.json(phase·wave·anchor·until·pause). 강제하지 않는다 — 먼저 해 버린 단계는 건너뛰고, 사람 상대 실시간 대전에서는 멈추지 않는다. 강조 위치는 GameScene.tutorialAnchor (Button은 `screenRect()`, Graphics는 getBounds가 비므로 크기로 계산). 로비 [설정] → 튜토리얼 다시 보기.
 
 ## 관전 규칙 (친구 방)
 - 방 코드를 아는 사람은 `watch_room`으로 구경꾼이 된다(방마다 8명, 방의 두 사람은 불가). 구경꾼은 방 행만 읽을 수 있고 **매치 행(시드)은 읽지 못한다** — 공개 정보는 `watch_info`(room_public)가 골라 준다.
@@ -172,5 +181,6 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 손패 시드 보안 보강(2026-10-12, 코드·테스트 완료): 플레이어별 비밀 손패 키(마이그레이션 000900 match_secrets + 매치 생성 트리거, match_public·get_opponent_script에 내 키/고스트 주인 키, verify-match가 키로 재생). 원격 반영 완료(2026-10-12, 프로젝트 재개 → db push → fn:deploy). 실서버 확인: 옛 매치 8건 'p:'+id로 채워짐, 새 랭크 매치는 두 사람이 서로 다른 'k:'+64hex 키·각자 자기 행만 조회·매치 행/채널 이벤트에 키 없음, 고스트(옛 키) 대본 재현, 새 키로 친 판의 로그 검증 통과.
 - 완료(2026-09-29): 대전 중 기권 버튼, 재접속 이어하기(랭크·친구·서버 없는 판). 실서버에서 대체 상대 매치 전투 중 새로고침 → 복원, 사람 상대 매치 새로고침 → 복원(판돈 일치) → 상대 기권 확인.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
-- 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.
+- 완료(2026-10-12): Phase 4 폴리싱 중 효과음(Web Audio 합성)·설정 시트, 공격 방식별 타격 이펙트, 첫 판 가이드(캠페인 6단계·대전 2단계). 남은 것: AI 생성 스프라이트로 아트 교체(이미지 생성 수단 필요), 배경음악.
+- 미구현: 일일 미션·상점(IAP)·광고, 아트 스프라이트, 배경음악.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.

@@ -1,0 +1,23 @@
+{
+  "comment": "첫 판 가이드 (GDD Phase 4). phase/wave 조건이 맞을 때 보이고, until 사건이 오면 다음 단계로. 이미 지나간 단계(다음 페이즈·다음 웨이브)는 건너뛴다. pause = 이 단계를 보는 동안 카드 타이머·전투를 멈춘다(사람 상대 실시간 대전에서는 멈추지 않음). anchor = 강조할 화면 요소.",
+  "campaign": [
+    { "id": "hand", "phase": "card", "wave": 1, "anchor": "cards", "until": "exchange", "pause": true, "skipLabel": "그대로 둘래요",
+      "title": "카드 5장으로 족보 만들기", "text": "바꾸고 싶은 카드를 탭하면 그 카드만 새 카드로 바뀌어요.\n카드마다 한 번씩, 5장 모두 바꿀 수 있어요." },
+    { "id": "confirm", "phase": "card", "wave": 1, "anchor": "confirm", "until": "confirm", "pause": true,
+      "title": "족보 확정", "text": "족보가 높을수록 강한 유닛이 소환돼요.\n[진행 → 소환]을 눌러 확정해요. 30초가 지나면 자동으로 확정돼요." },
+    { "id": "place", "phase": "manage", "wave": 1, "anchor": "field", "until": "move", "pause": false, "skipLabel": "자동 배치 그대로",
+      "title": "배치", "text": "점선 테두리 유닛은 한 번만 옮길 수 있어요.\n유닛을 탭하고 빈 칸을 탭하세요. 칸마다 트랙에 닿는 거리가 달라요." },
+    { "id": "start", "phase": "manage", "wave": 1, "anchor": "start", "until": "combat", "pause": false,
+      "title": "전투 시작", "text": "준비가 끝나면 [전투 시작]!" },
+    { "id": "combat", "phase": "combat", "wave": 1, "anchor": "timer", "until": "tap", "pause": true,
+      "title": "제한 시간", "text": "적이 트랙을 돌아요. 시간이 끝날 때 남은 적마다 하트가 줄어요.\n하트가 0이 되면 패배예요." },
+    { "id": "swipe", "phase": "card", "wave": 2, "anchor": "edges", "until": "tap", "pause": true,
+      "title": "화면 넘기기", "text": "화면을 오른쪽으로 밀면 상점·영웅, 왼쪽으로 밀면 족보·시너지 도감이 나와요.\n양옆 가장자리 손잡이를 탭해도 돼요. 영웅 조각 3개를 모으면 상점에서 영웅을 소환해요." }
+  ],
+  "duel": [
+    { "id": "race", "phase": "card", "anchor": "oppMini", "until": "tap", "pause": true,
+      "title": "1:1 레이스", "text": "상대도 같은 웨이브를 막고 있어요 (오른쪽 위 작은 화면).\n마지막 라운드를 먼저 깨거나, 상대가 먼저 무너지면 승리!" },
+    { "id": "bet", "phase": "card", "anchor": "betBar", "until": "tap", "pause": true, "needs": "betting",
+      "title": "판돈 걸기", "text": "라운드마다 참가비가 자동으로 걸려요. 자신 있으면 [레이즈], 아니면 [체크].\n상대가 레이즈하면 [콜]로 받거나 [폴드]로 포기해요. 하트를 덜 잃은 쪽이 판돈을 가져가요." }
+  ]
+}

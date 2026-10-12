@@ -47,6 +47,12 @@ export class Button extends Phaser.GameObjects.Container {
   private variant: ButtonVariant;
   private labelText: string | null = null;
 
+  /** 화면 좌표의 버튼 영역 (몸통 + 섀도). Graphics는 getBounds에 잡히지 않아 직접 계산한다 */
+  screenRect(): { x: number; y: number; w: number; h: number } {
+    const m = this.getWorldTransformMatrix();
+    return { x: m.tx - this.bw / 2, y: m.ty - this.bh / 2, w: this.bw, h: this.bh };
+  }
+
   constructor(scene: Phaser.Scene, x: number, y: number, text: string, onClick: () => void, opt: ButtonOptions = {}) {
     super(scene, x, y);
     this.bw = opt.width ?? 300;

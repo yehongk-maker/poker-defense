@@ -307,6 +307,17 @@ export class CardHand extends Phaser.GameObjects.Container {
   }
 
   /** 뒤집기: scaleX 1→0 (옆면) → 면 교체 → 0→1 */
+  /** 튜토리얼 강조용: 카드 5장이 차지하는 영역 */
+  cardsBounds(): { x: number; y: number; w: number; h: number } {
+    const rs = this.cards.map((c) => c.root.getBounds());
+    const x = Math.min(...rs.map((r) => r.x)), y = Math.min(...rs.map((r) => r.y));
+    return { x, y, w: Math.max(...rs.map((r) => r.right)) - x, h: Math.max(...rs.map((r) => r.bottom)) - y };
+  }
+  /** 튜토리얼 강조용: [진행] 버튼 */
+  confirmBounds(): { x: number; y: number; w: number; h: number } {
+    return this.confirmBtn.screenRect();
+  }
+
   private flip(v: CardView, toFaceUp: boolean, onDone: () => void): void {
     sfx('flip');
     this.scene.tweens.add({

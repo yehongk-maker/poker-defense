@@ -17,6 +17,10 @@ import type { MatchInfo, MatchReport } from '../net/types.ts';
 import type { FriendSceneInit } from './FriendScene.ts';
 import { clearMatch, saveMatch } from '../matchSave.ts';
 import { sfx, type SfxName } from '../audio/sfx.ts';
+import tutorialJson from '../data/tutorial.json';
+import { Tutorial, type TutorialEvent, type TutorialStep, type TutorialTrack } from '../systems/Tutorial.ts';
+import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts';
+import { markTutorialDone, tutorialDone } from '../tutorialSave.ts';
 import { resumedClock, type ResumedLoop, type SavedMatch } from '../systems/MatchResume.ts';
 import type { OpponentScript } from '../systems/Duel.ts';
 import type { RunSnapshot } from '../systems/GameLoop.ts';
@@ -134,6 +138,11 @@ export class GameScene extends Phaser.Scene {
   private oppSnap: { wave: number; snapshot: RunSnapshot } | null = null;
   private confirmBox: Phaser.GameObjects.Container | null = null;
   private onHide: (() => void) | null = null;
+  // 첫 판 가이드
+  private tutorial: Tutorial | null = null;
+  private tutTrack: TutorialTrack = 'campaign';
+  private tutOverlay: TutorialOverlay | null = null;
+  private tutShown: string | null = null;
   private oppRefreshAcc = 0;
   private chips!: SynergyChips;
   private oppDefeatAnnounced = false;
@@ -180,6 +189,7 @@ export class GameScene extends Phaser.Scene {
     this.matchClock = 0; this.myClearedSec = null; this.oppClearedSec = null;
     this.heartbeatIn = 0; this.claimIn = 0; this.claiming = false; this.offMatchRow = null;
     this.saveIn = 0; this.oppSnap = null; this.confirmBox = null;
+    this.tutorial = null; this.tutOverlay = null; this.tutShown = null;
     if (this.initArgs.saved) {
       this.matchClock = resumedClock(this.initArgs.saved, Date.now());
       this.bestRank = this.initArgs.saved.bestRank;
@@ -222,6 +232,7 @@ export class GameScene extends Phaser.Scene {
       document.addEventListener('visibilitychange', this.onHide);
       window.addEventListener('pagehide', this.onHide);
     }
+    this.setupTutorial();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.onHide) { document.removeEventListener('visibilitychange', this.onHide); window.removeEventListener('pagehide', this.onHide); this.onHide = null; }
       if (isDuel(this.mode)) clearMatch(); // 앱 안에서 대전을 떠남 = 끝났거나 포기
@@ -261,6 +272,7 @@ export class GameScene extends Phaser.Scene {
         const result = evaluateHand([...p.hand], () => 0);
         // 카드가 뒤집혀 새 카드로 오픈된 뒤 족보 갱신
         this.hand.exchangeCard(i, card, this.exchangeStatus(), result);
+        this.tutorialEvent('exchange');
         // 교환으로 족보가 올랐으면 오픈 직후 패 위에서 작은 연출
         if (result.rank > before && RANK_TIER[result.rank] >= 1) {
           this.time.delayedCall(360, () => { const pos = this.hand.rankLabelPosition; this.fx.celebrate(result.rank, pos.x, pos.y, false); });
@@ -287,6 +299,7 @@ export class GameScene extends Phaser.Scene {
       onOpenUpgrades: () => this.nav.open('left'),
       onStart: () => this.safe(() => {
         this.loop.startCombat();
+        this.tutorialEvent('combat');
         this.selectedSlot = -1;
         this.refreshPanels();
       }),
@@ -359,7 +372,7 @@ export class GameScene extends Phaser.Scene {
       } else if (here) {
         this.selectedSlot = slot;
       } else if (sel && !sel.placed) {
-        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); sfx('move'); this.showToast(`${sel.def.name} 배치 확정`); });
+        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); sfx('move'); this.tutorialEvent('move'); this.showToast(`${sel.def.name} 배치 확정`); });
         this.selectedSlot = -1;
       } else if (sel) {
         this.showToast('배치가 확정된 유닛은 옮길 수 없습니다 (판매만 가능)');
@@ -427,6 +440,15 @@ export class GameScene extends Phaser.Scene {
 
   private frame(_time: number, delta: number): void {
     if (this.ended) return;
+    this.refreshTutorial();
+    if (this.tutorialPausing()) {
+      // 가이드를 읽는 동안: 카드 타이머·전투·이 기기의 상대를 멈춘다 (화면 갱신만)
+      if (this.loop.phase === 'card') this.hand.update(_time);
+      const b = this.loop.battle;
+      if (b) this.combatTimer.set(b.timeRemaining, this.data_.waves[this.loop.wave - 1]?.timeLimit ?? 30);
+      this.track.update(0);
+      return;
+    }
     const dt = Math.min(delta / 1000, 0.1);
     const cfg = this.data_.battleConfig;
     if (this.opponent) {
@@ -603,6 +625,7 @@ export class GameScene extends Phaser.Scene {
     // 판돈: 아무것도 안 골랐으면 체크
     if (this.betting?.options('player', this.loop.wave).includes('check')) { this.betting.act('player', this.loop.wave, 'check'); this.recorder?.bet('check'); this.publisher?.bet(this.loop.wave, 'check'); }
     const res = this.loop.confirmHand();
+    this.tutorialEvent('confirm');
     if (res.deployed.length > 0) this.time.delayedCall(260, () => sfx('summon'));
     const hr = this.loop.cardPhase.handResult!;
     this.bestRank = Math.max(this.bestRank, hr.rank);
@@ -788,6 +811,70 @@ export class GameScene extends Phaser.Scene {
     if (this.live) void this.settleLive(this.live, duel);
     else if (this.initArgs.online) void this.settleOnline(this.initArgs.online, duel);
     else this.showDuelResult(duel);
+  }
+
+  // ── 첫 판 가이드 (Phase 4) ──
+  private setupTutorial(): void {
+    const track: TutorialTrack = isDuel(this.mode) ? 'duel' : 'campaign';
+    if (tutorialDone(track)) return;
+    const steps = (tutorialJson as unknown as Record<TutorialTrack, TutorialStep[]>)[track];
+    this.tutTrack = track;
+    this.tutorial = new Tutorial(steps, { betting: !!this.betting });
+    this.tutOverlay = new TutorialOverlay(this, {
+      onTap: () => this.tutorialEvent('tap'),
+      onSkipStep: () => this.tutorialEvent('skip'),
+      onSkipAll: () => { this.tutorial?.skipAll(); this.refreshTutorial(); },
+    });
+  }
+
+  private tutorialEvent(e: TutorialEvent): void {
+    if (!this.tutorial) return;
+    if (this.tutorial.on(e, this.loop)) this.refreshTutorial();
+  }
+
+  /** 사람 상대 실시간 대전은 멈출 수 없다 (상대 시계는 계속 간다) */
+  private tutorialPausing(): boolean {
+    return !!this.tutorial && !this.live && this.tutShown !== null && this.tutorial.pausing(this.loop);
+  }
+
+  private refreshTutorial(): void {
+    const t = this.tutorial;
+    if (!t || !this.tutOverlay) return;
+    const step = this.ended ? null : t.current(this.loop);
+    if (t.done) {
+      markTutorialDone(this.tutTrack);
+      this.tutOverlay.hide();
+      this.tutOverlay.destroy();
+      this.tutOverlay = null;
+      this.tutorial = null;
+      this.tutShown = null;
+      return;
+    }
+    // 카드를 나눠 주는 연출 중에는 기다린다
+    const id = step && !(step.anchor === 'cards' && this.loop.cardPhase.state !== 'choosing') ? step.id : null;
+    if (id === this.tutShown) return;
+    this.tutShown = id;
+    if (!step || !id) { this.tutOverlay.hide(); return; }
+    this.nav.close();
+    this.tutOverlay.show(step, this.tutorialAnchor(step.anchor), t.index, t.total);
+  }
+
+  private tutorialAnchor(name: string): Rect | null {
+    const b = (o: { getBounds(): Phaser.Geom.Rectangle } | null | undefined): Rect | null => { if (!o) return null; const r = o.getBounds(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
+    switch (name) {
+      case 'cards': return this.hand.cardsBounds();
+      case 'confirm': return this.hand.confirmBounds();
+      case 'field': return { x: FIELD.x, y: FIELD.y, w: FIELD.w, h: FIELD.h };
+      case 'start': return this.manage.startBounds();
+      case 'timer': {
+        // TimerRing은 Graphics라 getBounds가 비어 있다 — 원 크기로 직접
+        const m = this.combatTimer.getWorldTransformMatrix(), d = SIZE.timerD + 16;
+        return { x: m.tx - d / 2, y: m.ty - d / 2, w: d, h: d };
+      }
+      case 'oppMini': return b(this.oppMini);
+      case 'betBar': return b(this.betBar);
+      default: return null;
+    }
   }
 
   // ── 효과음 ──
