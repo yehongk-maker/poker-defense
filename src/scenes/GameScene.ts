@@ -16,6 +16,7 @@ import { errorText } from '../net/session.ts';
 import type { MatchInfo, MatchReport } from '../net/types.ts';
 import type { FriendSceneInit } from './FriendScene.ts';
 import { clearMatch, saveMatch } from '../matchSave.ts';
+import { sfx, type SfxName } from '../audio/sfx.ts';
 import { resumedClock, type ResumedLoop, type SavedMatch } from '../systems/MatchResume.ts';
 import type { OpponentScript } from '../systems/Duel.ts';
 import type { RunSnapshot } from '../systems/GameLoop.ts';
@@ -271,7 +272,7 @@ export class GameScene extends Phaser.Scene {
     this.manage = new ManagePanel(this, PANEL_Y, {
       onMerge: () => this.safe(() => {
         const ids = this.loop.mergeable;
-        for (const id of ids) { try { const m = this.loop.mergeUnits(id); this.showToast(`합성 → ${m.def.name} T${m.def.tier}`); } catch { /* 경합 */ } }
+        for (const id of ids) { try { const m = this.loop.mergeUnits(id); sfx('merge'); this.showToast(`합성 → ${m.def.name} T${m.def.tier}`); } catch { /* 경합 */ } }
         this.selectedSlot = -1;
       }),
       onSell: () => this.safe(() => {
@@ -279,6 +280,7 @@ export class GameScene extends Phaser.Scene {
         const idx = u ? this.loop.units.indexOf(u) : -1;
         if (idx < 0) throw new Error('판매할 유닛을 탭하세요');
         const g = this.loop.sellUnit(idx);
+        sfx('sell');
         this.selectedSlot = -1;
         this.showToast(`판매 +💰${g}`);
       }),
@@ -292,9 +294,10 @@ export class GameScene extends Phaser.Scene {
 
     // 3방향 스와이프 패널: 왼쪽=상점·영웅, 오른쪽=족보·시너지, 아래=상대 현황
     this.shop = new UpgradePanel(this, this.loop, {
-      onUpgrade: (s: Suit) => this.safe(() => { this.loop.buyUpgrade(s); this.showToast(`${SUIT_SYMBOL[s]} 공격력 Lv${this.loop.upgrades[s]}`); }),
+      onUpgrade: (s: Suit) => this.safe(() => { this.loop.buyUpgrade(s); sfx('upgrade'); this.showToast(`${SUIT_SYMBOL[s]} 공격력 Lv${this.loop.upgrades[s]}`); }),
       onSummonHero: (id) => this.safe(() => {
         const r = this.loop.summonHero(id);
+        sfx('hero');
         this.showToast(`영웅 소환: ${r.def.name} ${r.grade}급`);
       }),
       onBuyTicket: () => this.safe(() => {
@@ -332,6 +335,7 @@ export class GameScene extends Phaser.Scene {
     // 영웅 액티브 스킬 버튼 (전투 중, 쿨타임 표시)
     this.skillBtn = new Button(this, GAME_WIDTH / 2 - 250, PANEL_Y + 90, '영웅 없음', () => this.safe(() => {
       const r = this.loop.useHeroSkill();
+      sfx('skill');
       this.publisher?.skill(r.id);
       this.showToast(`${r.name}: ${r.text}`);
       this.cameras.main.flash(140, 241, 209, 122);
@@ -355,7 +359,7 @@ export class GameScene extends Phaser.Scene {
       } else if (here) {
         this.selectedSlot = slot;
       } else if (sel && !sel.placed) {
-        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); this.showToast(`${sel.def.name} 배치 확정`); });
+        this.safe(() => { this.loop.moveUnit(this.selectedSlot, slot); sfx('move'); this.showToast(`${sel.def.name} 배치 확정`); });
         this.selectedSlot = -1;
       } else if (sel) {
         this.showToast('배치가 확정된 유닛은 옮길 수 없습니다 (판매만 가능)');
@@ -436,6 +440,7 @@ export class GameScene extends Phaser.Scene {
     if (this.loop.phase === 'card') {
       const r = this.loop.cardPhase.tick(dt * this.speed);
       this.hand.setTimer(r.remaining, this.loop.cardPhase.timerSeconds);
+      this.countdownTick(Math.ceil(r.remaining));
       this.hand.update(_time);
       if (r.autoConfirmed) this.confirmHand();
       return;
@@ -449,6 +454,7 @@ export class GameScene extends Phaser.Scene {
         const ev = this.loop.tickCombat(dt);
         const b = this.loop.battle;
         if (b) this.track.addHits(ev.hits, b.aliveEnemies, cfg.trackLength);
+        this.combatSounds(ev);
         if (ev.bossShard) {
           bossMsg = `보스 격파! ${SHARD_LABEL[ev.bossShard.type]} 조각 +${ev.bossShard.amount}`;
           this.cameras.main.flash(180, 255, 228, 94);
@@ -466,6 +472,7 @@ export class GameScene extends Phaser.Scene {
         this.track.updateTemporaryUnits(b.temporaryUnits);
         this.refreshSkillButton();
         const t = Math.ceil(b.timeRemaining);
+        this.countdownTick(t);
         this.combatText.setText(`라운드 ${this.loop.wave} · 남은 적 ${b.aliveEnemies.length}${b.allSpawned ? '' : ' (스폰 중)'}`)
           .setColor(t <= 5 ? hex(COLOR.red) : hex(COLOR.textMain));
         this.combatTimer.set(b.timeRemaining, this.data_.waves[this.loop.wave - 1]?.timeLimit ?? 30);
@@ -596,6 +603,7 @@ export class GameScene extends Phaser.Scene {
     // 판돈: 아무것도 안 골랐으면 체크
     if (this.betting?.options('player', this.loop.wave).includes('check')) { this.betting.act('player', this.loop.wave, 'check'); this.recorder?.bet('check'); this.publisher?.bet(this.loop.wave, 'check'); }
     const res = this.loop.confirmHand();
+    if (res.deployed.length > 0) this.time.delayedCall(260, () => sfx('summon'));
     const hr = this.loop.cardPhase.handResult!;
     this.bestRank = Math.max(this.bestRank, hr.rank);
     // 족보 확정 연출: 등급이 높을수록 화려하게 (트랙 중앙)
@@ -618,6 +626,7 @@ export class GameScene extends Phaser.Scene {
     const v = betting.view('player', this.loop.wave);
     this.safe(() => {
       betting.act('player', v.wave, a);
+      sfx(a);
       this.recorder?.bet(a, v.wave);
       this.publisher?.bet(v.wave, a, a === 'raise' ? v.raiseAmount : undefined);
       const msg: Record<BetAction, string> = { check: '체크 — 그대로 진행', raise: `레이즈! 💰${v.raiseAmount} 더 걸었어요 (상대가 콜하면 판돈 💰${v.pot + v.raiseAmount * 2 - (v.pendingRaise ?? 0)})`, call: `콜! 💰${v.pendingRaise} 받았어요 → 판돈 💰${v.pot + (v.pendingRaise ?? 0)}`, fold: '폴드 — 이번 판돈은 포기 (방어는 그대로)' };
@@ -631,6 +640,7 @@ export class GameScene extends Phaser.Scene {
     if (!betting || !opp) return;
     const results = [...betting.sync('player', this.loop), ...betting.sync('opponent', opp.participant)];
     for (const r of results) {
+      sfx(r.winner === 'player' ? 'pot_win' : r.winner === 'opponent' ? 'pot_lose' : 'coin');
       if (r.winner === 'player') { this.showToast(`💰 라운드 ${r.wave} 판돈 💰${r.pot} 획득! (${REASON_TEXT[r.reason]})`); this.cameras.main.flash(120, 241, 209, 122); }
       else if (r.winner === 'opponent') this.showToast(`라운드 ${r.wave} 판돈 💰${r.pot}은 상대에게 (${r.reason === 'fold' ? '내가 폴드' : r.reason === 'life' ? '상대가 하트를 덜 잃음' : r.reason === 'time' ? '상대가 더 빨리 클리어' : r.reason === 'hand' ? '상대 족보가 더 높음' : '내가 탈락'})`);
       else this.showToast(`라운드 ${r.wave} 동률 — 판돈 💰${r.pot} 다음 라운드로 이월`);
@@ -678,6 +688,7 @@ export class GameScene extends Phaser.Scene {
     const w = this.data_.waves[this.loop.wave - 1];
     if (!w) return;
     const air = w.groups.filter((g) => this.data_.enemyTypes[g.type]?.movement === 'air').reduce((n, g) => n + g.count, 0);
+    if (w.boss) sfx('warn');
     if (w.boss) this.banner.show(`보스 라운드! ${this.data_.enemyTypes[w.groups.find((g) => this.data_.enemyTypes[g.type]?.boss)?.type ?? '']?.name ?? ''}`.trim(), { danger: true });
     else if (air > 0) this.banner.show(`공중 적 ${air}기 접근!`, { wings: true });
   }
@@ -777,6 +788,28 @@ export class GameScene extends Phaser.Scene {
     if (this.live) void this.settleLive(this.live, duel);
     else if (this.initArgs.online) void this.settleOnline(this.initArgs.online, duel);
     else this.showDuelResult(duel);
+  }
+
+  // ── 효과음 ──
+  private lastTick = -1;
+  /** 남은 시간 5초부터 초마다 똑딱 */
+  private countdownTick(sec: number): void {
+    if (sec === this.lastTick) return;
+    this.lastTick = sec;
+    if (sec >= 1 && sec <= 5) sfx('tick');
+  }
+
+  /** 전투 tick의 소리: 타격(공격 방식별, 묶음 상한은 SoundGate), 처치, 보스, 하트 손실, 클리어 */
+  private combatSounds(ev: { hits: readonly { unit: { def: { attackType: string } }; killed: boolean }[]; kills: number; lifeLost: number; cleared: boolean; bossShard?: unknown }): void {
+    const first = ev.hits[0];
+    if (first) {
+      const kind: Record<string, SfxName> = { melee: 'hit_melee', ranged: 'hit_ranged', magic: 'hit_magic' };
+      sfx(kind[first.unit.def.attackType] ?? 'hit_ranged');
+    }
+    if (ev.kills > 0) sfx('kill');
+    if (ev.bossShard) sfx('boss_kill');
+    if (ev.lifeLost > 0) sfx('leak');
+    else if (ev.cleared && !ev.bossShard) sfx('clear');
   }
 
   // ── 이어하기 저장 ──

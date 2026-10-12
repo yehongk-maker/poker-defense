@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COLOR, FONT, SIZE, TAP_SLOP, hex } from './theme.ts';
 import { glossTop } from './draw.ts';
+import { sfx } from '../audio/sfx.ts';
 
 /** 버튼 역할 색 (DESIGN §3) — 새 스타일 금지 */
 export type ButtonVariant = 'gold' | 'green' | 'purple' | 'red' | 'gray' | 'blue';
@@ -66,7 +67,7 @@ export class Button extends Phaser.GameObjects.Container {
     this.on('pointerup', (p: Phaser.Input.Pointer) => {
       const was = this.pressed;
       this.setPressed(false);
-      if (this.enabled && was && p.getDistance() < TAP_SLOP) onClick();
+      if (this.enabled && was && p.getDistance() < TAP_SLOP) { sfx('tap'); onClick(); }
     });
     this.setLabel(text);
     scene.add.existing(this);

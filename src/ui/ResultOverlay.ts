@@ -4,6 +4,8 @@ import { Button } from './Button.ts';
 import { addBackdrop } from './Backdrop.ts';
 import { ALPHA, COLOR, FONT, OUTLINE, SIZE, TAP_SLOP, hex } from './theme.ts';
 import { coinIcon, gemIcon, starPath, tokenIcon } from './draw.ts';
+import { sfx } from '../audio/sfx.ts';
+import { reducedMotion as motionReduced } from '../settings.ts';
 
 export interface ResultRow {
   icon: 'coin' | 'gem' | 'token' | 'star';
@@ -52,6 +54,8 @@ export class ResultOverlay extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene, d: ResultData) {
     super(scene, 0, 0);
     const win = d.outcome === 'win';
+    // 부활 제안(카운트다운)은 아직 끝난 게 아니라 패배음을 내지 않는다
+    if (!d.countdownSec) sfx(win ? 'victory' : d.outcome === 'lose' ? 'defeat' : 'clear');
     const block = scene.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, win ? ALPHA.dim : 0).setInteractive();
     this.add(block);
     if (!win) this.add(addBackdrop(scene, 'defeat', 0).setAlpha(0.96));
@@ -184,5 +188,5 @@ export class ResultOverlay extends Phaser.GameObjects.Container {
 }
 
 function reducedMotion(): boolean {
-  return typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return motionReduced(); // OS 설정 또는 게임 설정의 감속 모드
 }

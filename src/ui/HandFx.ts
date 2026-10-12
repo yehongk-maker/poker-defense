@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { handSfx } from '../audio/sfx.ts';
 import { HandRank } from '../systems/PokerEvaluator.ts';
 import { GAME_WIDTH } from '../config.ts';
 import { COLOR, FONT, OUTLINE, HAND_NAME, hex } from './theme.ts';
@@ -81,6 +82,7 @@ export class HandFx {
    */
   celebrate(rank: HandRank, x: number, y: number, big: boolean): void {
     const tier = RANK_TIER[rank];
+    handSfx(tier);
     const st = TIER_STYLE[tier];
     const scale = big ? 1.6 : 1;
 

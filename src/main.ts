@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from './config.ts';
+import { unlockAudioOnFirstInput } from './audio/sfx.ts';
 import { BootScene } from './scenes/BootScene.ts';
 import { LobbyScene } from './scenes/LobbyScene.ts';
 import { GameScene } from './scenes/GameScene.ts';
@@ -8,6 +9,8 @@ import { FriendScene } from './scenes/FriendScene.ts';
 import { MatchScene } from './scenes/MatchScene.ts';
 import { RankScene } from './scenes/RankScene.ts';
 import { SpectateScene } from './scenes/SpectateScene.ts';
+
+unlockAudioOnFirstInput();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,

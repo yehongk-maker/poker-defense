@@ -12,6 +12,8 @@ import { coinIcon, glossTop, starPath, tokenIcon } from '../ui/draw.ts';
 import { COLOR, FONT, OUTLINE, SIZE, SUIT_COLOR, SUIT_SYMBOL, TAP_SLOP, hex } from '../ui/theme.ts';
 import type { Suit } from '../systems/PokerEvaluator.ts';
 import { clearMatch, loadMatch } from '../matchSave.ts';
+import { getSettings, updateSettings } from '../settings.ts';
+import { sfx } from '../audio/sfx.ts';
 import { abandonSaved, prepareResume } from './resumeMatch.ts';
 import type { SavedMatch } from '../systems/MatchResume.ts';
 
@@ -96,6 +98,8 @@ export class LobbyScene extends Phaser.Scene {
       this.add.rectangle(cx, 1590, fresh.width, 3, COLOR.textMain);
     }
 
+    new Button(this, SIZE.gutter + 100, SIZE.topbarY + 84, '설정', () => this.openSettingsSheet(), { width: 200, height: 64, fontSize: 30, variant: 'gray' });
+
     this.tabBar('battle');
 
     this.add.text(cx, GAME_HEIGHT - SIZE.tabbarH - 30, 'v0.3.0 · 저장: localStorage', { fontSize: `${SIZE.tiny}px`, color: hex(COLOR.textMain), fontFamily: FONT.body }).setOrigin(0.5).setAlpha(0.6);
@@ -104,6 +108,41 @@ export class LobbyScene extends Phaser.Scene {
     // 끊겼던 대전이 있으면 먼저 묻는다 (이어하기 / 기권)
     const match = loadMatch();
     if (match) this.openResumeSheet(match);
+  }
+
+  /** 설정 (모달): 효과음·볼륨·감속 모드. 바꾸는 즉시 저장된다 */
+  private openSettingsSheet(): void {
+    if (this.sheet) return;
+    const cx = GAME_WIDTH / 2, cy = 960, w = GAME_WIDTH - 2 * SIZE.gutter, h = 760;
+    const c = this.add.container(0, 0).setDepth(40);
+    const close = () => { c.destroy(); this.sheet = null; };
+    const dim = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, 0.72).setInteractive();
+    dim.on('pointerup', (p: Phaser.Input.Pointer) => { if (p.getDistance() < TAP_SLOP && Math.abs(p.y - cy) > h / 2) close(); });
+    const g = this.add.graphics();
+    g.fillStyle(COLOR.navyDark).fillRoundedRect(cx - w / 2, cy - h / 2 + 8, w, h, SIZE.radiusPanel);
+    g.fillStyle(COLOR.navy).fillRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    g.lineStyle(2, COLOR.modalBorder).strokeRoundedRect(cx - w / 2, cy - h / 2, w, h, SIZE.radiusPanel);
+    c.add([dim, g, this.add.text(cx, cy - h / 2 + 70, '설정', { fontSize: `${SIZE.h1}px`, color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0.5)]);
+    const VOLUMES = [{ v: 0.35, t: '작게' }, { v: 0.7, t: '보통' }, { v: 1, t: '크게' }];
+    const rows: { label: string; value: () => string; on: () => boolean; next: () => void }[] = [
+      { label: '효과음', value: () => (getSettings().sound ? '켬' : '끔'), on: () => getSettings().sound, next: () => updateSettings({ sound: !getSettings().sound }) },
+      {
+        label: '볼륨',
+        value: () => VOLUMES.reduce((a, b) => (Math.abs(b.v - getSettings().volume) < Math.abs(a.v - getSettings().volume) ? b : a)).t,
+        on: () => true,
+        next: () => { const i = VOLUMES.findIndex((x) => Math.abs(x.v - getSettings().volume) < 0.01); updateSettings({ volume: VOLUMES[(i + 1) % VOLUMES.length].v }); },
+      },
+      { label: '감속 모드', value: () => (getSettings().reduceMotion ? '켬' : '끔'), on: () => getSettings().reduceMotion, next: () => updateSettings({ reduceMotion: !getSettings().reduceMotion }) },
+    ];
+    rows.forEach((r, i) => {
+      const y = cy - h / 2 + 200 + i * 130;
+      c.add(this.add.text(cx - w / 2 + 60, y, r.label, { fontSize: '44px', color: hex(COLOR.textMain), fontFamily: FONT.display, ...OUTLINE }).setOrigin(0, 0.5));
+      const b: Button = new Button(this, cx + w / 2 - 200, y, r.value(), () => { r.next(); b.setLabel(r.value()).setVariant(r.on() ? 'blue' : 'gray'); sfx('coin'); }, { width: 280, height: SIZE.btnS, fontSize: 36, variant: r.on() ? 'blue' : 'gray' });
+      c.add(b);
+    });
+    c.add(this.add.text(cx, cy + 150, '감속 모드: 흔들림·회전·잔상 연출을 줄여요', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5));
+    c.add(new Button(this, cx, cy + h / 2 - 90, '닫기', close, { width: 300, height: SIZE.btnS + 8, fontSize: 34, variant: 'gray' }));
+    this.sheet = c;
   }
 
   /** 진행 중이던 대전 안내 (모달). 닫을 수 없다 — 이어 하거나 기권해야 다른 대전을 시작할 수 있다 */

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { sfx } from '../audio/sfx.ts';
 import type { Card, HandResult } from '../systems/PokerEvaluator.ts';
 import { RANK_TIER, TIER_STYLE, applyTierStyle, fitTextWidth, rainbowColor } from './HandFx.ts';
 import { GAME_WIDTH } from '../config.ts';
@@ -307,6 +308,7 @@ export class CardHand extends Phaser.GameObjects.Container {
 
   /** 뒤집기: scaleX 1→0 (옆면) → 면 교체 → 0→1 */
   private flip(v: CardView, toFaceUp: boolean, onDone: () => void): void {
+    sfx('flip');
     this.scene.tweens.add({
       targets: v.root, scaleX: 0, duration: FLIP_MS, ease: 'Sine.easeIn',
       onComplete: () => {
