@@ -459,6 +459,82 @@ describe('친구 방 관전', () => {
   });
 });
 
+describe('손패 키 비밀', () => {
+  type Info = { id: string; seed: string; handKey: string | null; role: string };
+  const pair = async () => {
+    await admin(`update public.profiles set rating = 1000 where id in ('${users.ann}', '${users.bob}')`);
+    await rpc('ann', 'enqueue', []);
+    const b = await rpc<{ status: string; match: Info }>('bob', 'enqueue', []);
+    const a = await rpc<{ status: string; match: Info }>('ann', 'poll_match', []);
+    expect(b.status).toBe('matched');
+    return { a: a.match, b: b.match };
+  };
+
+  it('매치가 생기면 두 사람에게 서로 다른 비밀 키가 생기고, 매치 정보에는 내 키만 온다', async () => {
+    const { a, b } = await pair();
+    expect(a.id).toBe(b.id);
+    expect(a.seed).toBe(b.seed); // 전투용 매치 시드는 공유
+    expect(a.handKey).toMatch(/^k:[0-9a-f]{64}$/);
+    expect(b.handKey).toMatch(/^k:[0-9a-f]{64}$/);
+    expect(a.handKey).not.toBe(b.handKey);
+    expect(JSON.stringify(b)).not.toContain(a.handKey!);
+  });
+
+  it('상대 키는 어떤 길로도 읽을 수 없다 (테이블 직접 조회·매치 행·실시간 발행)', async () => {
+    const { a, b } = await pair();
+    const mine = await as<{ player_id: string; hand_key: string }>('bob', `select player_id, hand_key from public.match_secrets where match_id = '${b.id}'`);
+    expect(mine).toEqual([{ player_id: users.bob, hand_key: b.handKey }]);
+    const row = await as<Record<string, unknown>>('bob', `select * from public.matches where id = '${b.id}'`);
+    expect(JSON.stringify(row)).not.toContain(a.handKey!);
+    await as('bob', `update public.match_secrets set hand_key = 'k:x' where match_id = '${b.id}'`).catch(() => undefined);
+    const [{ hand_key }] = await admin<{ hand_key: string }>(`select hand_key from public.match_secrets where match_id = '${b.id}' and player_id = '${users.bob}'`);
+    expect(hand_key).toBe(b.handKey);
+    const pub = await admin<{ tablename: string }>(`select tablename from pg_publication_tables where pubname = 'supabase_realtime'`);
+    expect(pub.map((p) => p.tablename)).not.toContain('match_secrets');
+    await rpc('ann', 'forfeit_match', [a.id]);
+  });
+
+  it('동일 손패 규칙의 친구 방은 두 사람의 키가 같다', async () => {
+    const room = await rpc<{ code: string }>('ann', 'create_room', [JSON.stringify({ sharedHand: true })]);
+    await rpc('dan', 'join_room', [room.code]);
+    await rpc('ann', 'set_ready', [room.code, true]);
+    const live = await rpc<{ match_id: string }>('dan', 'set_ready', [room.code, true]);
+    const keys = await admin<{ hand_key: string }>(`select hand_key from public.match_secrets where match_id = '${live.match_id}'`);
+    expect(keys.length).toBe(2);
+    expect(keys[0].hand_key).toBe(keys[1].hand_key);
+    expect(keys[0].hand_key).toMatch(/^k:/);
+    await rpc('ann', 'leave_room', [room.code]);
+  });
+
+  it('대체 상대 매치는 내 키만 생기고, 고스트 대본에는 그 판 주인의 키가 실린다', async () => {
+    // 고스트 후보: ann의 끝난 랭크 판
+    const [{ id: gid }] = await admin<{ id: string }>(`select id from public.matches where mode = 'ranked' and (p1 = '${users.ann}' or p2 = '${users.ann}') and status = 'done' limit 1`);
+    await admin(`insert into public.match_logs (match_id, player_id, rounds, verified) values ('${gid}', '${users.ann}', '[{"wave":1}]', true) on conflict do nothing`);
+    await admin(`delete from public.ghosts`);
+    await admin(`insert into public.ghosts (player_id, match_id, rating, wave_count, seed) select '${users.ann}', id, 1000, wave_count, seed from public.matches where id = '${gid}'`);
+    await admin(`update public.profiles set rating = 1000 where id = '${users.cat}'`);
+    await rpc('cat', 'enqueue', []);
+    await admin(`update public.queue set fallback_at = now() - interval '1 second' where player_id = '${users.cat}'`);
+    const r = await rpc<{ status: string; match: Info & { opponent: { id: string | null } } }>('cat', 'poll_match', []);
+    expect(r.match.opponent.id).toBeNull();
+    expect(r.match.handKey).toMatch(/^k:/);
+    expect((await admin(`select 1 from public.match_secrets where match_id = '${r.match.id}'`)).length).toBe(1);
+    const script = await rpc<{ handKey: string; player: string }>('cat', 'get_opponent_script', [r.match.id]);
+    const [{ hand_key }] = await admin<{ hand_key: string }>(`select hand_key from public.match_secrets where match_id = '${gid}' and player_id = '${users.ann}'`);
+    expect(script).toMatchObject({ player: users.ann, handKey: hand_key });
+    expect(script.handKey).not.toBe(r.match.handKey);
+    await rpc('cat', 'forfeit_match', [r.match.id]);
+  });
+
+  it('구경꾼은 손패 키를 하나도 못 본다', async () => {
+    expect((await as('cat', `select * from public.match_secrets where player_id <> '${users.cat}'`)).length).toBe(0);
+  });
+
+  it('키를 만드는 함수는 클라이언트가 부를 수 없다', async () => {
+    await expect(rpc('ann', 'new_hand_key', [])).rejects.toThrow();
+  });
+});
+
 describe('판정·레이팅 순수 함수', () => {
   const decide = async (a: object, b: object) =>
     (await admin<{ r: { winner: string; reason: string } }>('select public.decide_winner($1::jsonb, $2::jsonb) as r', [JSON.stringify(a), JSON.stringify(b)]))[0].r;

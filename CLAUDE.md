@@ -62,7 +62,8 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 광고 보상은 캠페인에서만, 버튼에 `▶ AD` 표기 필수. 대전 화면에는 광고·부활 UI를 넣지 않는다.
 
 ## 결정론 규칙 (docs/mode-design.md §2.2)
-- 대전 모드의 GameLoop은 `seedStreams(매치 시드, { player, sharedHand })`로 만든다. 손패 난수는 라운드마다 (시드, 플레이어 키, 라운드)로, 전투 난수는 (시드, 라운드)로 새로 잡는다. `src/systems`에 `Math.random` 직접 호출 금지(기본 인자 제외).
+- 대전 모드의 GameLoop은 `seedStreams(매치 시드, { handKey })`로 만든다. 손패 난수는 라운드마다 (시드, 손패 키, 라운드)로, 전투 난수는 (시드, 라운드)로 새로 잡는다.
+- **손패 키는 비밀이다.** 서버 매치는 서버가 플레이어별로 만든 키(`match_secrets.hand_key`, 'k:…', 동일 손패 규칙이면 두 사람이 같음)를 `MatchInfo.handKey`로 본인에게만 준다. 이벤트·로그·결과 화면 어디에도 싣지 않는다. 키 없이 서버 매치를 시작하지 않는다(MatchScene·FriendScene이 막음). `player`로 만드는 키('p:'+id)는 상대가 계산할 수 있으므로 서버 없는 판·테스트·비밀 키 이전 매치 재생에만 쓴다. 서버 없는 판은 `localHandKey()`. `src/systems`에 `Math.random` 직접 호출 금지(기본 인자 제외).
 - 대전 전투는 고정 step(`duel.json match.simStep` = 0.1초 → `config.simStep`). `tickCombat(dt)`가 dt를 모아 step 단위로만 진행하고, 렌더는 `combatAlpha`로 보간(TrackView.updateEnemies). 시뮬레이터·서버·클라이언트가 같은 값이어야 한다.
 - 플레이어 상태를 바꾸는 GameLoop 공개 메서드를 새로 만들면 `emit(op)`로 입력을 알리고 `InputLog`의 `RoundOp`·`apply`·기록기 요약에 추가한다. 전투 중 입력은 step 번호(`combatSteps`)로 기록. 판돈으로 오간 골드·하트는 g/l 외부 입력으로 남는다.
 - `tests/InputLog.test.ts`의 "100판 재생 100% 일치"가 결정론 회귀 테스트다. 로직을 고쳐 이 테스트가 깨지면 난수 호출 순서나 가변 dt가 새로 생긴 것이다.
@@ -167,7 +168,7 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): F단계 시즌·랭킹 — 마이그레이션 000700(season_results, ensure_season 지연 넘김, leaderboard, my_season, claim_season_reward), Ranking 순수 로직, RankScene(로비 랭킹 탭). 시즌은 cron 없이 시즌을 읽는 RPC·enqueue가 넘긴다. 보상 다이아는 서버에 수령 기록 후 메타(localStorage)에 더한다.
 - 온라인 단계 A~F 완료.
 - 완료(2026-09-29): 친구 방 관전 — 마이그레이션 000800(room_spectators, watch_room/watch_info/unwatch_room), SpectateScene, 친구 대전 화면의 [관전하기]. 실서버에서 세 계정으로 방 구경 → 대전 관전 → 도중 재입장 → 결과 확인.
-- 알려진 약점: 손패 시드 스트림의 키가 플레이어 id라서, 매치 시드와 상대 id를 아는 대전 상대는 상대 손패를 계산할 수 있다(클라이언트를 고친 경우). 막으려면 서버가 플레이어별 비밀 손패 시드를 따로 줘야 한다.
+- 손패 시드 보안 보강(2026-10-12, 코드·테스트 완료): 플레이어별 비밀 손패 키(마이그레이션 000900 match_secrets + 매치 생성 트리거, match_public·get_opponent_script에 내 키/고스트 주인 키, verify-match가 키로 재생). **원격 반영 대기** — poker-defense 프로젝트가 비활성(일시 중지)이라 db push·fn:deploy를 못 함. 재개 후 `npm run db:push` → `npm run fn:deploy` 필요. 그 전까지 새 클라이언트는 서버 매치를 '서버 업데이트가 필요해요'로 거절한다.
 - 완료(2026-09-29): 대전 중 기권 버튼, 재접속 이어하기(랭크·친구·서버 없는 판). 실서버에서 대체 상대 매치 전투 중 새로고침 → 복원, 사람 상대 매치 새로고침 → 복원(판돈 일치) → 상대 기권 확인.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 미구현: 일일 미션·상점(IAP)·광고, 발사체/피격 이펙트·사운드, 튜토리얼.

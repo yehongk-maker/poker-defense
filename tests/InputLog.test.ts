@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GameLoop, type GameData, type GamePhase } from '../src/systems/GameLoop.ts';
 import { buildGameData, rankedDuel, friendDuel, RANKED_RULES, CAMPAIGN, type ModeSources } from '../src/systems/GameMode.ts';
-import { hashSeed, seededRng, seedStreams, randomSeed } from '../src/systems/Seed.ts';
+import { hashSeed, seededRng, seedStreams, randomSeed, localHandKey } from '../src/systems/Seed.ts';
 import { InputRecorder, replayMatch, logChecksum, type RoundInput } from '../src/systems/InputLog.ts';
 import { smartExchange, smartManage } from '../src/systems/bots.ts';
 import { verifyMatchLog } from '../src/net/verifyMatch.ts';
@@ -17,6 +17,7 @@ const base = (): GameData => ({ units: load('units.json').units, hands: load('ha
 const sources = (): ModeSources => ({ base: base(), duelWaves: { waves: dw.waves, enemyTypes: dw.enemyTypes, battleConfig: dw.config }, duelMatch: load('duel.json').match });
 const duelData = () => buildGameData(sources(), rankedDuel('live', 's'), null);
 const phaseOf = (g: GameLoop) => g.phase as GamePhase;
+const wire = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
 /**
  * 사람처럼 들쭉날쭉한 프레임으로 한 판을 친다: smart 봇 + 교환권 + 판돈 흉내(외부 골드·하트) + 영웅 스킬.
@@ -91,6 +92,34 @@ describe('Seed — 시드 난수와 스트림', () => {
     const a = new GameLoop(data, seedStreams('m3', { player: 'a' }));
     const b = new GameLoop(data, seedStreams('m3', { player: 'b' }));
     expect(a.cardPhase.hand).not.toEqual(b.cardPhase.hand);
+  });
+
+  it('비밀 손패 키: 대전 상대가 매치 시드와 내 id를 알아도 내 손패를 계산할 수 없다', () => {
+    const data = duelData();
+    const mine = new GameLoop(data, seedStreams('m-sec', { handKey: 'k:only-me-knows', player: 'me' }));
+    // 상대가 할 수 있는 계산: 매치 시드 + 내 id (+ 동일 손패 키)
+    const guesses = [seedStreams('m-sec', { player: 'me' }), seedStreams('m-sec', { player: 'me', sharedHand: true })];
+    for (const s of guesses) expect(new GameLoop(data, s).cardPhase.hand).not.toEqual(mine.cardPhase.hand);
+    // 손패 키가 같으면(동일 손패 규칙) 같은 패, 다르면 다른 패
+    expect(new GameLoop(data, seedStreams('m-sec', { handKey: 'k:only-me-knows', player: 'you' })).cardPhase.hand).toEqual(mine.cardPhase.hand);
+    expect(new GameLoop(data, seedStreams('m-sec', { handKey: 'k:another' })).cardPhase.hand).not.toEqual(mine.cardPhase.hand);
+  });
+
+  it('손패 키는 손패에만 쓰이고, 전투 난수는 매치 시드로 양쪽이 같다', () => {
+    const a = seedStreams('m-sec', { handKey: 'k:a' }), b = seedStreams('m-sec', { handKey: 'k:b' });
+    expect(a.combat(4)()).toBe(b.combat(4)());
+    expect(a.hand(4)()).not.toBe(b.hand(4)());
+  });
+
+  it("옛 매치용 키('p:'+id, 'shared')는 비밀 키 도입 전과 같은 손패를 만든다 (끝난 판 재검증·기존 고스트)", () => {
+    expect(seedStreams('old', { handKey: 'p:abc' }).hand(3)()).toBe(seedStreams('old', { player: 'abc' }).hand(3)());
+    expect(seedStreams('old', { handKey: 'shared' }).hand(3)()).toBe(seedStreams('old', { player: 'x', sharedHand: true }).hand(3)());
+  });
+
+  it('로컬 손패 키는 매번 다르고 온라인 키와 같은 모양', () => {
+    const k = localHandKey(seededRng(1));
+    expect(k).toMatch(/^k:[0-9a-f]{32}$/);
+    expect(localHandKey(seededRng(2))).not.toBe(k);
   });
 
   it('무작위 시드는 16진 16자', () => {
@@ -271,6 +300,18 @@ describe('매치 검증 (개연성 + 재생) — verify-match 함수와 같은 �
     const m = input(loop, 'v3', data.config.totalWaves);
     const r = verifyMatchLog(sources(), rec.rounds, { ...m, rules: { ...RANKED_RULES, applyMeta: true } });
     expect(r.replayed).toBe(false);
+  });
+
+  it('검증은 그 플레이어의 손패 키로 재생한다: 맞는 키는 통과, 상대가 아는 값(id)으로는 재생이 맞지 않는다', () => {
+    const data = duelData();
+    const loop = new GameLoop(data, seedStreams('v5', { handKey: 'k:secret-v5' }));
+    const rec = new InputRecorder(loop, data.config.simStep);
+    while (phaseOf(loop) === 'card') { smartExchange(loop); loop.confirmHand(); smartManage(loop); loop.startCombat(); while (phaseOf(loop) === 'combat') loop.stepCombat(); }
+    const m = input(loop, 'v5', data.config.totalWaves);
+    expect(verifyMatchLog(sources(), wire(rec.rounds), { ...m, handKey: 'k:secret-v5' })).toMatchObject({ ok: true, replayed: true });
+    const wrong = verifyMatchLog(sources(), wire(rec.rounds), { ...m, handKey: null });
+    expect(wrong.ok).toBe(false);
+    expect(wrong.issues.some((i) => i.startsWith('replay:'))).toBe(true);
   });
 
   it('ops 없는 로그는 통과하지 못한다', () => {

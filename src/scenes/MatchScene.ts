@@ -117,6 +117,9 @@ export class MatchScene extends Phaser.Scene {
   /** 상대를 만들고(종류는 화면에 드러내지 않는다) 상대 소개 → 대전 */
   private async prepare(info: MatchInfo, me: Profile): Promise<void> {
     this.cancelBtn.setEnabled(false);
+    // 손패 키가 없으면 이 판의 손패를 만들 수 없다 (서버가 옛 버전) — 시작하지 않는다
+    if (!info.handKey) { this.status.setText('서버 업데이트가 필요해요'); this.cancelBtn.setLabel('돌아가기').setEnabled(true); this.found = false; return; }
+    const handKey = info.handKey;
     const mode = rankedDuel(info.opponent.id ? 'live' : 'ai', info.seed);
     const data = buildGameData(loadModeSources(), mode, null);
     const identity = { name: info.opponent.name, rating: info.opponent.rating, avatar: info.opponent.avatar };
@@ -125,13 +128,13 @@ export class MatchScene extends Phaser.Scene {
       const transport = new SupabaseTransport(info.id, me.id);
       await transport.connect();
       const opponent = new LiveOpponent(identity, transport, data);
-      init = { mode, opponentSource: opponent, playerId: me.id, live: { matchId: info.id, roomCode: null, me: me.id, opponentId: info.opponent.id, transport } };
+      init = { mode, opponentSource: opponent, playerId: me.id, handKey, live: { matchId: info.id, roomCode: null, me: me.id, opponentId: info.opponent.id, transport } };
     } else {
       const script = await getOpponentScript(info.id).catch(() => null);
       const usable = script && Array.isArray(script.rounds) && script.rounds.length > 0 ? script : undefined;
       const preset = pickPreset(loadDuelConfig().ai.presets, identity.rating);
       const opponent: OpponentSource = new AIOpponent(data, identity, Math.random, { script: usable, preset });
-      init = { mode, opponentSource: opponent, playerId: me.id, online: { matchId: info.id, me: me.id }, opponentSave: { script: usable ?? null, presetId: preset?.id ?? null } };
+      init = { mode, opponentSource: opponent, playerId: me.id, handKey, online: { matchId: info.id, me: me.id }, opponentSave: { script: usable ?? null, presetId: preset?.id ?? null } };
     }
     if (!this.alive) { init.live?.transport.close(); return; }
     this.reveal(identity.name, identity.rating, identity.avatar, () => this.scene.start(SCENE.Game, init));

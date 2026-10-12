@@ -2,7 +2,9 @@
  * 시드 난수와 시드 스트림 (docs/mode-design.md §2.2). 순수.
  * 온라인 대전은 서버가 준 매치 시드 하나에서 "손패용"·"전투용" 난수를 라운드마다 따로 뽑는다.
  *  - 전투 스트림: 매치 시드 + 라운드 → 양쪽이 같은 값 (보스 조각 종류 등)
- *  - 손패 스트림: 매치 시드 + 플레이어 키 + 라운드 → 각자 다른 손패. "동일 손패" 규칙이면 키를 공유한다
+ *  - 손패 스트림: 매치 시드 + 손패 키 + 라운드 → 각자 다른 손패. "동일 손패" 규칙이면 키를 공유한다
+ *    온라인 매치의 손패 키는 서버가 플레이어별로 만든 비밀(match_secrets, 'k:…')이다 — 대전 상대가 매치 시드를 알아도 내 손패를 계산할 수 없다.
+ *    플레이어 id로 만드는 키('p:…')는 서버 없는 판·테스트와, 비밀 키 도입 전에 끝난 매치의 재생에만 쓴다.
  * 라운드마다 새로 시드를 잡으므로, 앞 라운드에서 교환을 몇 번 했는지가 다음 라운드 손패에 영향을 주지 않는다.
  */
 
@@ -42,18 +44,25 @@ export interface RngStreams {
 }
 
 export interface StreamOptions {
-  /** 손패 스트림을 가르는 키 (플레이어 id). sharedHand면 무시 */
-  player: string;
-  /** 친구 대전 "동일 손패": 두 사람이 같은 5장·같은 덱 순서 */
+  /** 서버가 준 비밀 손패 키 (온라인 매치). 있으면 player·sharedHand보다 우선 */
+  handKey?: string | null;
+  /** 손패 키가 없을 때 쓰는 플레이어 키 (서버 없는 판·테스트). 대전 상대가 알 수 있는 값이므로 온라인에서는 쓰지 않는다 */
+  player?: string;
+  /** 친구 대전 "동일 손패": 두 사람이 같은 5장·같은 덱 순서 (handKey가 없을 때만) */
   sharedHand?: boolean;
 }
 
 export function seedStreams(matchSeed: string, opt: StreamOptions): RngStreams {
-  const handKey = opt.sharedHand ? 'shared' : `p:${opt.player}`;
+  const handKey = opt.handKey ? opt.handKey : opt.sharedHand ? 'shared' : `p:${opt.player ?? 'local'}`;
   return {
     hand: (wave) => rngFromText(`${matchSeed}|hand|${handKey}|${wave}`),
     combat: (wave) => rngFromText(`${matchSeed}|combat|${wave}`),
   };
+}
+
+/** 온라인 손패 키처럼 생긴 로컬 키 (서버 없는 판) — 'k:' + 무작위 */
+export function localHandKey(rng: () => number = Math.random): string {
+  return `k:${randomSeed(rng)}${randomSeed(rng)}`;
 }
 
 /** 시드 없는 판(캠페인·로컬)에서 쓸 무작위 매치 시드 */

@@ -42,6 +42,8 @@ export interface MatchInfo {
   id: string;
   mode: 'ranked' | 'friend';
   seed: string;
+  /** 내 손패 키 (서버가 플레이어별로 만든 비밀). 상대 키는 받을 수 없다 */
+  handKey: string | null;
   waveCount: 20 | 40;
   rules: RoomRules;
   role: 'p1' | 'p2';

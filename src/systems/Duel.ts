@@ -21,8 +21,10 @@ import type { RoundInput, RoundOp } from './InputLog.ts';
  */
 export interface OpponentScript {
   seed: string;
-  /** 그 판을 친 플레이어의 키 (손패 시드 스트림) */
+  /** 그 판을 친 플레이어 id */
   player: string;
+  /** 그 판의 손패 키 (서버 match_secrets). 없으면 옛 방식(player)으로 */
+  handKey?: string | null;
   rounds: RoundInput[];
 }
 

@@ -102,3 +102,4 @@ npm run fn:deploy
 5. **E. 랭크 실시간** ✅: `…000600_forfeit_heartbeat.sql`(heartbeat·forfeit_match·claim_absent, enqueue 시 하던 랭크 매치 기권패), 봇 강도 프리셋, verify-match 판돈 교차 검증.
 6. **F. 시즌·랭킹** ✅: `…000700_season_ranking.sql`(season_results, leaderboard, my_season, claim_season_reward, ensure_season). cron 없이 지연 넘김. 시즌을 강제로 넘겨 시험하려면 대시보드 SQL에서 `update seasons set ends_at = now() - interval '1 hour'` 후 랭킹 탭을 연다.
 7. **관전** ✅: `…000800_spectators.sql`(room_spectators, watch_room·watch_info·unwatch_room, 구경꾼용 rooms 조회 정책). 로컬에서 세 번째 계정은 `http://[::1]:5180`.
+8. **손패 키 비밀** (원격 미반영): `…000900_hand_secrets.sql` — match_secrets(플레이어별 비밀 손패 키, RLS 내 행만, Realtime 발행 제외), 매치 생성 트리거, match_public에 handKey, get_opponent_script에 고스트 주인 키, 옛 매치는 'p:'+id로 채워 재검증 호환. 프로젝트가 일시 중지돼 있으면 대시보드에서 Restore 후 `npm run db:push`·`npm run fn:deploy`.

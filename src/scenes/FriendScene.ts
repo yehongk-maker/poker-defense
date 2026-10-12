@@ -486,6 +486,7 @@ export class FriendScene extends Phaser.Scene {
     }
     try {
       const info = await getMatch(matchId, me.id);
+      if (!info.handKey) throw new Error('hand_key_missing');
       const rules = normalizeRules({ ...info.rules, waves: info.waveCount });
       const mode = friendDuel(rules, info.seed);
       const transport = new SupabaseTransport(info.id, me.id);
@@ -493,7 +494,7 @@ export class FriendScene extends Phaser.Scene {
       if (!this.alive) { transport.close(); return; }
       const opponent = new LiveOpponent({ name: info.opponent.name, rating: null, avatar: info.opponent.avatar }, transport, buildGameData(loadModeSources(), mode, null));
       const live: LiveContext = { matchId: info.id, roomCode: room.code, me: me.id, opponentId: info.opponent.id, transport };
-      const init: GameSceneInit = { mode, opponentSource: opponent, playerId: me.id, live };
+      const init: GameSceneInit = { mode, opponentSource: opponent, playerId: me.id, handKey: info.handKey, live };
       this.countdown(() => this.scene.start(SCENE.Game, init));
     } catch (e) {
       this.starting = false;

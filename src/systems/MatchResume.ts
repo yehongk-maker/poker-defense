@@ -30,6 +30,8 @@ export interface SavedMatch {
   mode: GameMode;
   playerId: string;
   seed: string;
+  /** 내 손패 키 (서버가 준 비밀, 서버 없는 판은 로컬 무작위). 이 기기에만 저장된다 */
+  handKey: string;
   rounds: RoundInput[];
   /** 카드 선택 중이었다면 그때까지 쓴 시간(초) */
   cardElapsed: number;
@@ -43,7 +45,7 @@ export interface SavedMatch {
 
 export function isSavedMatch(x: unknown): x is SavedMatch {
   const s = x as SavedMatch | null;
-  return !!s && s.version === 1 && typeof s.seed === 'string' && typeof s.playerId === 'string' && Array.isArray(s.rounds)
+  return !!s && s.version === 1 && typeof s.seed === 'string' && typeof s.playerId === 'string' && typeof s.handKey === 'string' && s.handKey.length > 0 && Array.isArray(s.rounds)
     && !!s.mode && typeof s.mode.id === 'string' && !!s.identity && typeof s.identity.name === 'string'
     && (s.kind === 'live' || s.kind === 'online' || s.kind === 'local');
 }
@@ -54,8 +56,8 @@ export interface ResumedLoop { loop: GameLoop; recorder: InputRecorder }
  * 저장된 로그로 내 판을 되돌린다.
  * @throws 로그가 재생되지 않으면 (저장이 깨졌거나 데이터가 바뀜) — 호출 측이 저장을 버린다
  */
-export function resumeLoop(data: GameData, saved: Pick<SavedMatch, 'seed' | 'playerId' | 'mode' | 'rounds' | 'cardElapsed'>): ResumedLoop {
-  const loop = new GameLoop(data, seedStreams(saved.seed, { player: saved.playerId, sharedHand: saved.mode.sharedHand }));
+export function resumeLoop(data: GameData, saved: Pick<SavedMatch, 'seed' | 'handKey' | 'mode' | 'rounds' | 'cardElapsed'>): ResumedLoop {
+  const loop = new GameLoop(data, seedStreams(saved.seed, { handKey: saved.handKey }));
   // 입력이 하나도 없는 마지막 라운드(막 받은 패)는 재생할 것이 없다
   const rounds = saved.rounds.filter((r, i) => !(i === saved.rounds.length - 1 && r.partial && (r.ops ?? []).length === 0));
   const { issues } = replayInto(loop, data, rounds);

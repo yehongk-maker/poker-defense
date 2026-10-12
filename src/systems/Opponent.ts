@@ -78,7 +78,7 @@ export class AIOpponent implements OpponentSource {
     const { script, preset, restore, ...given } = opts;
     // 강도 프리셋: 전략 강도 + 생각 시간. 대본이 있으면 대본이 끝난 뒤(이어받기)에만 쓰인다
     const rest = preset ? { thinkSec: preset.thinkSec, manageSec: preset.manageSec, skill: preset, ...given } : given;
-    const source = script ? seedStreams(script.seed, { player: script.player }) : rng;
+    const source = script ? seedStreams(script.seed, { handKey: script.handKey, player: script.player }) : rng;
     // 이어하기: 상대의 마지막 라운드 시작 시점에서 다시
     this.loop = restore ? GameLoop.restore(data, restore, source) : new GameLoop(data, source);
     this.ai = new OpponentAI(data, rng, { ...rest, loop: this.loop, script: script?.rounds });

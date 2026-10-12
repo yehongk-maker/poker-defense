@@ -31,12 +31,15 @@ Deno.serve(async (req) => {
     if (m.status !== 'done') return json({ error: 'match_not_done' }, 409);
 
     const { data: logs } = await admin.from('match_logs').select('*').eq('match_id', matchId);
+    // 손패 키는 service role만 읽는다 (클라이언트는 자기 키만)
+    const { data: secrets } = await admin.from('match_secrets').select('player_id, hand_key').eq('match_id', matchId);
+    const handKeyOf = (id: string) => (secrets ?? []).find((s) => s.player_id === id)?.hand_key ?? null;
     const wallSec = (new Date(m.ended_at).getTime() - new Date(m.started_at).getTime()) / 1000;
     const results: Record<string, { ok: boolean; issues: string[]; replayed: boolean }> = {};
     for (const l of logs ?? []) {
       const report = l.player_id === m.p1 ? m.p1_report : m.p2_report;
       const other = (logs ?? []).find((x) => x.player_id !== l.player_id);
-      const r = verifyMatch(l.rounds, { seed: m.seed, playerId: l.player_id, waveCount: m.wave_count, rules: m.rules, report, wallSec, opponentRounds: other?.rounds });
+      const r = verifyMatch(l.rounds, { seed: m.seed, playerId: l.player_id, handKey: handKeyOf(l.player_id), waveCount: m.wave_count, rules: m.rules, report, wallSec, opponentRounds: other?.rounds });
       results[l.player_id] = r;
       await admin.from('match_logs')
         .update({ verified: r.ok, verify_note: r.ok ? null : r.issues.slice(0, 10).join(',') })

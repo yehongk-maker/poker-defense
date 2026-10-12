@@ -12,8 +12,10 @@ import { verifyBets } from './verifyBets.ts';
 
 export interface MatchVerifyInput {
   seed: string;
-  /** 로그를 낸 플레이어 id (손패 시드 스트림의 키) */
+  /** 로그를 낸 플레이어 id */
   playerId: string;
+  /** 그 플레이어의 손패 키 (match_secrets). 비밀 키 도입 전 매치는 'p:'+id로 채워져 있다 */
+  handKey?: string | null;
   waveCount: number;
   rules: RoomRules;
   report: MatchReport;
@@ -42,7 +44,7 @@ export function verifyMatchLog(sources: ModeSources, rounds: unknown, m: MatchVe
 
   const mode = friendDuel({ ...m.rules, waves: m.waveCount as 20 | 40 }, m.seed);
   const data = buildGameData(sources, mode, null);
-  const streams = seedStreams(m.seed, { player: m.playerId, sharedHand: m.rules.sharedHand });
+  const streams = seedStreams(m.seed, { handKey: m.handKey, player: m.playerId, sharedHand: m.rules.sharedHand });
   let re;
   try {
     re = replayMatch(data, streams, rounds as RoundInput[]);

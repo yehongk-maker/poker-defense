@@ -41,6 +41,7 @@ export function errorText(e: unknown): string {
     [/not_friends/, '친구 목록에 있는 상대만 초대할 수 있어요'],
     [/invite_not_found/, '초대가 만료됐어요'],
     [/not_authenticated/, '로그인이 필요해요'],
+    [/hand_key_missing/, '서버 업데이트가 필요해요'],
     [/spectators_full/, '구경꾼이 가득 찼어요 (최대 8명)'],
     [/in_room/, '이 방의 참가자는 구경할 수 없어요'],
     [/not_watching/, '구경 중인 방이 아니에요'],

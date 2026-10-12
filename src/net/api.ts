@@ -38,9 +38,13 @@ export async function getMatch(matchId: string, me: string): Promise<MatchInfo> 
   const m = data as { id: string; mode: 'ranked' | 'friend'; seed: string; wave_count: 20 | 40; rules: RoomRules; p1: string; p2: string | null; p2_name: string | null; p2_rating: number | null; p2_avatar: Profile['avatar'] | null; started_at: string; status: MatchInfo['status']; winner: MatchInfo['winner']; reason: string | null; rating_delta_p1: number | null; rating_delta_p2: number | null };
   const role = m.p1 === me ? 'p1' : 'p2';
   const oppId = role === 'p1' ? m.p2 : m.p1;
-  const p = oppId ? await getProfile(oppId) : null;
+  const [p, secret] = await Promise.all([
+    oppId ? getProfile(oppId) : Promise.resolve(null),
+    // RLS로 내 행만 보인다
+    getClient().from('match_secrets').select('hand_key').eq('match_id', matchId).eq('player_id', me).maybeSingle(),
+  ]);
   return {
-    id: m.id, mode: m.mode, seed: m.seed, waveCount: m.wave_count, rules: m.rules, role,
+    id: m.id, mode: m.mode, seed: m.seed, handKey: (secret.data as { hand_key: string } | null)?.hand_key ?? null, waveCount: m.wave_count, rules: m.rules, role,
     opponent: p ? { id: p.id, name: p.nick, rating: p.rating, avatar: p.avatar } : { id: null, name: m.p2_name ?? '상대', rating: m.p2_rating ?? 1000, avatar: m.p2_avatar ?? 'S' },
     startedAt: m.started_at, status: m.status, winner: m.winner, reason: m.reason,
     ratingDelta: role === 'p1' ? m.rating_delta_p1 : m.rating_delta_p2,
@@ -90,7 +94,7 @@ export const enqueue = () => rpc<PollResult>('enqueue');
 export const pollMatch = () => rpc<PollResult>('poll_match');
 export const cancelQueue = () => rpc<void>('cancel_queue');
 /** 대체 상대의 대본(입력 로그). 없으면 null → 클라이언트 봇 두뇌로 진행. 사람 상대면 오류 */
-export const getOpponentScript = (matchId: string) => rpc<{ rounds: RoundInput[]; seed: string; player: string } | null>('get_opponent_script', { p_match: matchId });
+export const getOpponentScript = (matchId: string) => rpc<{ rounds: RoundInput[]; seed: string; player: string; handKey: string } | null>('get_opponent_script', { p_match: matchId });
 
 /**
  * 매칭될 때까지 기다린다 (2.5초마다 poll). 대기가 길어지면 서버가 알아서 상대를 붙인다.

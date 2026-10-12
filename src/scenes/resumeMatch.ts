@@ -32,7 +32,7 @@ export async function prepareResume(saved: SavedMatch): Promise<ResumeOutcome> {
     const o = saved.opponent;
     const preset = loadDuelConfig().ai.presets?.find((p) => p.id === o?.presetId);
     const opponent = new AIOpponent(oppData, saved.identity, Math.random, { script: o?.script ?? undefined, preset, restore: o?.snapshot ?? undefined });
-    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, saved, resumed, opponentSave: { script: o?.script ?? null, presetId: o?.presetId ?? null } } };
+    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, handKey: saved.handKey, saved, resumed, opponentSave: { script: o?.script ?? null, presetId: o?.presetId ?? null } } };
   }
 
   // 서버 매치: 아직 진행 중이어야 한다 (자리를 비운 사이 기권패 처리됐을 수 있다)
@@ -50,14 +50,14 @@ export async function prepareResume(saved: SavedMatch): Promise<ResumeOutcome> {
     const o = saved.opponent;
     const preset = loadDuelConfig().ai.presets?.find((p) => p.id === o?.presetId);
     const opponent = new AIOpponent(oppData, saved.identity, Math.random, { script: o?.script ?? undefined, preset, restore: o?.snapshot ?? undefined });
-    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, online: { matchId: saved.matchId, me: saved.me }, saved, resumed, opponentSave: { script: o?.script ?? null, presetId: o?.presetId ?? null } } };
+    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, handKey: saved.handKey, online: { matchId: saved.matchId, me: saved.me }, saved, resumed, opponentSave: { script: o?.script ?? null, presetId: o?.presetId ?? null } } };
   }
 
   try {
     const transport = new SupabaseTransport(saved.matchId, saved.me);
     await transport.connect();
     const opponent = new LiveOpponent(saved.identity, transport, oppData);
-    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, live: { matchId: saved.matchId, roomCode: saved.roomCode, me: saved.me, opponentId: saved.opponentId, transport }, saved, resumed } };
+    return { ok: true, init: { mode, opponentSource: opponent, playerId: saved.playerId, handKey: saved.handKey, live: { matchId: saved.matchId, roomCode: saved.roomCode, me: saved.me, opponentId: saved.opponentId, transport }, saved, resumed } };
   } catch {
     return { ok: false, reason: 'offline' };
   }

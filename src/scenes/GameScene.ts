@@ -8,7 +8,7 @@ import { AIOpponent, localBotIdentity, type OpponentIdentity, type OpponentSourc
 import { CampaignBar } from '../ui/CampaignBar.ts';
 import { getMeta } from '../meta.ts';
 import { GameLoop, SHARD_LABEL, type GameData } from '../systems/GameLoop.ts';
-import { randomSeed, seedStreams, type RngStreams } from '../systems/Seed.ts';
+import { localHandKey, randomSeed, seedStreams, type RngStreams } from '../systems/Seed.ts';
 import { InputRecorder, replayMatch, type RoundInput } from '../systems/InputLog.ts';
 import { LiveOpponent, LivePublisher, type LiveContext } from '../net/Live.ts';
 import { addFriend, claimAbsent, forfeitMatch, getMatch, heartbeat, leaveRoom, reportResult, submitLog, subscribeMatch, verifyMatch } from '../net/api.ts';
@@ -59,6 +59,8 @@ export interface GameSceneInit {
   resume?: boolean;
   /** 내 계정 id — 손패 시드 스트림을 가르는 키 (온라인). 없으면 'local' */
   playerId?: string;
+  /** 내 손패 키 (서버 매치는 서버가 준 비밀, 필수). 서버 없는 판은 비워 두면 이 기기에서 만든다 */
+  handKey?: string;
   /** 실시간 매치 (친구 대전·랭크 실시간). opponentSource는 LiveOpponent여야 한다 */
   live?: LiveContext;
   /** 서버 매치이지만 상대가 이 기기에서 도는 경우 (대체 매칭). 끝나면 양쪽 성적을 함께 보고한다 */
@@ -111,6 +113,8 @@ export class GameScene extends Phaser.Scene {
   /** 대전: 입력 로그 기록기와 그 판의 시드 (결과 보고 때 서버로 보낸다) */
   private recorder: InputRecorder | null = null;
   private matchSeed = '';
+  /** 내 손패 키 — 상대에게 보내지 않는다 */
+  private handKey = '';
   private live: LiveContext | null = null;
   private publisher: LivePublisher | null = null;
   private lastFrameAt = 0;
@@ -528,18 +532,20 @@ export class GameScene extends Phaser.Scene {
     const resumed = this.initArgs.resumed, saved = this.initArgs.saved;
     if (resumed && saved) {
       this.matchSeed = saved.seed;
+      this.handKey = saved.handKey;
       this.recorder = resumed.recorder;
       return resumed.loop;
     }
     // 대전: 매치 시드로 난수를 고정하고 입력을 기록한다 (결정론 재생 — docs/mode-design.md §2.2)
     this.matchSeed = this.mode.seed ?? randomSeed();
+    this.handKey = this.initArgs.handKey ?? localHandKey();
     const loop = new GameLoop(this.data_, this.streams());
     this.recorder = new InputRecorder(loop, this.data_.config.simStep);
     return loop;
   }
 
   private streams(): RngStreams {
-    return seedStreams(this.matchSeed, { player: this.initArgs.playerId ?? 'local', sharedHand: this.mode.sharedHand });
+    return seedStreams(this.matchSeed, { handKey: this.handKey });
   }
 
   /** 이 판의 입력 로그 (대전만). 결과 보고와 함께 서버에 제출한다 */
@@ -788,6 +794,7 @@ export class GameScene extends Phaser.Scene {
       identity: this.opponent.identity,
       mode: { ...this.mode, seed: this.matchSeed },
       playerId: this.initArgs.playerId ?? 'local',
+      handKey: this.handKey,
       seed: this.matchSeed,
       rounds: this.recorder.rounds,
       cardElapsed: this.loop.phase === 'card' ? Math.max(0, p.timerSeconds - p.timeRemaining) : 0,

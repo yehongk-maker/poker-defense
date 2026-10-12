@@ -135,6 +135,20 @@ describe('고스트 대본 재생', () => {
     expect(ghost.identity).toEqual(bot.identity);
   });
 
+  it('대본의 손패 키로 그 판의 손패를 다시 만든다 (비밀 키로 친 판)', () => {
+    const data = duelData();
+    const loop = new GameLoop(data, seedStreams('gk', { handKey: 'k:owner-secret' }));
+    const rec = new InputRecorder(loop, data.config.simStep);
+    while (phaseOf(loop) === 'card') { smartExchange(loop); loop.confirmHand(); smartManage(loop); loop.startCombat(); while (phaseOf(loop) === 'combat') loop.tickCombat(1 / 60); }
+    const rounds = JSON.parse(JSON.stringify(rec.rounds)) as RoundInput[];
+    const ghost = new AIOpponent(data, ID, seededRng(9), { script: { seed: 'gk', player: 'owner', handKey: 'k:owner-secret', rounds } });
+    run(ghost, () => 1 / 60);
+    expect({ wave: ghost.loop.wave, life: ghost.loop.life, gold: ghost.loop.gold }).toEqual({ wave: loop.wave, life: loop.life, gold: loop.gold });
+    // 키 없이(옛 방식) 따라 하면 손패가 달라 같은 판이 되지 않는다
+    const blind = new AIOpponent(data, ID, seededRng(9), { script: { seed: 'gk', player: 'owner', rounds } });
+    expect(blind.loop.cardPhase.hand).not.toEqual(new GameLoop(data, seedStreams('gk', { handKey: 'k:owner-secret' })).cardPhase.hand);
+  });
+
   it('ops가 없는 옛 로그는 대본으로 쓰지 않고 봇 두뇌로 친다', () => {
     const o = original('old', 'owner', 10);
     const old = o.rounds.map(({ ops: _o, ...r }) => r) as RoundInput[];

@@ -43,11 +43,12 @@ function playUntil(loop: GameLoop, stop: (g: GameLoop) => boolean): void {
   }
 }
 const stateOf = (g: GameLoop) => ({ wave: g.wave, phase: g.phase, life: g.life, gold: g.gold, steps: g.phase === 'combat' ? g.combatSteps : 0, units: g.units.map((u) => `${u.def.id}@${u.slot}`).sort(), hand: g.phase === 'card' ? g.cardPhase.hand.map((c) => `${c.rank}${c.suit}`) : [] });
-const saved = (rounds: RoundInput[], cardElapsed = 0): Pick<SavedMatch, 'seed' | 'playerId' | 'mode' | 'rounds' | 'cardElapsed'> => wire({ seed: 'resume-seed', playerId: 'me', mode: MODE, rounds, cardElapsed });
+const HAND = 'k:resume-secret';
+const saved = (rounds: RoundInput[], cardElapsed = 0): Pick<SavedMatch, 'seed' | 'handKey' | 'mode' | 'rounds' | 'cardElapsed'> => wire({ seed: 'resume-seed', handKey: HAND, mode: MODE, rounds, cardElapsed });
 
 function fresh() {
   const d = data();
-  const loop = new GameLoop(d, seedStreams('resume-seed', { player: 'me' }));
+  const loop = new GameLoop(d, seedStreams('resume-seed', { handKey: HAND }));
   const rec = new InputRecorder(loop, d.config.simStep);
   return { d, loop, rec };
 }
@@ -74,7 +75,7 @@ describe('내 판 복원', () => {
     playUntil(r.loop, () => false);
     expect(stateOf(r.loop)).toEqual(stateOf(whole.loop));
     expect(wire(r.recorder.rounds)).toEqual(wire(whole.rec.rounds));
-    const re = replayMatch(data(), seedStreams('resume-seed', { player: 'me' }), wire(r.recorder.rounds));
+    const re = replayMatch(data(), seedStreams('resume-seed', { handKey: HAND }), wire(r.recorder.rounds));
     expect(re.issues).toEqual([]);
     expect(re.final.gold).toBe(whole.loop.gold);
   });
@@ -113,8 +114,9 @@ describe('내 판 복원', () => {
   it('저장 형식 검사와 매치 시계', () => {
     expect(isSavedMatch(null)).toBe(false);
     expect(isSavedMatch({ version: 1 })).toBe(false);
-    const s: SavedMatch = { version: 1, kind: 'online', matchId: 'm', roomCode: null, me: 'me', opponentId: null, identity: { name: 'x', rating: 1000, avatar: 'S' }, mode: MODE, playerId: 'me', seed: 's', rounds: [], cardElapsed: 0, betting: null, opponent: null, clock: 100, savedAt: 1_000_000, bestRank: -1 };
+    const s: SavedMatch = { version: 1, kind: 'online', matchId: 'm', roomCode: null, me: 'me', opponentId: null, identity: { name: 'x', rating: 1000, avatar: 'S' }, mode: MODE, playerId: 'me', seed: 's', handKey: HAND, rounds: [], cardElapsed: 0, betting: null, opponent: null, clock: 100, savedAt: 1_000_000, bestRank: -1 };
     expect(isSavedMatch(wire(s))).toBe(true);
+    expect(isSavedMatch({ ...wire(s), handKey: undefined })).toBe(false); // 손패 키 없는 옛 저장은 버린다
     expect(resumedClock(s, 1_020_000)).toBe(120);
     expect(resumedClock(s, 999_000)).toBe(100);
   });
