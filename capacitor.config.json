@@ -1,0 +1,8 @@
+{
+  "appId": "app.pokerdefense",
+  "appName": "포커디펜스",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#0f2450"
+  }
+}

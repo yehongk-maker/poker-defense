@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">포커디펜스</string>
+    <string name="title_activity_main">포커디펜스</string>
+    <string name="package_name">app.pokerdefense</string>
+    <string name="custom_url_scheme">app.pokerdefense</string>
+    <!-- Google 공개 테스트 앱 ID (테스트 광고만 나온다). 출시 전 실제 ID로 교체 -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+</resources>

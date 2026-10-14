@@ -44,6 +44,9 @@ export class MatchScene extends Phaser.Scene {
     super(SCENE.Match);
   }
 
+  /** Android 뒤로 가기 */
+  onBack(): boolean { if (!this.found) void this.cancel(); return true; }
+
   create(): void {
     this.alive = true;
     this.found = false;

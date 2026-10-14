@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { SCENE, GAME_WIDTH, GAME_HEIGHT } from '../config.ts';
 import { loadDuelConfig, loadModeSources, loadRewardedAds } from '../data/index.ts';
-import { getAds } from '../ads.ts';
+import { getAds, maybeInterstitial } from '../ads.ts';
+import { loadInterstitial } from '../data/index.ts';
+import type { BackHandler } from '../native/index.ts';
 import { clearRun, loadRun, saveRun } from '../runSave.ts';
 import { CAMPAIGN, buildGameData, isDuel, type GameMode } from '../systems/GameMode.ts';
 import { AIOpponent, localBotIdentity, type OpponentIdentity, type OpponentSource } from '../systems/Opponent.ts';
@@ -97,7 +99,7 @@ const CLAIM_RETRY_SEC = 5;
  *  combat : tickCombat → TrackView에 적/타격 그리기
  *  스와이프: 오른쪽 → 상점·영웅(왼쪽 패널), 왼쪽 → 족보·시너지(오른쪽 패널), 위 → 상대 현황(아래 패널)
  */
-export class GameScene extends Phaser.Scene {
+export class GameScene extends Phaser.Scene implements BackHandler {
   private data_!: GameData;
   private loop!: GameLoop;
   private hud!: HUD;
@@ -596,7 +598,9 @@ export class GameScene extends Phaser.Scene {
   private async adExchange(): Promise<void> {
     if (this.loop.phase !== 'card' || this.adExchangeWave === this.loop.wave || this.hand.isAnimating) return;
     const wave = this.loop.wave;
+    this.showToast('광고를 불러오는 중…');
     const ok = await getAds().show('extra_exchange');
+    if (!ok) this.showToast('광고를 불러오지 못했어요. 잠시 후 다시 시도해 주세요');
     if (!ok || this.ended || this.loop.phase !== 'card' || this.loop.wave !== wave) return;
     this.adExchangeWave = wave;
     this.loop.cardPhase.grantBonusExchange(loadRewardedAds().extraExchange.grantExchanges);
@@ -851,7 +855,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     // 카드를 나눠 주는 연출 중에는 기다린다
-    const id = step && !(step.anchor === 'cards' && this.loop.cardPhase.state !== 'choosing') ? step.id : null;
+    const id = step && !(step.anchor === 'cards' && (this.loop.cardPhase.state !== 'choosing' || this.hand.isAnimating)) ? step.id : null;
     if (id === this.tutShown) return;
     this.tutShown = id;
     if (!step || !id) { this.tutOverlay.hide(); return; }
@@ -875,6 +879,29 @@ export class GameScene extends Phaser.Scene {
       case 'betBar': return b(this.betBar);
       default: return null;
     }
+  }
+
+  private leaving = false;
+  private async afterCampaign(go: () => void): Promise<void> {
+    if (this.leaving) return;
+    this.leaving = true;
+    await maybeInterstitial(loadInterstitial(), { mode: 'campaign', gameOver: true, adFree: getAds().autoGrant });
+    go();
+  }
+
+  // ── Android 뒤로 가기 (native/index.ts) ──
+  private lastBackAt = 0;
+  onBack(): boolean {
+    if (this.confirmBox) { this.confirmBox.destroy(); this.confirmBox = null; return true; }
+    if (this.nav.openSide) { this.nav.close(); return true; }
+    if (this.overlay) return true; // 결과 화면은 버튼으로
+    if (this.opponent) { this.askSurrender(); return true; } // 대전에서 나가기 = 기권 확인
+    // 캠페인: 두 번 누르면 로비로 (라운드 시작마다 자동 저장되어 이어할 수 있다)
+    const now = Date.now();
+    if (now - this.lastBackAt < 2500) { this.scene.start(SCENE.Lobby); return true; }
+    this.lastBackAt = now;
+    this.showToast('한 번 더 누르면 로비로 나가요 (이 라운드 처음부터 이어할 수 있어요)');
+    return true;
   }
 
   // ── 효과음 ──
@@ -1163,8 +1190,9 @@ export class GameScene extends Phaser.Scene {
       ad: {
         label: `부활하기 ♥${restoreLife} 회복`,
         onClick: async () => {
+          this.showToast('광고를 불러오는 중…');
           const ok = await getAds().show('revive');
-          if (!ok) return null;
+          if (!ok) { this.showToast('광고를 불러오지 못했어요. 잠시 후 다시 시도해 주세요'); return null; }
           this.loop.revive(restoreLife, maxPerRun);
           this.overlay?.destroy();
           this.overlay = null;
@@ -1206,15 +1234,17 @@ export class GameScene extends Phaser.Scene {
       ad: this.mode.ads && dbl.enabled && reward.gemsGained > 0 ? {
         label: `보상 ${dbl.multiplier}배 받기`,
         onClick: async () => {
+          this.showToast('광고를 불러오는 중…');
           const ok = await getAds().show('double_reward');
-          if (!ok) return null;
+          if (!ok) { this.showToast('광고를 불러오지 못했어요. 잠시 후 다시 시도해 주세요'); return null; }
           const extra = reward.gemsGained * (dbl.multiplier - 1);
           getMeta().addGems(extra);
           return `다이아 +${extra} 더 받음`;
         },
       } : undefined,
-      onContinue: () => this.scene.start(SCENE.Lobby),
-      onAgain: () => this.scene.restart({ mode: this.mode }),
+      // 전면 광고: 캠페인 게임오버 뒤 로비로 갈 때만, N판에 한 번 (GDD §9.2)
+      onContinue: () => void this.afterCampaign(() => this.scene.start(SCENE.Lobby)),
+      onAgain: () => void this.afterCampaign(() => this.scene.restart({ mode: this.mode })),
     });
   }
 }

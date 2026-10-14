@@ -114,7 +114,7 @@ export class LobbyScene extends Phaser.Scene {
   /** 설정 (모달): 효과음·볼륨·감속 모드. 바꾸는 즉시 저장된다 */
   private openSettingsSheet(): void {
     if (this.sheet) return;
-    const cx = GAME_WIDTH / 2, cy = 960, w = GAME_WIDTH - 2 * SIZE.gutter, h = 880;
+    const cx = GAME_WIDTH / 2, cy = 960, w = GAME_WIDTH - 2 * SIZE.gutter, h = 1000;
     const c = this.add.container(0, 0).setDepth(40);
     const close = () => { c.destroy(); this.sheet = null; };
     const dim = this.add.rectangle(cx, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, COLOR.dim, 0.72).setInteractive();
@@ -134,6 +134,7 @@ export class LobbyScene extends Phaser.Scene {
         next: () => { const i = VOLUMES.findIndex((x) => Math.abs(x.v - getSettings().volume) < 0.01); updateSettings({ volume: VOLUMES[(i + 1) % VOLUMES.length].v }); },
       },
       { label: '감속 모드', value: () => (getSettings().reduceMotion ? '켬' : '끔'), on: () => getSettings().reduceMotion, next: () => updateSettings({ reduceMotion: !getSettings().reduceMotion }) },
+      { label: '프레임 표시', value: () => (getSettings().showFps ? '켬' : '끔'), on: () => getSettings().showFps, next: () => updateSettings({ showFps: !getSettings().showFps }) },
     ];
     rows.forEach((r, i) => {
       const y = cy - h / 2 + 200 + i * 130;
@@ -141,8 +142,8 @@ export class LobbyScene extends Phaser.Scene {
       const b: Button = new Button(this, cx + w / 2 - 200, y, r.value(), () => { r.next(); b.setLabel(r.value()).setVariant(r.on() ? 'blue' : 'gray'); sfx('coin'); }, { width: 280, height: SIZE.btnS, fontSize: 36, variant: r.on() ? 'blue' : 'gray' });
       c.add(b);
     });
-    c.add(new Button(this, cx, cy + 230, '튜토리얼 다시 보기', () => { resetTutorials(); this.showToast('다음 판에서 가이드가 다시 나와요'); }, { width: 440, height: SIZE.btnS, fontSize: 32, variant: 'blue' }));
-    c.add(this.add.text(cx, cy + 150, '감속 모드: 흔들림·회전·잔상 연출을 줄여요', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5));
+    c.add(new Button(this, cx, cy + 290, '튜토리얼 다시 보기', () => { resetTutorials(); this.showToast('다음 판에서 가이드가 다시 나와요'); }, { width: 440, height: SIZE.btnS, fontSize: 32, variant: 'blue' }));
+    c.add(this.add.text(cx, cy + 210, '감속 모드: 흔들림·회전·잔상 연출을 줄여요', { fontSize: `${SIZE.caption + 2}px`, color: hex(COLOR.textSub), fontFamily: FONT.body, fontStyle: '700' }).setOrigin(0.5));
     c.add(new Button(this, cx, cy + h / 2 - 90, '닫기', close, { width: 300, height: SIZE.btnS + 8, fontSize: 34, variant: 'gray' }));
     this.sheet = c;
   }
@@ -265,7 +266,16 @@ export class LobbyScene extends Phaser.Scene {
     this.sheet = null;
   }
 
-  private showToast(msg: string): void {
+  /** Android 뒤로 가기: 열린 시트를 닫는다 (진행 중 대전 안내는 닫지 않음). 아무것도 없으면 앱이 처리(두 번 눌러 종료) */
+  onBack(): boolean {
+    if (!this.sheet) return false;
+    if (loadMatch()) return true;
+    this.sheet.destroy();
+    this.sheet = null;
+    return true;
+  }
+
+  showToast(msg: string): void {
     this.toast.setText(msg).setAlpha(1);
     this.tweens.killTweensOf(this.toast);
     this.tweens.add({ targets: this.toast, alpha: 0, delay: 1200, duration: 300 });

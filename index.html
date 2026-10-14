@@ -12,10 +12,12 @@
       html, body { margin: 0; padding: 0; background: #0f2450; height: 100%; overflow: hidden; }
       #game { width: 100%; height: 100%; }
       canvas { touch-action: none; }
+      /* 앱처럼: 길게 눌러 선택·복사 메뉴·탭 하이라이트 없음 */
+      html, body, #game { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
     </style>
   </head>
   <body>
-    <div id="game"></div>
+    <div id="game" oncontextmenu="return false"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

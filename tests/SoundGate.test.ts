@@ -37,6 +37,7 @@ describe('설정 정리', () => {
   it('볼륨은 0~1로 자른다', () => {
     expect(normalizeSettings({ volume: 3 }).volume).toBe(1);
     expect(normalizeSettings({ volume: -1 }).volume).toBe(0);
-    expect(normalizeSettings({ sound: false, reduceMotion: true })).toMatchObject({ sound: false, reduceMotion: true });
+    expect(normalizeSettings({ sound: false, reduceMotion: true, showFps: true })).toMatchObject({ sound: false, reduceMotion: true, showFps: true });
+    expect(normalizeSettings({ version: 1, sound: true, volume: 0.7, reduceMotion: false }).showFps).toBe(false); // 이전 저장
   });
 });

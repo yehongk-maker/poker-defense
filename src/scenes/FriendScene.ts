@@ -77,6 +77,9 @@ export class FriendScene extends Phaser.Scene {
     this.args = data ?? {};
   }
 
+  /** Android 뒤로 가기 */
+  onBack(): boolean { void this.exit(); return true; }
+
   create(): void {
     this.alive = true;
     this.room = null; this.invite = null; this.friends = []; this.busy = false; this.starting = false;

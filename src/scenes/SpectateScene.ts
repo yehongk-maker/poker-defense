@@ -48,6 +48,9 @@ export class SpectateScene extends Phaser.Scene {
     this.args = data;
   }
 
+  /** Android 뒤로 가기 */
+  onBack(): boolean { void this.leave(); return true; }
+
   create(): void {
     this.alive = true; this.over = false; this.acc = 0; this.sides = []; this.resultBox = null;
     const { info } = this.args;

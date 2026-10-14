@@ -43,9 +43,11 @@ export interface Settings {
   volume: number;
   /** 감속 모드 (DESIGN §6): 흔들림·회전·펄스·잔상 연출을 줄인다. OS의 reduced-motion도 같이 본다 */
   reduceMotion: boolean;
+  /** 화면 구석에 프레임 수 표시 (비공개 테스트에서 성능 제보용) */
+  showFps: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { version: 1, sound: true, volume: 0.7, reduceMotion: false };
+export const DEFAULT_SETTINGS: Settings = { version: 1, sound: true, volume: 0.7, reduceMotion: false, showFps: false };
 
 /** 저장된 값 정리 (모르는 값·범위 밖은 기본값으로) */
 export function normalizeSettings(raw: unknown): Settings {
@@ -56,5 +58,6 @@ export function normalizeSettings(raw: unknown): Settings {
     sound: typeof r.sound === 'boolean' ? r.sound : DEFAULT_SETTINGS.sound,
     volume: vol,
     reduceMotion: typeof r.reduceMotion === 'boolean' ? r.reduceMotion : DEFAULT_SETTINGS.reduceMotion,
+    showFps: typeof r.showFps === 'boolean' ? r.showFps : DEFAULT_SETTINGS.showFps,
   };
 }

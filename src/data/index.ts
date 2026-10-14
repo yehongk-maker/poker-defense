@@ -10,7 +10,7 @@ import duelWavesJson from './duel-waves.json';
 import type { GameData } from '../systems/GameLoop.ts';
 import type { DuelConfig } from '../systems/Betting.ts';
 import type { ModeSources, WaveSet } from '../systems/GameMode.ts';
-import type { RewardedAdsConfig } from '../systems/Ads.ts';
+import type { InterstitialConfig, RewardedAdsConfig } from '../systems/Ads.ts';
 import type { RankingConfig } from '../systems/Ranking.ts';
 import rankingJson from './ranking.json';
 
@@ -22,6 +22,11 @@ export function loadModeSources(): ModeSources {
     battleConfig: duelWavesJson.config as WaveSet['battleConfig'],
   };
   return { base: loadGameData(), duelWaves, duelMatch: loadDuelConfig().match };
+}
+
+/** 전면 광고 규칙 (config.json monetization.interstitial) */
+export function loadInterstitial(): InterstitialConfig {
+  return (configJson as unknown as { monetization: { interstitial: InterstitialConfig } }).monetization.interstitial;
 }
 
 /** 보상형 광고 수치 (config.json monetization.rewardedAds) */

@@ -6,7 +6,7 @@ UI 디자인 시스템: `DESIGN.md` — 모든 UI는 이 문서의 토큰(`src/u
 ## 스택
 - Phaser 3 + TypeScript + Vite. 모바일 세로 1080×1920, Scale FIT (`src/config.ts`).
 - 테스트: vitest (`npm test`). 타입체크: `npm run typecheck`.
-- 모바일 패키징(Capacitor), 광고/결제는 Phase 5 이후.
+- 모바일 패키징: Capacitor 8 Android (`capacitor.config.json`, `android/`). `npm run android:debug`로 APK. 광고는 AdMob(테스트 단위), 결제(IAP)는 미구현. 출시 체크리스트 docs/release-android.md.
 
 ## 폴더 구조
 ```
@@ -16,7 +16,8 @@ src/
   scenes/        Boot(초대 링크 /j/코드 → Friend), Lobby(캠페인 시작·이어하기, 레이즈 듀얼 선택 시트), Game(GameMode로 분기, 실시간 매치는 init.live),
                  Spectate(친구 방 관전: 두 사람의 공개 정보를 나란히), Meta, Rank(랭킹 탭: 시즌 카드·보상 수령·리더보드), Match(랭크 매칭 대기 → 상대 소개 → 대전; 서버가 없으면 이 기기의 상대로), Friend(친구 대전: 방 만들기·코드 참가·친구 목록/초대·방 규칙·준비·카운트다운)  ← Phaser 의존 OK
   meta.ts        메타 진행 싱글턴 getMeta() (MetaProgress + localStorage)
-  ads.ts         광고 서비스 싱글턴 getAds() (지금은 StubAdService)
+  ads.ts         광고 서비스 싱글턴 getAds() (웹=StubAdService, 앱=AdMob) + maybeInterstitial(전면 광고 빈도 저장)
+  native/        Android 앱 전용: index(initNative — AdMob 연결·뒤로 가기), admob(AdMobAdService: 미리 불러오기·재시도·15초 제한·동의 UMP)
   runSave.ts     캠페인 이어하기 저장 (localStorage `poker-defense.run.v1`)
   settings.ts    기기 설정 (효과음·볼륨·감속 모드, localStorage `poker-defense.settings.v1`) + reducedMotion()
   tutorialSave.ts 첫 판 가이드 완료 기록 (`poker-defense.tutorial.v1`)
@@ -106,6 +107,13 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 시즌 4주, 시즌 포인트 승 +20 / 패 -8 / 무 +5(바닥 0)는 서버 finalize_match가 계산. 시즌이 끝나면 포인트 0, 레이팅은 1000 쪽으로 절반(`Ranking.softReset` = 서버 ensure_season과 같은 식).
 - 티어 구간은 `src/data/ranking.json`(화면 표시용), 보상 구간·다이아는 서버 `seasons.rewards`가 기준. 리더보드에는 랭크 대전을 한 판 이상 한 사람만 나온다.
 
+## Android 앱 규칙 (Phase 5)
+- 앱 전용 코드는 `src/native/`에만. 웹(개발)에서는 `isNativeApp()`이 false라 아무것도 하지 않는다.
+- 뒤로 가기: 씬에 `onBack(): boolean`을 두면 그 씬이 처리(true). GameScene: 확인 창·패널 닫기 → 대전은 기권 확인 → 캠페인은 두 번 눌러 로비. 로비는 두 번 눌러 종료. 나머지는 각 씬의 나가기.
+- 광고 단위 ID는 `adUnitIds(env)` — `VITE_ADMOB_PRODUCTION=1`이고 두 ID가 다 있을 때만 실제, 아니면 Google 테스트 ID. 앱 ID는 `android/.../strings.xml` admob_app_id(지금 테스트 ID).
+- 전면 광고는 캠페인 게임오버 뒤 로비/한 판 더로 갈 때만(`interstitialDecision`, config.json monetization.interstitial). 대전에는 광고 없음.
+- 에뮬레이터 검증: `~/.android/avd/pd_test`(API 35 x86_64). CDP로 WebView 디버깅 가능(`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`). 소프트웨어 렌더링이라 fps는 의미 없음.
+
 ## 서버 규칙 (Supabase, docs/server-setup.md)
 - 클라이언트는 테이블에 직접 쓰지 않는다. 쓰기는 전부 SECURITY DEFINER RPC, RLS는 "내 행 조회"만.
 - 상대가 사람/고스트/봇인지는 `match_internal`에만 있고 어떤 RPC 응답에도 넣지 않는다.
@@ -182,5 +190,6 @@ design/          리포트 산출물 (hero-shard-report.md, draw-assist-report.m
 - 완료(2026-09-29): 대전 중 기권 버튼, 재접속 이어하기(랭크·친구·서버 없는 판). 실서버에서 대체 상대 매치 전투 중 새로고침 → 복원, 사람 상대 매치 새로고침 → 복원(판돈 일치) → 상대 기권 확인.
 - 기획(화면 미구현): 싱글 캠페인 / 랭크 대전 / 친구 대전(초대 코드·링크·방장 룰·재대결·친구 목록). AI 상대는 모드가 아니라 매칭 15~40초 초과 시 고스트→봇을 일반 상대처럼 붙이는 숨김 대체(닉 풀·강도 프리셋·K 절반) — docs/mode-design.md §1.1.1 (GameMode 프리셋, OpponentSource 추상화, 입력 로그 결정론 재생, 릴레이+사후 검증 네트워크, Supabase, 단계 A~E).
 - 완료(2026-10-12): Phase 4 폴리싱 중 효과음(Web Audio 합성)·설정 시트, 공격 방식별 타격 이펙트, 첫 판 가이드(캠페인 6단계·대전 2단계). 아트 스프라이트 교체는 GDD 원래 일정대로 Phase 5(5주차)로 미룸(2026-10-14 결정). 배경음악은 미구현.
-- 미구현: 일일 미션·상점(IAP)·광고, 아트 스프라이트, 배경음악.
+- 완료(2026-10-14): Phase 5 코드 부분 — Capacitor Android(세로·몰입 모드·뒤로 가기), AdMob 보상형·전면(테스트 단위, 미리 불러오기·재시도), 프레임 표시 설정, docs/release-android.md. 에뮬레이터에서 테스트 광고 시청 → 보상 지급 확인. 남은 것은 개발자 계정·판단(앱 ID·실제 광고 ID·서명 키·등급 설문·개인정보처리방침·비공개 테스트)과 아트.
+- 미구현: 일일 미션·상점(IAP), 아트 스프라이트·앱 아이콘, 배경음악, 계정 삭제.
 - 알려진 밸런스 이슈: 최선 전략 봇도 40웨이브 클리어 0% (31~39 구간 벽). 영웅 액티브·부활 광고 구현 후 재측정 필요.
